@@ -59,6 +59,8 @@ const BOOTS_TIME := 8.0
 const WALL_SLAM_STUN_MULT := 1.5
 const CHAIN_MIN_SPEED := 5.0
 const CLASH_FORCE := 11.0
+const PUSH_FORCE := 17.0         # 밀치기 넉백 (탭·차징 공통 = 풀차징 수준)
+const PUSH_LIFT := 5.5
 
 var game: Node
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
@@ -702,8 +704,9 @@ func _check_push_hits() -> void:
             _popup(o.global_position, "꿈쩍 안 함!", Color(0.8, 0.6, 0.4))
             return
 
-        var force := 7.0 if push_tap else lerpf(9.0, 17.0, push_power)
-        var lift := 2.0 if push_tap else lerpf(3.0, 5.5, push_power)
+        # 밀려나는 거리는 탭이든 차징이든 항상 풀차징과 같다. 차징 정도는 경직 시간에만 반영
+        var force := PUSH_FORCE
+        var lift := PUSH_LIFT
         var stun := 0.45 if push_tap else lerpf(0.8, 1.8, push_power)
         if _deliver_push(o, dir * force + Vector3.UP * lift, stun):
             dash_timer = 0.0
