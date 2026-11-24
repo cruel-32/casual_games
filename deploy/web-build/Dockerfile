@@ -11,9 +11,11 @@ RUN apt-get update \
     && mv /tmp/godot/Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot \
     && chmod +x /usr/local/bin/godot \
     && rm -rf /tmp/godot /tmp/godot.zip
-# 내보내기 템플릿 (약 1.3GB, 이미지 빌드 시 한 번만 받음)
+# 내보내기 템플릿: 전체 묶음(약 1.3GB)에서 웹·Windows 릴리스용만 꺼내고 나머지는 버린다
+# (전부 풀면 이미지가 수 GB가 되어 홈서버 디스크를 채움)
 RUN wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" -O /tmp/t.tpz \
-    && unzip -q /tmp/t.tpz -d /tmp/t \
+    && unzip -q /tmp/t.tpz 'templates/version.txt' 'templates/web_*' 'templates/windows_release_x86_64*' -d /tmp/t \
+    && rm -f /tmp/t.tpz \
     && mkdir -p /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable \
     && mv /tmp/t/templates/* /root/.local/share/godot/export_templates/${GODOT_VERSION}.stable/ \
     && rm -rf /tmp/t /tmp/t.tpz
