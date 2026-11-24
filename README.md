@@ -8,7 +8,7 @@
 
 
 ## 실행
-Godot 4.7.2 (서버·웹 빌더 이미지도 4.7.2), Forward+ 렌더러, F5 → 접속 화면.
+Godot 4.7.1 (서버·웹 빌더 이미지도 4.7.1 — 4.7.2는 Windows 한글 입력 버그(godot#123269)가 있어 4.7.3 출시 전까지 4.7.1 고정), Forward+ 렌더러, F5 → 접속 화면.
 - **오프라인 연습**: 접속 화면의 "오프라인 연습" 버튼 (게임이 여러 개면 목록에서 선택, 봇과 대결, R 재시작, 끝나면 Enter로 메인)
 
 ## 온라인 (로비/방) — 진행 단계
@@ -133,13 +133,13 @@ const SERVER_LIST := [
 
 ### 서버가 예전 버전일 때 (접속 후 무한 로딩·상태 페이지가 casual_games)
 상태 페이지(`https://spwsv.cloudish.cloud`)의 이름·Godot 버전·프로토콜 버전으로 서버 버전을 확인할 수 있다.
-정상: `Small Party World` · `Godot 4.7.2` · `프로토콜 v3` (`net.gd` `PROTOCOL_VERSION`)
+정상: `Small Party World` · `Godot 4.7.1` · `프로토콜 v3` (`net.gd` `PROTOCOL_VERSION`)
 ```bash
 docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'   # 7777/7778 을 쥔 컨테이너 확인
 docker rm -f <예전 컨테이너 이름>        # 예전 casual_games 서버가 남아 있으면 제거
 cd <홈서버의 spw 폴더>                   # 최신 코드로 갱신(git pull 또는 복사) 후
 docker compose up -d --build
-curl -s http://127.0.0.1:7778/status.json   # "game":"Small Party World", "godot":"4.7.2…", "protocol":3
+curl -s http://127.0.0.1:7778/status.json   # "game":"Small Party World", "godot":"4.7.1…", "protocol":3
 docker compose --profile build run --rm web-build   # 웹 게임도 같은 버전으로
 ```
 클라이언트와 서버의 프로토콜 버전이 다르면 로그인 단계에서 안내 문구가 뜨고, 서버가 아예 예전 형식이면 6초 뒤 "응답 없음"으로 끝난다.

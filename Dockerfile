@@ -2,7 +2,7 @@
 # 빌드: docker compose build   /  실행: docker compose up -d
 FROM debian:bookworm-slim
 
-ARG GODOT_VERSION=4.7.2
+ARG GODOT_VERSION=4.7.1
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates wget unzip libfontconfig1 \
     && rm -rf /var/lib/apt/lists/* \

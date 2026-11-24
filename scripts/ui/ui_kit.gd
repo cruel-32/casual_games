@@ -4,6 +4,8 @@ extends RefCounted
 ##  - 본문 글꼴: Pretendard SemiBold (프로젝트 기본 글꼴)
 
 const DISPLAY_FONT := preload("res://fonts/BlackHanSans-Regular.ttf")
+## 본문 글꼴. Black Han Sans 에 없는 기호(● ★ · … — →)는 이 글꼴로 대신 그린다
+const BODY_FONT := preload("res://fonts/Pretendard-SemiBold.otf")
 
 const INK := Color(0.11, 0.12, 0.20)              # 외곽선·그림자
 const CTA := Color(1.0, 0.82, 0.18)               # 가장 중요한 버튼 (노랑)
@@ -65,7 +67,15 @@ static func _style_button(b: Control, kind: String, color: Color, hover: Color, 
     b.add_theme_font_override("font", DISPLAY_FONT)
 
 
+## 제목 글꼴에 없는 글자를 본문 글꼴로 채우도록 연결 (안 하면 ●·★ 등이 네모/깨진 문자로 보임)
+static func _link_font_fallbacks() -> void:
+    var f: Font = DISPLAY_FONT
+    if f.fallbacks.is_empty():
+        f.fallbacks = [BODY_FONT]
+
+
 static func make_theme() -> Theme:
+    _link_font_fallbacks()
     var t := Theme.new()
     t.default_font_size = 18
 

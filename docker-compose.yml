@@ -33,7 +33,7 @@ services:
   web-build:
     profiles: ["build"]
     build: deploy/web-build
-    image: small-party-world-web-builder:4.7.2-zip
+    image: small-party-world-web-builder:4.7.1-zip
     # 빌드 스크립트는 이미지에 굽지 않고 소스 폴더의 최신 파일을 sh 로 바로 실행
     # (스크립트를 고쳐도 이미지 재빌드 불필요, 실행 권한(+x)이 없어도 됨)
     entrypoint: ["sh", "/game/deploy/web-build/build.sh"]
