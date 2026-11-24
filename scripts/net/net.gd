@@ -19,6 +19,14 @@ signal game_started(room: Dictionary)
 
 const DEFAULT_PORT := 7777
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
+
+## 접속 화면에 보여줄 서버 목록 — 사용자에게는 이름만 보이고 주소는 노출하지 않는다.
+## 서버를 늘리면 여기에 한 줄씩 추가.
+const SERVER_LIST := [
+    {"name": "서버 1", "url": DEFAULT_SERVER},
+]
+## 개발용 (에디터 실행·디버그 빌드에서만 목록에 표시, 릴리스·웹 빌드에선 숨김)
+const LOCAL_TEST_SERVER := {"name": "로컬 테스트 (이 PC)", "url": "ws://127.0.0.1:7777"}
 const MAX_PLAYERS_LIMIT := 12
 const MIN_PLAYERS_TO_START := 2       # 봇 채우기가 꺼져 있을 때 필요한 최소 인원
 const NICK_MIN := 2
@@ -28,6 +36,7 @@ const CHAT_MAX := 120
 const CONNECT_TIMEOUT := 6.0
 
 var is_server := false
+var server_name := ""                   # 현재 접속한 서버의 표시 이름
 
 # ---- 클라이언트 상태
 var my_id := 0
@@ -590,6 +599,19 @@ func s_game_start(snap: Dictionary) -> void:
 
 
 # ================================================================ 클라이언트 API
+## 접속 화면에 보여줄 서버 목록 (이름/주소)
+static func available_servers() -> Array:
+    var list: Array = SERVER_LIST.duplicate(true)
+    if is_dev_build():
+        list.append(LOCAL_TEST_SERVER)
+    return list
+
+
+## 개발용 기능(로컬 테스트 서버 등)을 보여줄지: 에디터/디버그 빌드이면서 웹이 아닐 때
+static func is_dev_build() -> bool:
+    return OS.is_debug_build() and not OS.has_feature("web")
+
+
 ## 입력 주소를 WebSocket URL로 정규화
 ## - ws:// wss:// 는 그대로, http(s):// 는 ws(s):// 로
 ## - IP·localhost 는 ws://주소:포트 (포트 생략 시 7777)
@@ -616,8 +638,9 @@ static func normalize_url(text: String) -> String:
     return "wss://%s%s" % [host, (":" + port) if port != "" else ""]
 
 
-func connect_to_server(url: String) -> void:
+func connect_to_server(url: String, display_name: String = "") -> void:
     _reset_client()
+    server_name = display_name
     var peer := WebSocketMultiplayerPeer.new()
     var err := peer.create_client(normalize_url(url))
     if err != OK:

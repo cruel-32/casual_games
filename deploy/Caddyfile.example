@@ -31,6 +31,9 @@ spwsv.cloudish.cloud {
 spw.cloudish.cloud {
 	root * /srv/small_party_world/web
 	encode zstd gzip
+	# 업데이트 직후 옛 파일이 캐시에 남아 버전이 섞이지 않게
+	@nocache path *.html *.js *.pck
+	header @nocache Cache-Control "no-cache"
 	file_server
 	# 웹 빌드에서 '스레드 지원'을 켠 경우에만 필요 (끈 빌드는 불필요):
 	# header {

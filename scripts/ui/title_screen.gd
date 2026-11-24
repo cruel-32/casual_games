@@ -1,16 +1,18 @@
 extends Control
-## 1단계: 닉네임 입력 + 서버 접속
+## 1단계: 닉네임 입력 + 서버 선택(이름만 노출) + 접속
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
 
 var app: Node
 var _nick: LineEdit
-var _addr: LineEdit
+var _server: OptionButton
+var _servers: Array = []
 var _status: Label
 var _buttons: Array[Button] = []
 var _pending_nick := ""
 var _retry_left := 0
 var _retry_url := ""
+var _retry_name := ""
 
 
 func _ready() -> void:
@@ -37,24 +39,35 @@ func _ready() -> void:
     _nick.text_submitted.connect(func(_t): _on_connect_pressed())
     v.add_child(_nick)
 
-    v.add_child(UI.label("서버 주소", 16, UI.MUTED))
-    _addr = UI.line_edit("예: spwsv.cloudish.cloud  /  127.0.0.1:7777", String(app.load_setting("server_url", Net.DEFAULT_SERVER)))
-    _addr.text_submitted.connect(func(_t): _on_connect_pressed())
-    v.add_child(_addr)
+    # 서버 선택: 이름만 보여주고 주소는 숨긴다
+    v.add_child(UI.label("서버", 16, UI.MUTED))
+    _server = OptionButton.new()
+    _server.custom_minimum_size.y = 46
+    _servers = Net.available_servers()
+    var saved := String(app.load_setting("server_name", ""))
+    for i in _servers.size():
+        _server.add_item(String(_servers[i].name), i)
+        if _servers[i].name == saved:
+            _server.select(i)
+    v.add_child(_server)
 
     v.add_child(Control.new())
     var connect_btn := UI.primary_button("접속하기")
     connect_btn.pressed.connect(_on_connect_pressed)
     v.add_child(connect_btn)
+    _buttons.append(connect_btn)
 
-    var local_btn := UI.secondary_button("이 PC에서 서버 열고 접속 (테스트)")
-    local_btn.pressed.connect(_on_local_pressed)
-    v.add_child(local_btn)
+    # 개발용: 에디터/디버그 빌드에서만 표시 (릴리스·웹 빌드에선 숨김)
+    if Net.is_dev_build():
+        var local_btn := UI.secondary_button("이 PC에서 서버 열고 접속 (테스트)")
+        local_btn.pressed.connect(_on_local_pressed)
+        v.add_child(local_btn)
+        _buttons.append(local_btn)
 
     var offline_btn := UI.plain_button("오프라인 연습 (봇과 대결)")
     offline_btn.pressed.connect(func(): app.start_offline_practice())
     v.add_child(offline_btn)
-    _buttons = [connect_btn, local_btn, offline_btn]
+    _buttons.append(offline_btn)
 
     _status = UI.label("", 16, UI.MUTED)
     _status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -73,15 +86,9 @@ func _exit_tree() -> void:
     Net.login_result.disconnect(_on_login_result)
 
 
-func _local_port() -> int:
-    # 주소 칸에 127.0.0.1:포트 를 적었으면 그 포트, 아니면 기본 포트
-    var t := _addr.text.strip_edges()
-    var idx := t.rfind(":")
-    if (t.contains("127.0.0.1") or t.contains("localhost")) and idx > 0:
-        var p := int(t.substr(idx + 1))
-        if p > 0:
-            return p
-    return Net.DEFAULT_PORT
+func _selected_server() -> Dictionary:
+    var i := maxi(_server.selected, 0)
+    return _servers[i]
 
 
 func _check_nick() -> bool:
@@ -96,33 +103,33 @@ func _check_nick() -> bool:
 func _on_connect_pressed() -> void:
     if not _check_nick():
         return
-    _start_connect(Net.normalize_url(_addr.text), 0)
+    var s := _selected_server()
+    _start_connect(String(s.url), String(s.name), 0)
 
 
 func _on_local_pressed() -> void:
     if not _check_nick():
         return
-    var port := _local_port()
-    if not app.start_local_server(port):
+    if not app.start_local_server(Net.DEFAULT_PORT):
         _set_status("서버 프로세스를 시작하지 못했습니다", UI.DANGER)
         return
-    _addr.text = "ws://127.0.0.1:%d" % port
     _set_status("로컬 서버를 여는 중…", UI.MUTED)
     _set_busy(true)
     # 서버가 뜰 때까지 잠시 기다린 뒤 몇 번 재시도
     await get_tree().create_timer(1.5).timeout
-    _start_connect(_addr.text, 4)
+    _start_connect(String(Net.LOCAL_TEST_SERVER.url), String(Net.LOCAL_TEST_SERVER.name), 4)
 
 
-func _start_connect(url: String, retries: int) -> void:
+func _start_connect(url: String, display_name: String, retries: int) -> void:
     _pending_nick = _nick.text.strip_edges()
     _retry_left = retries
-    _retry_url = Net.normalize_url(url)
+    _retry_url = url
+    _retry_name = display_name
     app.save_setting("nickname", _pending_nick)
-    app.save_setting("server_url", _addr.text.strip_edges())
-    _set_status("%s 에 접속 중…" % _retry_url, UI.MUTED)
+    app.save_setting("server_name", display_name)
+    _set_status("%s에 접속 중…" % display_name, UI.MUTED)
     _set_busy(true)
-    Net.connect_to_server(_retry_url)
+    Net.connect_to_server(url, display_name)
 
 
 func _on_connected() -> void:
@@ -134,10 +141,10 @@ func _on_failed(reason: String) -> void:
     if _retry_left > 0:
         _retry_left -= 1
         await get_tree().create_timer(1.0).timeout
-        Net.connect_to_server(_retry_url)
+        Net.connect_to_server(_retry_url, _retry_name)
         return
     _set_busy(false)
-    _set_status(reason, UI.DANGER)
+    _set_status("%s: %s" % [_retry_name, reason], UI.DANGER)
 
 
 func _on_login_result(ok: bool, message: String) -> void:
@@ -155,7 +162,7 @@ func _set_busy(busy: bool) -> void:
     for b in _buttons:
         b.disabled = busy
     _nick.editable = not busy
-    _addr.editable = not busy
+    _server.disabled = busy
 
 
 func _set_status(text: String, color: Color) -> void:

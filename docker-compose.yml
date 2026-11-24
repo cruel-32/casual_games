@@ -27,6 +27,17 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  # 웹 빌더: 소스를 웹으로 내보내 Caddy가 제공하는 폴더(spw.cloudish.cloud)에 배포
+  #   docker compose --profile build run --rm web-build
+  #   (Windows 실행 파일도 함께: docker compose --profile build run --rm -e BUILD_WINDOWS=1 web-build)
+  web-build:
+    profiles: ["build"]
+    build: deploy/web-build
+    image: small-party-world-web-builder:4.7.2
+    volumes:
+      - ./:/game
+      - /srv/small_party_world/web:/out
+
 # networks:
 #   caddy:
 #     external: true

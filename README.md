@@ -4,7 +4,7 @@
 현재는 플레이어 1명 + AI 봇 5명. (네트워크 대전은 미구현)
 
 ## 실행
-Godot 4.3 이상(4.5.1에서 검증), Forward+ 렌더러, F5 → 접속 화면.
+Godot 4.7.2 (서버·웹 빌더 이미지도 4.7.2), Forward+ 렌더러, F5 → 접속 화면.
 - **오프라인 연습**: 접속 화면의 "오프라인 연습" 버튼 (봇과 대결, R 재시작, 끝나면 Enter로 메인)
 
 ## 온라인 (로비/방) — 진행 단계
@@ -19,6 +19,16 @@ Godot 4.3 이상(4.5.1에서 검증), Forward+ 렌더러, F5 → 접속 화면.
 ### 통신
 WebSocket. 서버는 컨테이너 안에서 평문 `ws://:7777`, 외부는 Caddy가 `wss://spwsv.cloudish.cloud`(443)로 받아 전달.
 접속 화면의 기본 주소는 `wss://spwsv.cloudish.cloud` (`net.gd` `DEFAULT_SERVER`).
+
+### 서버 목록 (접속 화면)
+접속 화면에는 서버 **이름만** 보이고 주소는 노출하지 않습니다. 목록은 `scripts/net/net.gd` 의 `SERVER_LIST` 에서 관리:
+```gdscript
+const SERVER_LIST := [
+    {"name": "서버 1", "url": DEFAULT_SERVER},
+    # {"name": "서버 2", "url": "wss://다른서버주소"},
+]
+```
+에디터 실행·디버그 빌드에서만 "로컬 테스트 (이 PC)" 항목과 "이 PC에서 서버 열고 접속" 버튼이 보이고, 릴리스·웹 빌드에서는 숨겨집니다.
 
 ### 도메인
 | 도메인 | 용도 |
@@ -44,6 +54,23 @@ WebSocket. 서버는 컨테이너 안에서 평문 `ws://:7777`, 외부는 Caddy
 5. 게임 클라이언트에서 기본 주소(`wss://spwsv.cloudish.cloud`)로 접속
    웹 게임 페이지(`spw.cloudish.cloud`)는 웹 빌드 전까지 `deploy/web-placeholder/index.html`을 `/srv/small_party_world/web/`에 넣어 두기
 6. 업데이트: 코드 변경 후 `docker compose up -d --build`
+
+### 빌드·배포
+| 대상 | 방법 | 결과 |
+|---|---|---|
+| **웹** (spw.cloudish.cloud) | 홈서버 프로젝트 폴더에서 `docker compose --profile build run --rm web-build` | `/srv/small_party_world/web/` 교체 → 브라우저 새로고침 |
+| 웹 + Windows 실행 파일 | `docker compose --profile build run --rm -e BUILD_WINDOWS=1 web-build` | 위 + `https://spw.cloudish.cloud/download/SmallPartyWorld.exe` |
+| 게임 서버 | `docker compose up -d --build` | 컨테이너 재시작 |
+| PC에서 직접 | 에디터 **프로젝트 → 내보내기** (Web / Windows / Linux 프리셋 준비됨, 결과는 `build/`) | 템플릿 필요: 에디터 → 내보내기 템플릿 관리 → 다운로드 |
+
+웹 빌더 이미지는 첫 빌드 때 Godot와 내보내기 템플릿(약 1.3GB)을 받아 두고, 이후엔 재사용합니다.
+업데이트 흐름: 코드 수정 → `git push` → 홈서버에서 `git pull` → 서버 `docker compose up -d --build` + 웹 `docker compose --profile build run --rm web-build`.
+
+웹 빌드 참고
+- 웹은 Compatibility(WebGL2) 렌더러로 실행 (볼류메트릭 안개·SSAO 없음), 풀 밀도는 자동으로 낮춤
+- 단일 스레드 빌드라 COOP/COEP 헤더 불필요
+- 엔진 파일(index.wasm)이 약 40MB → Caddy `encode zstd gzip` 으로 전송 시 약 10MB
+- 한글 글꼴: `fonts/Pretendard-SemiBold.otf` 포함 (SIL OFL 1.1, `fonts/Pretendard-LICENSE.txt`). 웹에는 시스템 글꼴이 없어서 포함하지 않으면 한글이 □로 깨짐
 
 ### 이름·도메인 변경 반영 (기존 casual_games 서버에서 옮기기)
 ```bash
@@ -136,6 +163,8 @@ DNS에 `spwsv.cloudish.cloud` 레코드가 없다면(와일드카드 미사용) 
 | `scripts/net/net.gd` | (오토로드 `Net`) 서버/클라이언트 공용 네트워크: 로그인·방 관리 RPC |
 | `scripts/ui/*.gd` | 메뉴 UI: `app`(화면 전환), `title_screen`, `lobby_screen`, `room_screen`, `ui_kit`(테마) |
 | `scenes/app.tscn` | 시작 씬 (메뉴) |
+| `export_presets.cfg` | 내보내기 프리셋 (Web, Windows, Linux) |
+| `deploy/web-build/` | 홈서버용 웹 빌더 (Dockerfile, build.sh) |
 | `scripts/main.gd` | 월드(하늘·조명·지형·풀·배경) 구성 후 게임 시작 (`scenes/main.tscn`) |
 | `scripts/game.gd` | 대결 규칙: 아레나 벽, 캐릭터 생성, 바람, 낙석 생성, 충돌 튕김, 승패 |
 | `scripts/fighter.gd` | 캐릭터 공용(사람/봇): 이동·밀치기·넉백·경직·무적·사망·애니메이션 |

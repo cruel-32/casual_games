@@ -28,6 +28,9 @@ var rng := RandomNumberGenerator.new()
 
 
 func _ready() -> void:
+	# 웹(WebGL)·모바일은 GPU 부담을 줄이기 위해 풀 밀도를 낮춘다
+	if OS.has_feature("web") or OS.has_feature("mobile"):
+		grass_density = minf(grass_density, 1.0)
 	rng.seed = 20261124
 	_setup_input()
 	noise_tex = _make_noise_texture(512, 0.012, 3, 7)

@@ -31,7 +31,8 @@ func _ready() -> void:
     var spacer := Control.new()
     spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     top.add_child(spacer)
-    var me := UI.badge("● %s" % Net.nickname, Color(0.2, 0.3, 0.5, 0.6))
+    var me_text := ("%s  ·  ● %s" % [Net.server_name, Net.nickname]) if Net.server_name != "" else ("● %s" % Net.nickname)
+    var me := UI.badge(me_text, Color(0.2, 0.3, 0.5, 0.6))
     me.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     top.add_child(me)
     var logout := UI.plain_button("접속 끊기")
