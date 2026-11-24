@@ -1,4 +1,4 @@
-# casual_games 전용 서버 (Godot 헤드리스)
+# Small Party World 전용 게임 서버 (Godot 헤드리스) — spwsv.cloudish.cloud
 # 빌드: docker compose build   /  실행: docker compose up -d
 FROM debian:bookworm-slim
 

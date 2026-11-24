@@ -1,12 +1,14 @@
-# casual_games 게임 서버
+name: small-party-world
+
+# Small Party World 게임 서버 (spwsv.cloudish.cloud)
 # - 7777: 게임 접속 (평문 WebSocket)
 # - 7778: 상태 페이지 (HTTP, / = 상태 화면, /health = 헬스체크)
 # - 외부 접속은 Caddy가 https 443 으로 받아, WebSocket 요청은 7777 / 그 외는 7778 로 전달
 services:
-  casual-games-server:
+  small-party-world-server:
     build: .
-    image: casual-games-server:latest
-    container_name: casual-games-server
+    image: small-party-world-server:latest
+    container_name: small-party-world-server
     restart: unless-stopped
     environment:
       - GAME_PORT=7777

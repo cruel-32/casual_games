@@ -3,7 +3,7 @@ config_version=5
 
 [application]
 
-config/name="casual_games"
+config/name="Small Party World"
 run/main_scene="res://scenes/app.tscn"
 
 [autoload]

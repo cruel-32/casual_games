@@ -1,4 +1,4 @@
-# casual_games — 3D 똥피하기 대결
+# Small Party World — 3D 돌피하기 대결
 
 사각형 아레나에서 하늘에서 떨어지는 돌을 피하고 상대를 밀쳐내며 마지막까지 살아남는 게임.
 현재는 플레이어 1명 + AI 봇 5명. (네트워크 대전은 미구현)
@@ -17,8 +17,14 @@ Godot 4.3 이상(4.5.1에서 검증), Forward+ 렌더러, F5 → 접속 화면.
 | 5. 배포 (홈서버 Docker + Caddy) | 설정 파일 준비 완료 (Dockerfile, docker-compose.yml, deploy/Caddyfile.example) |
 
 ### 통신
-WebSocket. 서버는 컨테이너 안에서 평문 `ws://:7777`, 외부는 Caddy가 `wss://spw.cloudish.cloud`(443)로 받아 전달.
-접속 화면의 기본 주소는 `wss://spw.cloudish.cloud` (`net.gd` `DEFAULT_SERVER`).
+WebSocket. 서버는 컨테이너 안에서 평문 `ws://:7777`, 외부는 Caddy가 `wss://spwsv.cloudish.cloud`(443)로 받아 전달.
+접속 화면의 기본 주소는 `wss://spwsv.cloudish.cloud` (`net.gd` `DEFAULT_SERVER`).
+
+### 도메인
+| 도메인 | 용도 |
+|---|---|
+| `spwsv.cloudish.cloud` | 게임 서버(중계 서버). 게임 접속(wss) + 브라우저로 열면 서버 상태 페이지 |
+| `spw.cloudish.cloud` | 웹 게임 플레이 페이지 (Godot 웹 빌드 파일 제공) |
 주소 칸 입력 규칙: 도메인 → `wss://도메인`, IP/localhost → `ws://IP:포트`(기본 7777), `ws://`·`wss://`는 그대로.
 
 ### 홈서버 배포 (Ubuntu + Docker Compose + Caddy)
@@ -32,11 +38,26 @@ WebSocket. 서버는 컨테이너 안에서 평문 `ws://:7777`, 외부는 Caddy
    ```
 3. Caddy 설정 추가 — `deploy/Caddyfile.example` 참고
    - Caddy를 Ubuntu에 직접 설치: `reverse_proxy 127.0.0.1:7777` (compose 기본값 그대로)
-   - Caddy도 Docker: compose의 `ports` 대신 Caddy와 같은 네트워크에 연결하고 `reverse_proxy casual-games-server:7777`
+   - Caddy도 Docker: compose의 `ports` 대신 Caddy와 같은 네트워크에 연결하고 `reverse_proxy small-party-world-server:7777`
    - 반영: `sudo systemctl reload caddy` 또는 `docker exec <caddy> caddy reload --config /etc/caddy/Caddyfile`
-4. 브라우저로 `https://spw.cloudish.cloud` 열기 → **서버 상태 페이지**(접속자·방 목록)가 보이면 Caddy 연결 정상
-5. 게임 클라이언트에서 기본 주소(`wss://spw.cloudish.cloud`)로 접속
+4. 브라우저로 `https://spwsv.cloudish.cloud` 열기 → **서버 상태 페이지**(접속자·방 목록)가 보이면 Caddy 연결 정상
+5. 게임 클라이언트에서 기본 주소(`wss://spwsv.cloudish.cloud`)로 접속
+   웹 게임 페이지(`spw.cloudish.cloud`)는 웹 빌드 전까지 `deploy/web-placeholder/index.html`을 `/srv/small_party_world/web/`에 넣어 두기
 6. 업데이트: 코드 변경 후 `docker compose up -d --build`
+
+### 이름·도메인 변경 반영 (기존 casual_games 서버에서 옮기기)
+```bash
+# 1) 기존 서버 내리기 (기존 casual_games 폴더에서) — 7777 포트를 비워야 새 서버가 뜸
+docker compose down
+# 2) 새 폴더(spw)에서 올리기
+docker compose up -d --build
+curl http://127.0.0.1:7778/health          # ok
+# 3) 웹 페이지 임시 파일
+sudo mkdir -p /srv/small_party_world/web
+sudo cp deploy/web-placeholder/index.html /srv/small_party_world/web/
+# 4) Caddyfile: 기존 spw.cloudish.cloud 블록을 deploy/Caddyfile.example 의 두 블록으로 교체 후 reload
+```
+DNS에 `spwsv.cloudish.cloud` 레코드가 없다면(와일드카드 미사용) 먼저 추가해야 Caddy가 인증서를 받을 수 있습니다.
 
 ### 상태 페이지 / 헬스체크 (포트 7778)
 | 경로 | 내용 |
