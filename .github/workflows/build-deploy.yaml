@@ -29,12 +29,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 게임 서버 다시 빌드·재시작
-        run: docker compose -p spw up -d --build small-party-world-server
+        run: docker compose up -d --build small-party-world-server
 
       - name: 웹 + Windows zip 빌드·배포
         run: |
-          docker compose -p spw build web-build
-          docker compose -p spw --profile build run --rm web-build
+          docker compose build web-build
+          docker compose --profile build run --rm web-build
 
       - name: 서버 상태 확인
         run: |
