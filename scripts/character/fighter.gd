@@ -42,6 +42,12 @@ const Procedural := preload("res://scripts/world/procedural.gd")
 @export var is_human := false
 @export var mouse_sensitivity := 0.0025
 
+## 슬롯(참가 순서)별 몸 색 — 게임 안 캐릭터와 대기룸 초상화(ui/portraits/slot_N.png)가 같은 색을 쓴다
+const SLOT_COLORS: Array[Color] = [
+    Color(0.85, 0.22, 0.22), Color(0.22, 0.42, 0.90), Color(0.95, 0.68, 0.08),
+    Color(0.25, 0.65, 0.22), Color(0.55, 0.28, 0.85), Color(0.95, 0.45, 0.10),
+    Color(0.10, 0.65, 0.70), Color(0.88, 0.30, 0.60),
+]
 const RADIUS := 0.4
 const HEIGHT := 1.65
 const COYOTE := 0.1

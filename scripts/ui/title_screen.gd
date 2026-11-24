@@ -18,66 +18,129 @@ var _login_try := 0
 
 
 func _ready() -> void:
-    var root := UI.vbox(28)
+    # 상단 왼쪽: 알약 메뉴
+    var top := UI.hbox(10)
+    top.position = Vector2(20, 18)
+    add_child(top)
+    var help_btn := UI.pill_button("조작법")
+    help_btn.pressed.connect(_show_help)
+    top.add_child(help_btn)
+    var offline_btn := UI.pill_button("오프라인 연습")
+    offline_btn.pressed.connect(_on_offline_pressed.bind(offline_btn))
+    top.add_child(offline_btn)
+    _buttons.append(offline_btn)
+    # 개발용: 에디터/디버그 빌드에서만 표시 (릴리스·웹 빌드에선 숨김)
+    if Net.is_dev_build():
+        var local_btn := UI.pill_button("이 PC 서버로 테스트", UI.SECONDARY, Color.WHITE)
+        local_btn.pressed.connect(_on_local_pressed)
+        top.add_child(local_btn)
+        _buttons.append(local_btn)
+
+    var root := UI.vbox(0)
     root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    root.alignment = BoxContainer.ALIGNMENT_CENTER
+    root.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(root)
 
-    var title := UI.title("Small Party World", 64)
-    root.add_child(title)
+    # 가운데: 로고 + 한 줄 소개
+    var mid := UI.vbox(14)
+    mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    mid.alignment = BoxContainer.ALIGNMENT_CENTER
+    mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    root.add_child(mid)
+    mid.add_child(UI.logo(96))
+    var tag := UI.title("친구들과 즐기는 캐주얼 파티 게임 모음  ·  떨어지는 돌을 피하고, 밀쳐내고, 살아남자!", 22)
+    tag.add_theme_constant_override("outline_size", 7)
+    mid.add_child(tag)
 
-    var center := CenterContainer.new()
-    root.add_child(center)
-    var panel := PanelContainer.new()
-    panel.custom_minimum_size.x = 440
-    center.add_child(panel)
-    var v := UI.vbox(12)
-    panel.add_child(v)
+    # 아래: 서버 선택 + 닉네임 + 입장하기
+    var bottom := UI.vbox(12)
+    bottom.alignment = BoxContainer.ALIGNMENT_CENTER
+    root.add_child(bottom)
 
-    v.add_child(UI.label("닉네임", 16, UI.MUTED))
-    _nick = UI.line_edit("2~12자 (한글/영문/숫자)", String(app.load_setting("nickname", "")), Net.NICK_MAX)
-    _nick.text_submitted.connect(func(_t): _on_connect_pressed())
-    v.add_child(_nick)
-
+    var server_row := UI.hbox(10)
+    server_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    bottom.add_child(server_row)
+    var sl := UI.title("서버", 18)
+    sl.add_theme_constant_override("outline_size", 6)
+    server_row.add_child(sl)
     # 서버 선택: 이름만 보여주고 주소는 숨긴다
-    v.add_child(UI.label("서버", 16, UI.MUTED))
     _server = OptionButton.new()
-    _server.custom_minimum_size.y = 46
+    _server.custom_minimum_size = Vector2(200, 44)
     _servers = Net.available_servers()
     var saved := String(app.load_setting("server_name", ""))
     for i in _servers.size():
         _server.add_item(String(_servers[i].name), i)
         if _servers[i].name == saved:
             _server.select(i)
-    v.add_child(_server)
+    server_row.add_child(_server)
 
-    v.add_child(Control.new())
-    var connect_btn := UI.primary_button("접속하기")
+    var entry := UI.hbox(12)
+    entry.alignment = BoxContainer.ALIGNMENT_CENTER
+    bottom.add_child(entry)
+    _nick = UI.line_edit("닉네임 (2~12자)", String(app.load_setting("nickname", "")), Net.NICK_MAX)
+    _nick.custom_minimum_size = Vector2(340, 58)
+    _nick.add_theme_font_size_override("font_size", 22)
+    _nick.text_submitted.connect(func(_t): _on_connect_pressed())
+    entry.add_child(_nick)
+    var connect_btn := UI.cta_button("입장하기")
+    connect_btn.custom_minimum_size = Vector2(190, 58)
     connect_btn.pressed.connect(_on_connect_pressed)
-    v.add_child(connect_btn)
+    entry.add_child(connect_btn)
     _buttons.append(connect_btn)
 
-    # 개발용: 에디터/디버그 빌드에서만 표시 (릴리스·웹 빌드에선 숨김)
-    if Net.is_dev_build():
-        var local_btn := UI.secondary_button("이 PC에서 서버 열고 접속 (테스트)")
-        local_btn.pressed.connect(_on_local_pressed)
-        v.add_child(local_btn)
-        _buttons.append(local_btn)
-
-    var offline_btn := UI.plain_button("오프라인 연습 (봇과 대결)")
-    offline_btn.pressed.connect(_on_offline_pressed.bind(offline_btn))
-    v.add_child(offline_btn)
-    _buttons.append(offline_btn)
-
-    _status = UI.label("", 16, UI.MUTED)
-    _status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _status = UI.title("", 17)
+    _status.add_theme_constant_override("outline_size", 6)
     _status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    v.add_child(_status)
+    _status.custom_minimum_size = Vector2(0, 30)
+    bottom.add_child(_status)
+    var pad := Control.new()
+    pad.custom_minimum_size.y = 26
+    bottom.add_child(pad)
+
+    _build_help()
 
     Net.connected.connect(_on_connected)
     Net.connection_failed.connect(_on_failed)
     Net.login_result.connect(_on_login_result)
-    _nick.grab_focus.call_deferred()
+    if not Fighter.touch_device():
+        _nick.grab_focus.call_deferred()
+
+
+# ---- 조작법 창
+var _help: Control
+
+
+func _build_help() -> void:
+    _help = ColorRect.new()
+    (_help as ColorRect).color = Color(0.05, 0.08, 0.15, 0.5)
+    _help.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    _help.visible = false
+    add_child(_help)
+    var v := UI.centered_panel(_help, 560)
+    v.add_child(UI.heading("조작법", 30))
+    var rows := [
+        ["이동", "WASD  ·  모바일: 왼쪽 화면 스틱"],
+        ["시점", "마우스  ·  모바일: 오른쪽 화면 드래그 (버튼을 누른 채 끌어도 됨)"],
+        ["점프", "Space  ·  모바일: 점프 버튼"],
+        ["밀치기", "좌클릭/E 짧게 = 제자리 밀기, 길게 = 차징 돌진 (공중에선 불가)"],
+    ]
+    for r in rows:
+        var h := UI.hbox(14)
+        var k := UI.badge(r[0], UI.SECONDARY)
+        k.custom_minimum_size.x = 84
+        h.add_child(k)
+        var d := UI.label(r[1], 17)
+        d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        h.add_child(d)
+        v.add_child(h)
+    var close := UI.cta_button("확인")
+    close.pressed.connect(func(): _help.visible = false)
+    v.add_child(close)
+
+
+func _show_help() -> void:
+    _help.visible = true
 
 
 func _exit_tree() -> void:
@@ -184,11 +247,13 @@ func _on_login_result(ok: bool, message: String) -> void:
 
 func _set_busy(busy: bool) -> void:
     for b in _buttons:
-        b.disabled = busy
+        if is_instance_valid(b):
+            b.disabled = busy
     _nick.editable = not busy
     _server.disabled = busy
 
 
 func _set_status(text: String, color: Color) -> void:
     _status.text = text
-    _status.add_theme_color_override("font_color", color)
+    # 배경 위 글자: 흰색(일반) / 연한 빨강(오류)
+    _status.add_theme_color_override("font_color", Color(1.0, 0.75, 0.72) if color == UI.DANGER else Color.WHITE)

@@ -29,6 +29,11 @@ var noise_tex: NoiseTexture2D
 var rng := RandomNumberGenerator.new()
 ## 서버가 방마다 경기를 돌릴 때 Net 이 채운다 (비어 있으면 일반 클라이언트/오프라인)
 var server_config: Dictionary = {}
+## 메뉴 화면 배경으로 쓸 때 (게임 대신 캐릭터들이 아레나를 돌아다니고 카메라가 천천히 돈다)
+var menu_mode := false
+var _menu_cam: Camera3D
+var _menu_fighters: Array = []
+var _menu_t := 0.0
 
 
 func _ready() -> void:
@@ -49,7 +54,10 @@ func _ready() -> void:
 	_scatter_trees()
 	_scatter_rocks()
 	_build_ruins()
-	_start_game()
+	if menu_mode:
+		_start_menu_showcase()
+	else:
+		_start_game()
 
 
 # ---------------------------------------------------------------- 입력
@@ -363,3 +371,48 @@ func _start_game() -> void:
 	elif not cfg.is_empty():
 		game.net_role = PartyGame.NetRole.CLIENT
 	add_child(game)
+
+
+# ---------------------------------------------------------------- 메뉴 배경
+func _start_menu_showcase() -> void:
+	_menu_cam = Camera3D.new()
+	_menu_cam.fov = 55.0
+	_menu_cam.far = 600.0
+	add_child(_menu_cam)
+	_menu_cam.current = true
+	for i in 7:
+		var f := Fighter.new()
+		f.body_color = Fighter.SLOT_COLORS[i % Fighter.SLOT_COLORS.size()]
+		f.display_name = ""
+		var a := i * TAU / 7.0
+		var p := Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(3.0, 9.0)
+		f.position = _ground_point(p.x, p.z) + Vector3(0, 0.2, 0)
+		add_child(f)
+		f.name_tag.visible = false
+		f.set_meta("wander", Vector3.ZERO)
+		f.set_meta("timer", 0.0)
+		_menu_fighters.append(f)
+	set_process(true)
+
+
+func _process(delta: float) -> void:
+	if not menu_mode or _menu_cam == null:
+		return
+	_menu_t += delta
+	# 카메라: 아레나를 천천히 한 바퀴
+	var a := _menu_t * 0.06
+	_menu_cam.global_position = Vector3(cos(a) * 15.0, 5.5, sin(a) * 15.0)
+	_menu_cam.look_at(Vector3(0, 1.6, 0), Vector3.UP)
+	# 캐릭터: 여기저기 걷다 가끔 점프
+	for f: Fighter in _menu_fighters:
+		var t: float = f.get_meta("timer") - delta
+		if t <= 0.0:
+			t = rng.randf_range(1.2, 3.5)
+			var target := Vector3(rng.randf_range(-9, 9), 0, rng.randf_range(-9, 9))
+			f.set_meta("wander", target)
+			if rng.randf() < 0.35:
+				f.intent_jump = true
+		f.set_meta("timer", t)
+		var to: Vector3 = f.get_meta("wander") - f.global_position
+		to.y = 0.0
+		f.intent_move = to.normalized() * 0.55 if to.length() > 1.0 else Vector3.ZERO

@@ -17,6 +17,15 @@ var min_players := 2            # 봇 채우기 없이 시작하려면 필요한
 var max_players := 12
 var supports_bots := true       # 빈 자리 봇 채우기 가능 여부
 var game_script_path := ""      # PartyGame 을 상속한 게임 스크립트 경로
+var thumbnail_path := ""        # 메뉴의 게임 카드 이미지 (16:9 권장, 없으면 색 카드)
+var accent := Color(0.2, 0.55, 0.95)   # 게임 카드 강조 색
+
+
+## 썸네일 텍스처 (없으면 null). 서버(헤드리스)에서도 안전
+func thumbnail() -> Texture2D:
+    if thumbnail_path == "" or not ResourceLoader.exists(thumbnail_path):
+        return null
+    return load(thumbnail_path)
 
 
 func create_game() -> Node3D:

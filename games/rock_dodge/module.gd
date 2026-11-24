@@ -10,3 +10,5 @@ func _init() -> void:
     max_players = 12
     supports_bots = true
     game_script_path = "res://games/rock_dodge/rock_dodge_game.gd"
+    thumbnail_path = "res://games/rock_dodge/thumbnail.png"     # tools/render_thumbnail.gd 로 생성
+    accent = Color(0.96, 0.42, 0.30)

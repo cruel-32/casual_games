@@ -45,11 +45,7 @@ const PUSH_REWIND_MAX := 0.6    # 서버: 이보다 오래된 시점의 밀치�
 
 const KILL_CREDIT_TIME := 3.0      # 민 뒤 이 시간 안에 낙석에 맞으면 민 사람 득점
 
-const BOT_COLORS: Array[Color] = [
-    Color(0.85, 0.22, 0.22), Color(0.22, 0.42, 0.90), Color(0.95, 0.68, 0.08),
-    Color(0.25, 0.65, 0.22), Color(0.55, 0.28, 0.85), Color(0.95, 0.45, 0.10),
-    Color(0.10, 0.65, 0.70), Color(0.88, 0.30, 0.60),
-]
+const BOT_COLORS := Fighter.SLOT_COLORS      # 슬롯 번호별 색 (대기룸 초상화와 같은 색)
 
 var rocks: Array = []
 var elapsed := 0.0

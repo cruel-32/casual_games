@@ -15,6 +15,41 @@ var _current: Control
 var _toast: Label
 var _toast_tween: Tween
 var local_server_pid := -1
+var _sky: Control
+var _backdrop: Node
+
+
+func _gradient_rect(colors: Array) -> TextureRect:
+    var grad := Gradient.new()
+    grad.remove_point(1)
+    grad.set_color(0, colors[0])
+    for i in range(1, colors.size()):
+        grad.add_point(float(i) / (colors.size() - 1), colors[i])
+    var gt := GradientTexture2D.new()
+    gt.gradient = grad
+    gt.fill_from = Vector2(0.5, 0.0)
+    gt.fill_to = Vector2(0.5, 1.0)
+    var r := TextureRect.new()
+    r.texture = gt
+    r.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    r.stretch_mode = TextureRect.STRETCH_SCALE
+    r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    r.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    return r
+
+
+## 메뉴 뒤에 살아 움직이는 3D 아레나 (첫 화면이 먼저 뜬 다음 만든다)
+func _spawn_backdrop() -> void:
+    await get_tree().process_frame
+    await get_tree().process_frame
+    if not is_inside_tree() or _backdrop:
+        return
+    var world: Node = load(GAME_SCENE).instantiate()
+    world.set("menu_mode", true)
+    add_child(world)
+    move_child(world, 0)
+    _backdrop = world
+    _sky.visible = false
 
 
 func _ready() -> void:
@@ -24,22 +59,14 @@ func _ready() -> void:
     set_anchors_preset(Control.PRESET_FULL_RECT)
     theme = UI.make_theme()
 
-    var bg := TextureRect.new()
-    var grad := Gradient.new()
-    grad.set_color(0, Color(0.42, 0.68, 0.98))
-    grad.set_color(1, Color(0.72, 0.93, 0.82))
-    var gt := GradientTexture2D.new()
-    gt.gradient = grad
-    gt.fill_from = Vector2(0.5, 0.0)
-    gt.fill_to = Vector2(0.5, 1.0)
-    bg.texture = gt
-    bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-    bg.stretch_mode = TextureRect.STRETCH_SCALE
-    bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    add_child(bg)
+    # 배경: 3D 월드가 뜨기 전까지 보이는 하늘색 그라데이션 + 그 위 글자가 잘 보이게 위·아래를 살짝 어둡게
+    _sky = _gradient_rect([Color(0.42, 0.68, 0.98), Color(0.72, 0.93, 0.82)])
+    add_child(_sky)
+    var shade := _gradient_rect([Color(0.05, 0.08, 0.2, 0.35), Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0.05, 0.08, 0.2, 0.45)])
+    add_child(shade)
 
-    _toast = UI.label("", 18, Color.WHITE)
-    _toast.add_theme_stylebox_override("normal", UI.box(Color(0.15, 0.18, 0.28, 0.85), 12, 18))
+    _toast = UI.heading("", 20, Color.WHITE)
+    _toast.add_theme_stylebox_override("normal", UI.box(Color(0.15, 0.18, 0.28, 0.92), 16, 20, UI.INK, 3, 4))
     _toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _toast.modulate.a = 0.0
     _toast.z_index = 10
@@ -54,6 +81,7 @@ func _ready() -> void:
         show_screen("room" if Net.in_room() else "lobby")
     else:
         show_screen("title")
+    _spawn_backdrop.call_deferred()
     add_child(_toast)
     if Fighter.touch_device():
         add_child(load("res://scripts/ui/rotate_hint.gd").new())
@@ -81,7 +109,7 @@ func show_screen(screen: String) -> void:
 
 func toast(text: String, color: Color = Color(0.15, 0.18, 0.28, 0.85)) -> void:
     _toast.text = text
-    _toast.add_theme_stylebox_override("normal", UI.box(color, 12, 18))
+    _toast.add_theme_stylebox_override("normal", UI.box(color, 16, 20, UI.INK, 3, 4))
     _toast.size = _toast.get_minimum_size()
     _toast.position = Vector2((get_viewport_rect().size.x - _toast.size.x) * 0.5, get_viewport_rect().size.y - 90)
     if _toast_tween:

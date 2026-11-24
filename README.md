@@ -253,6 +253,11 @@ games/rock_dodge/          3D 돌피하기 모듈
 ## 파일 구조 (그 밖)
 | 파일 | 역할 |
 |---|---|
+| `scripts/ui/ui_kit.gd` | 메뉴 카툰풍 테마 (두꺼운 외곽선·그림자 버튼, 로고, 배지, 이미지 카드) |
+| `fonts/BlackHanSans-Regular.ttf` | 제목·버튼 글꼴 (SIL OFL, 라이선스 동봉) |
+| `ui/portraits/slot_N.png` | 대기룸 캐릭터 초상화 (슬롯 색 = 게임 안 색, `Fighter.SLOT_COLORS`) |
+| `games/<id>/thumbnail.png` | 게임 카드 이미지 (`module.gd` `thumbnail_path`) |
+| `tools/render_assets.gd`, `tools/render_thumbnail.gd` | 위 이미지 다시 만들기 (개발용, 빌드에서 제외) — `godot --rendering-method gl_compatibility --resolution 256x256 --path . -s tools/render_assets.gd` |
 | `export_presets.cfg` | 내보내기 프리셋 (Web, Windows, Linux) |
 | `deploy/web-build/` | 홈서버용 웹 빌더 (Dockerfile, build.sh) |
 | `shaders/arena_wall.gdshader` | 반투명 경계 벽 (가까이 가면 진해짐) |
