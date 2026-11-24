@@ -4,8 +4,9 @@ extends Node3D
 const CHUNK := 16.0
 
 
+## lawn_half > 0 이면 그 사각형 안쪽 풀은 짧게 깎는다 (낙석 표시가 풀에 가리지 않도록)
 func generate(terrain: Node, material: Material, density: float, radius: float,
-        rng: RandomNumberGenerator) -> void:
+        rng: RandomNumberGenerator, lawn_half: float = -1.0) -> void:
     var mesh := _make_clump_mesh()
     mesh.surface_set_material(0, material)
 
@@ -41,6 +42,8 @@ func generate(terrain: Node, material: Material, density: float, radius: float,
                 var rot := rng.randf() * TAU
                 var s := rng.randf_range(0.7, 1.3)
                 var sy := s * rng.randf_range(0.8, 1.35)
+                if lawn_half > 0.0 and absf(wx) < lawn_half and absf(wz) < lawn_half:
+                    sy *= 0.4
                 var c := cos(rot)
                 var sn := sin(rot)
                 var o := count * 12

@@ -1,8 +1,8 @@
 extends Node3D
-## 야숨 스타일 그래픽 프로토타입
-## 툰 셰이딩 + 그림 같은 하늘 + 대기 원근(안개) + 절차적 지형 + 바람 풀 + 임시 나무/바위/유적
+## casual_games — 월드(하늘·조명·지형·풀·배경 오브젝트) 구성 후 ArenaGame(대결 규칙)을 올린다.
 
-const PLAYER_SCRIPT := preload("res://scripts/player.gd")
+const GAME_SCRIPT := preload("res://scripts/game.gd")
+const Procedural := preload("res://scripts/procedural.gd")
 const TERRAIN_SCRIPT := preload("res://scripts/terrain.gd")
 const GRASS_SCRIPT := preload("res://scripts/grass.gd")
 const Toon := preload("res://scripts/toon.gd")
@@ -17,9 +17,12 @@ const GRASS_B := Color(0.36, 0.53, 0.16)
 @export var grass_radius := 110.0
 @export var tree_count := 55
 @export var rock_count := 35
+@export var arena_half := 18.0       # 대결 구역(사각형) 반폭
+
+const SCENERY_MARGIN := 4.0          # 아레나 바깥 이만큼부터 나무/바위 배치
 
 var terrain: Node
-var player: CharacterBody3D
+var grass_material: ShaderMaterial
 var noise_tex: NoiseTexture2D
 var rng := RandomNumberGenerator.new()
 
@@ -34,8 +37,7 @@ func _ready() -> void:
 	_scatter_trees()
 	_scatter_rocks()
 	_build_ruins()
-	_spawn_player()
-	_build_hud()
+	_start_game()
 
 
 # ---------------------------------------------------------------- 입력
@@ -45,16 +47,26 @@ func _setup_input() -> void:
 	_add_key_action(&"move_left", [KEY_A, KEY_LEFT])
 	_add_key_action(&"move_right", [KEY_D, KEY_RIGHT])
 	_add_key_action(&"jump", [KEY_SPACE])
-	_add_key_action(&"sprint", [KEY_SHIFT])
+	_add_key_action(&"push", [KEY_E])
+	_add_key_action(&"restart", [KEY_R])
+	if InputMap.action_get_events(&"push").size() < 2:
+		var mb := InputEventMouseButton.new()
+		mb.button_index = MOUSE_BUTTON_LEFT
+		InputMap.action_add_event(&"push", mb)
 
 
 func _add_key_action(action: StringName, keys: Array) -> void:
-	if not InputMap.has_action(action):
-		InputMap.add_action(action)
+	if InputMap.has_action(action):
+		return   # 재시작(씬 리로드) 시 중복 등록 방지
+	InputMap.add_action(action)
 	for k in keys:
 		var ev := InputEventKey.new()
 		ev.physical_keycode = k
 		InputMap.action_add_event(action, ev)
+
+
+func _in_arena_zone(x: float, z: float, margin: float) -> bool:
+	return absf(x) < arena_half + margin and absf(z) < arena_half + margin
 
 
 func _make_noise_texture(px: int, freq: float, octaves: int, seed_value: int) -> NoiseTexture2D:
@@ -144,6 +156,7 @@ func _build_terrain() -> void:
 
 	terrain = TERRAIN_SCRIPT.new()
 	terrain.name = "Terrain"
+	terrain.flat_half = arena_half + 4.0
 	add_child(terrain)
 	terrain.generate(mat)
 
@@ -161,7 +174,8 @@ func _build_grass() -> void:
 	var grass := GRASS_SCRIPT.new()
 	grass.name = "Grass"
 	add_child(grass)
-	grass.generate(terrain, mat, grass_density, grass_radius, rng)
+	grass.generate(terrain, mat, grass_density, grass_radius, rng, arena_half + 0.5)
+	grass_material = mat
 
 
 # ---------------------------------------------------------------- 나무 / 바위 / 유적 (임시 에셋)
@@ -183,7 +197,7 @@ func _scatter_trees() -> void:
 		var x := rng.randf_range(-100.0, 100.0)
 		var z := rng.randf_range(-100.0, 100.0)
 		var d := Vector2(x, z).length()
-		if d < 16.0 or d > 95.0:
+		if d > 95.0 or _in_arena_zone(x, z, SCENERY_MARGIN):
 			continue
 		if terrain.get_slope(x, z) > 0.25 or terrain.get_height(x, z) > 14.0:
 			continue
@@ -236,43 +250,6 @@ func _make_tree(pos: Vector3, s: float, trunk_mat: Material, leaf_mat: Material)
 		body.add_child(lmi)
 
 
-func _make_rock_mesh(seed_value: int) -> ArrayMesh:
-	var sphere := SphereMesh.new()
-	sphere.radius = 1.0
-	sphere.height = 2.0
-	sphere.radial_segments = 9
-	sphere.rings = 6
-	var arrays := sphere.get_mesh_arrays()
-	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-
-	var nz := FastNoiseLite.new()
-	nz.seed = seed_value
-	nz.frequency = 0.9
-	for i in verts.size():
-		var v := verts[i]
-		var k := 1.0 + nz.get_noise_3dv(v) * 0.4
-		verts[i] = Vector3(v.x * k * 1.2, v.y * k * 0.7, v.z * k)
-
-	# 면 단위 노멀(로우폴리 각진 바위)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for t in range(0, idx.size(), 3):
-		var a := verts[idx[t]]
-		var b := verts[idx[t + 1]]
-		var c := verts[idx[t + 2]]
-		var nrm := (b - a).cross(c - a)
-		if nrm.length() < 0.000001:
-			continue
-		nrm = nrm.normalized()
-		if nrm.dot((a + b + c) / 3.0) < 0.0:
-			nrm = -nrm
-		for v in [a, b, c]:
-			st.set_normal(nrm)
-			st.add_vertex(v)
-	return st.commit()
-
-
 func _scatter_rocks() -> void:
 	var rock_mats: Array[ShaderMaterial] = [
 		Toon.make(Color(0.44, 0.43, 0.45), {"shade_softness": 0.04, "rim_strength": 0.25}),
@@ -280,7 +257,7 @@ func _scatter_rocks() -> void:
 	]
 	var meshes: Array[ArrayMesh] = []
 	for i in 4:
-		meshes.append(_make_rock_mesh(100 + i))
+		meshes.append(Procedural.make_rock_mesh(100 + i))
 
 	var placed := 0
 	var tries := 0
@@ -288,7 +265,7 @@ func _scatter_rocks() -> void:
 		tries += 1
 		var x := rng.randf_range(-105.0, 105.0)
 		var z := rng.randf_range(-105.0, 105.0)
-		if Vector2(x, z).length() < 8.0:
+		if _in_arena_zone(x, z, SCENERY_MARGIN):
 			continue
 		var s := rng.randf_range(0.5, 2.6)
 		var mesh: ArrayMesh = meshes[rng.randi() % meshes.size()]
@@ -311,7 +288,7 @@ func _scatter_rocks() -> void:
 
 func _build_ruins() -> void:
 	var stone := Toon.make(Color(0.60, 0.58, 0.53), {"shade_softness": 0.05, "rim_strength": 0.3})
-	var center := _ground_point(22.0, -18.0)
+	var center := _ground_point(36.0, -34.0)
 
 	var base := CylinderMesh.new()
 	base.top_radius = 7.0
@@ -353,22 +330,11 @@ func _build_ruins() -> void:
 		body.add_child(col)
 
 
-# ---------------------------------------------------------------- 플레이어 / HUD
-func _spawn_player() -> void:
-	player = PLAYER_SCRIPT.new()
-	player.name = "Player"
-	player.position = _ground_point(0.0, 10.0) + Vector3(0, 0.5, 0)
-	add_child(player)
-
-
-func _build_hud() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
-
-	var help := Label.new()
-	help.text = "WASD 이동  |  마우스 시점  |  Space 점프  |  Shift 달리기  |  휠 줌  |  Esc 마우스 해제 (클릭으로 복귀)"
-	help.position = Vector2(16, 12)
-	help.add_theme_color_override("font_color", Color.WHITE)
-	help.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	help.add_theme_constant_override("outline_size", 5)
-	layer.add_child(help)
+# ---------------------------------------------------------------- 게임
+func _start_game() -> void:
+	var game: Node3D = GAME_SCRIPT.new()
+	game.name = "Game"
+	game.terrain = terrain
+	game.grass_material = grass_material
+	game.arena_half = arena_half
+	add_child(game)

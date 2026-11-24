@@ -1,0 +1,16 @@
+# 기존 Caddyfile에 아래 블록을 추가하세요.
+# Caddy v2는 WebSocket(Upgrade) 요청을 reverse_proxy 로 자동 전달합니다.
+
+spw.cloudish.cloud {
+	reverse_proxy 127.0.0.1:7777 {
+		# Caddy 설정을 reload 할 때 진행 중인 게임 연결이 바로 끊기지 않게
+		stream_close_delay 10m
+	}
+}
+
+# Caddy가 Docker 컨테이너이고 게임 서버와 같은 Docker 네트워크에 있다면:
+# spw.cloudish.cloud {
+# 	reverse_proxy casual-games-server:7777 {
+# 		stream_close_delay 10m
+# 	}
+# }
