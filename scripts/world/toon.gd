@@ -1,5 +1,5 @@
 extends RefCounted
-## 툰 머티리얼 생성 헬퍼. 사용: const Toon := preload("res://scripts/toon.gd") → Toon.make(color)
+## 툰 머티리얼 생성 헬퍼. 사용: const Toon := preload("res://scripts/world/toon.gd") → Toon.make(color)
 
 const TOON_SHADER := preload("res://shaders/toon.gdshader")
 

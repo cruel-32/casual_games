@@ -2,6 +2,7 @@ extends Control
 ## 1단계: 닉네임 입력 + 서버 선택(이름만 노출) + 접속
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
+const GameRegistry := preload("res://scripts/core/game_registry.gd")
 
 var app: Node
 var _nick: LineEdit
@@ -23,8 +24,6 @@ func _ready() -> void:
 
     var title := UI.title("Small Party World", 64)
     root.add_child(title)
-    var sub := UI.title("3D 돌피하기 대결", 24)
-    root.add_child(sub)
 
     var center := CenterContainer.new()
     root.add_child(center)
@@ -65,7 +64,7 @@ func _ready() -> void:
         _buttons.append(local_btn)
 
     var offline_btn := UI.plain_button("오프라인 연습 (봇과 대결)")
-    offline_btn.pressed.connect(func(): app.start_offline_practice())
+    offline_btn.pressed.connect(_on_offline_pressed.bind(offline_btn))
     v.add_child(offline_btn)
     _buttons.append(offline_btn)
 
@@ -84,6 +83,21 @@ func _exit_tree() -> void:
     Net.connected.disconnect(_on_connected)
     Net.connection_failed.disconnect(_on_failed)
     Net.login_result.disconnect(_on_login_result)
+
+
+## 게임이 하나면 바로 시작, 여러 개면 고르는 메뉴
+func _on_offline_pressed(btn: Button) -> void:
+    var mods: Array = GameRegistry.all()
+    if mods.size() == 1:
+        app.start_offline_practice(mods[0].id)
+        return
+    var menu := PopupMenu.new()
+    menu.add_theme_font_size_override("font_size", 20)
+    for i in mods.size():
+        menu.add_item(mods[i].display_name, i)
+    menu.id_pressed.connect(func(i): app.start_offline_practice(mods[i].id))
+    add_child(menu)
+    menu.popup(Rect2i(Vector2i(btn.global_position + Vector2(0, btn.size.y)), Vector2i(int(btn.size.x), 0)))
 
 
 func _selected_server() -> Dictionary:

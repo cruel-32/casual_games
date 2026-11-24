@@ -2,7 +2,7 @@ class_name ItemPickup
 extends Area3D
 ## 아레나에 떨어지는 아이템. 캐릭터가 닿으면 획득 (거부되면 그대로 남음 — 예: 헬멧 2개 꽉 참)
 
-const Toon := preload("res://scripts/toon.gd")
+const Toon := preload("res://scripts/world/toon.gd")
 
 enum Kind { HELMET, FEATHER, BOOTS, SHIELD5, SHIELD10 }
 
@@ -30,6 +30,22 @@ var _pivot: Node3D
 
 static func kind_name(k: int) -> String:
     return NAMES[k]
+
+
+## 캐릭터에게 효과 적용. 받을 수 없으면 false (헬멧이 이미 최대) → 아이템이 그대로 남는다
+static func apply_to(f: Fighter, k: int) -> bool:
+    match k:
+        Kind.HELMET:
+            return f.add_helmet()
+        Kind.FEATHER:
+            f.give_double_jump()
+        Kind.BOOTS:
+            f.give_heavy()
+        Kind.SHIELD5:
+            f.give_invuln(5.0)
+        Kind.SHIELD10:
+            f.give_invuln(10.0)
+    return true
 
 
 func setup(game_ref: Node, k: int, pos: Vector3, life: float) -> void:
@@ -130,7 +146,7 @@ func _physics_process(delta: float) -> void:
         return
     for body in get_overlapping_bodies():
         var f := body as Fighter
-        if f and not f.dead and f.apply_item(kind):
+        if f and not f.dead and apply_to(f, kind):
             if game.has_method(&"on_item_picked"):
                 game.on_item_picked(self, f)
             queue_free()

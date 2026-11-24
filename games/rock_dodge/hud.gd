@@ -11,18 +11,23 @@ var _wind_label: Label
 var _skill_label: Label
 var _status_label: Label
 var _feed_labels: Array[Label] = []
+var _touch := false
 
 const BAR_W := 280.0
 const BAR_H := 14.0
 
 
 func _ready() -> void:
+    _touch = Fighter.touch_device()
     set_anchors_preset(Control.PRESET_FULL_RECT)
     mouse_filter = Control.MOUSE_FILTER_IGNORE
 
     _help = _make_label(16)
-    _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제" \
-            % ("" if game.is_online_match() else " · R 재시작")
+    if _touch:
+        _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 점프 · 밀치기 (길게 누르면 차징 돌진)"
+    else:
+        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제" \
+                % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
 
     _top = _make_label(26)
@@ -71,10 +76,10 @@ func _process(_delta: float) -> void:
     var sub := ""
     var human: Fighter = game.human
     match game.state:
-        ArenaGame.State.COUNTDOWN:
+        PartyGame.State.COUNTDOWN:
             center = str(int(ceil(game.countdown_time - game.state_time)))
             sub = "떨어지는 돌을 피하고, 상대를 밀쳐내 살아남으세요"
-        ArenaGame.State.PLAYING:
+        PartyGame.State.PLAYING:
             if game.state_time < 0.8:
                 center = "시작!"
             elif game.elapsed - game.last_intensify_time < 1.5 and alive > 1:
@@ -82,8 +87,9 @@ func _process(_delta: float) -> void:
                 sub = "남은 인원 %d명" % alive
             elif human and human.dead:
                 center = "탈락!"
-                sub = "생존 %s · 관전 중 · %s" % [_fmt_time(game.human_death_time), "끝나면 방으로 돌아갑니다" if game.is_online_match() else "R 다시 하기"]
-        ArenaGame.State.ENDED:
+                var watch_hint := "끝나면 방으로 돌아갑니다" if game.is_online_match() else ("끝나면 다시 할 수 있습니다" if _touch else "R 다시 하기")
+                sub = "생존 %s · 관전 중 · %s" % [_fmt_time(game.human_death_time), watch_hint]
+        PartyGame.State.ENDED:
             var w: Fighter = game.winner
             if total == 1:
                 center = "게임 오버"
@@ -95,6 +101,8 @@ func _process(_delta: float) -> void:
                 center = "%s 승리" % w.display_name
             var t: float = game.human_death_time if game.human_death_time >= 0.0 else game.elapsed
             var hint := "Enter 방으로 돌아가기" if game.is_online_match() else "R 다시 하기 · Enter 메인 메뉴"
+            if _touch:
+                hint = "아래 버튼을 누르세요"
             sub = "내 생존 시간 %s · 킬 %d · %s" % [_fmt_time(t), my_kills, hint]
     _center.text = center
     _sub.text = sub
@@ -145,6 +153,8 @@ func _skill_text() -> String:
         return "차징 %d%%" % int(c * 100.0) + extra
     if h.cooldown_timer > 0.0:
         return "쿨타임 %.1f초" % h.cooldown_timer + extra
+    if not h.is_on_floor():
+        return "공중에서는 밀치기 불가" + extra
     return "밀치기 준비 — 좌클릭/E" + extra
 
 

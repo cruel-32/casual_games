@@ -2,6 +2,7 @@ extends Control
 ## 3단계: 방 — 참가자 슬롯(최대 12), 레디, 방장 설정/강퇴/위임, 채팅, 게임 시작
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
+const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const SLOT_COLORS: Array[Color] = [
     Color(0.98, 0.55, 0.35), Color(0.85, 0.22, 0.22), Color(0.22, 0.42, 0.90), Color(0.95, 0.68, 0.08),
     Color(0.25, 0.65, 0.22), Color(0.55, 0.28, 0.85), Color(0.95, 0.45, 0.10), Color(0.10, 0.65, 0.70),
@@ -22,6 +23,8 @@ var _playing_overlay: Control
 var _s_name: LineEdit
 var _s_max: SpinBox
 var _s_bots: CheckBox
+var _s_game: OptionButton
+var _s_game_desc: Label
 var _settings_mode := ""
 
 
@@ -40,7 +43,7 @@ func _ready() -> void:
     _title = UI.title("", 36)
     _title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
     top.add_child(_title)
-    _state_badge_holder = UI.hbox(0)
+    _state_badge_holder = UI.hbox(8)
     _state_badge_holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     top.add_child(_state_badge_holder)
     var sp := Control.new()
@@ -86,6 +89,7 @@ func _ready() -> void:
     _chat_log.bbcode_enabled = true
     _chat_log.scroll_following = true
     _chat_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    _chat_log.custom_minimum_size.y = 80
     _chat_log.add_theme_font_size_override("normal_font_size", 16)
     _chat_log.add_theme_font_size_override("bold_font_size", 16)
     cv.add_child(_chat_log)
@@ -145,6 +149,7 @@ func _refresh(r: Dictionary) -> void:
     for c in _state_badge_holder.get_children():
         c.queue_free()
     var playing: bool = r.state == "playing"
+    _state_badge_holder.add_child(UI.badge(GameRegistry.display_name(String(r.get("game", ""))), UI.SECONDARY))
     _state_badge_holder.add_child(UI.badge("게임 중" if playing else "대기 중", UI.DANGER if playing else UI.GOOD))
     _playing_overlay.visible = playing
 
@@ -256,7 +261,14 @@ func _small_button(text: String) -> Button:
 # ---------------------------------------------------------------- 설정
 func _build_settings(r: Dictionary, host: bool) -> void:
     # 방장이 입력 중일 때 덮어쓰지 않도록, 방장 화면은 값만 갱신하고 위젯은 유지
+    var module = GameRegistry.get_or_default(String(r.get("game", "")))
     if host and _settings_mode == "host":
+        var gi := _module_index(module.id)
+        if _s_game.selected != gi:
+            _s_game.select(gi)
+        _s_game_desc.text = module.description
+        _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, module.max_players)
+        _s_bots.disabled = not module.supports_bots
         _s_max.set_value_no_signal(int(r.max))
         _s_bots.set_pressed_no_signal(bool(r.bot_fill))
         if not _s_name.has_focus():
@@ -267,6 +279,17 @@ func _build_settings(r: Dictionary, host: bool) -> void:
         c.queue_free()
     _settings_box.add_child(UI.label("게임 설정", 20))
     if host:
+        _settings_box.add_child(UI.label("게임", 15, UI.MUTED))
+        _s_game = OptionButton.new()
+        _s_game.custom_minimum_size.y = 44
+        for m in GameRegistry.all():
+            _s_game.add_item(m.display_name)
+        _s_game.select(_module_index(module.id))
+        _s_game.item_selected.connect(func(i): Net.update_settings({"game": GameRegistry.all()[i].id}))
+        _settings_box.add_child(_s_game)
+        _s_game_desc = UI.label(module.description, 14, UI.MUTED)
+        _s_game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _settings_box.add_child(_s_game_desc)
         _settings_box.add_child(UI.label("방 이름", 15, UI.MUTED))
         _s_name = UI.line_edit("방 이름", String(r.name), Net.ROOM_NAME_MAX)
         _s_name.text_submitted.connect(func(t): Net.update_settings({"name": t}))
@@ -275,7 +298,7 @@ func _build_settings(r: Dictionary, host: bool) -> void:
         _settings_box.add_child(UI.label("최대 인원 (2~%d명)" % Net.MAX_PLAYERS_LIMIT, 15, UI.MUTED))
         _s_max = SpinBox.new()
         _s_max.min_value = 2
-        _s_max.max_value = Net.MAX_PLAYERS_LIMIT
+        _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, module.max_players)
         _s_max.value = int(r.max)
         _s_max.custom_minimum_size.y = 44
         _s_max.value_changed.connect(func(v): Net.update_settings({"max": int(v)}))
@@ -283,12 +306,25 @@ func _build_settings(r: Dictionary, host: bool) -> void:
         _s_bots = CheckBox.new()
         _s_bots.text = "빈 자리를 봇으로 채우기"
         _s_bots.button_pressed = bool(r.bot_fill)
+        _s_bots.disabled = not module.supports_bots
         _s_bots.toggled.connect(func(on): Net.update_settings({"bot_fill": on}))
         _settings_box.add_child(_s_bots)
     else:
+        _settings_box.add_child(UI.label("게임: %s" % module.display_name, 18))
+        var desc := UI.label(module.description, 14, UI.MUTED)
+        desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        _settings_box.add_child(desc)
         _settings_box.add_child(UI.label("최대 인원: %d명" % int(r.max), 18))
         _settings_box.add_child(UI.label("빈 자리 봇 채우기: %s" % ("켜짐" if r.bot_fill else "꺼짐"), 18))
         _settings_box.add_child(UI.label("설정은 방장만 바꿀 수 있습니다", 14, UI.MUTED))
+
+
+func _module_index(id: String) -> int:
+    var mods: Array = GameRegistry.all()
+    for i in mods.size():
+        if mods[i].id == id:
+            return i
+    return 0
 
 
 # ---------------------------------------------------------------- 레디 / 채팅

@@ -2,6 +2,7 @@ extends Control
 ## 2단계: 로비 — 방 목록(실시간), 방 만들기, 입장
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
+const GameRegistry := preload("res://scripts/core/game_registry.gd")
 
 var app: Node
 var _list: VBoxContainer
@@ -11,6 +12,8 @@ var _dialog: Control
 var _d_name: LineEdit
 var _d_max: SpinBox
 var _d_bots: CheckBox
+var _d_game: OptionButton
+var _d_game_desc: Label
 
 
 func _ready() -> void:
@@ -104,7 +107,7 @@ func _make_row(r: Dictionary) -> Control:
     info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     h.add_child(info)
     info.add_child(UI.label(String(r.name), 22))
-    var sub := "방장 %s" % r.host_nick
+    var sub := "%s  ·  방장 %s" % [GameRegistry.display_name(String(r.get("game", ""))), r.host_nick]
     if r.bot_fill:
         sub += "  ·  빈자리 봇 채우기"
     info.add_child(UI.label(sub, 15, UI.MUTED))
@@ -141,6 +144,16 @@ func _build_dialog() -> void:
     var v := UI.centered_panel(_dialog, 440)
 
     v.add_child(UI.label("방 만들기", 26))
+    v.add_child(UI.label("게임", 16, UI.MUTED))
+    _d_game = OptionButton.new()
+    _d_game.custom_minimum_size.y = 46
+    for m in GameRegistry.all():
+        _d_game.add_item(m.display_name)
+    _d_game.item_selected.connect(_on_dialog_game_changed)
+    v.add_child(_d_game)
+    _d_game_desc = UI.label("", 14, UI.MUTED)
+    _d_game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    v.add_child(_d_game_desc)
     v.add_child(UI.label("방 이름", 16, UI.MUTED))
     _d_name = UI.line_edit("방 이름", "", Net.ROOM_NAME_MAX)
     _d_name.text_submitted.connect(func(_t): _on_create())
@@ -170,7 +183,21 @@ func _build_dialog() -> void:
     h.add_child(ok)
 
 
+func _dialog_module():
+    return GameRegistry.all()[maxi(_d_game.selected, 0)]
+
+
+func _on_dialog_game_changed(_i: int) -> void:
+    var m = _dialog_module()
+    _d_game_desc.text = m.description
+    _d_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, m.max_players)
+    _d_bots.disabled = not m.supports_bots
+    if not m.supports_bots:
+        _d_bots.button_pressed = false
+
+
 func _open_dialog() -> void:
+    _on_dialog_game_changed(_d_game.selected)
     _d_name.text = "%s의 방" % Net.nickname
     _dialog.visible = true
     _d_name.grab_focus()
@@ -179,7 +206,7 @@ func _open_dialog() -> void:
 
 func _on_create() -> void:
     _dialog.visible = false
-    Net.create_room(_d_name.text, int(_d_max.value), _d_bots.button_pressed)
+    Net.create_room(_d_name.text, int(_d_max.value), _d_bots.button_pressed, _dialog_module().id)
 
 
 func _on_logout() -> void:

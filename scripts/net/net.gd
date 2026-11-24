@@ -17,6 +17,8 @@ signal error_message(text: String)
 signal chat_received(nick: String, text: String, system: bool)
 signal game_started(room: Dictionary)
 
+const GameRegistry := preload("res://scripts/core/game_registry.gd")
+
 const DEFAULT_PORT := 7777
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
 
@@ -28,7 +30,7 @@ const SERVER_LIST := [
 ## 개발용 (에디터 실행·디버그 빌드에서만 목록에 표시, 릴리스·웹 빌드에선 숨김)
 const LOCAL_TEST_SERVER := {"name": "로컬 테스트 (이 PC)", "url": "ws://127.0.0.1:7777"}
 const MAX_PLAYERS_LIMIT := 12
-const MIN_PLAYERS_TO_START := 2       # 봇 채우기가 꺼져 있을 때 필요한 최소 인원
+## 시작 최소 인원은 게임 모듈별 min_players (games/<게임>/module.gd)
 const NICK_MIN := 2
 const NICK_MAX := 12
 const ROOM_NAME_MAX := 20
@@ -106,8 +108,10 @@ static func start_block_reason(r: Dictionary) -> String:
     if r.get("state", "") != "waiting":
         return "이미 게임 중입니다"
     var members: Array = r.get("members", [])
-    if members.size() < MIN_PLAYERS_TO_START and not r.get("bot_fill", false):
-        return "최소 %d명이 필요합니다 (또는 봇 채우기)" % MIN_PLAYERS_TO_START
+    var module = GameRegistry.get_or_default(String(r.get("game", "")))
+    var bots_ok: bool = r.get("bot_fill", false) and module.supports_bots
+    if members.size() < module.min_players and not bots_ok:
+        return "최소 %d명이 필요합니다%s" % [module.min_players, " (또는 봇 채우기)" if module.supports_bots else ""]
     for m in members:
         if not m.get("host", false) and not m.get("ready", false):
             return "모두 레디해야 시작할 수 있습니다"
@@ -168,7 +172,7 @@ func _room_snapshot(rid: int) -> Dictionary:
             "host": pid == r.host,
         })
     return {
-        "id": r.id, "name": r.name, "host": r.host, "max": r.max,
+        "id": r.id, "name": r.name, "host": r.host, "max": r.max, "game": r.game,
         "bot_fill": r.bot_fill, "state": r.state, "members": members,
     }
 
@@ -178,7 +182,7 @@ func _public_rooms() -> Array:
     for rid in _rooms:
         var r: Dictionary = _rooms[rid]
         out.append({
-            "id": rid, "name": r.name, "host_nick": _players[r.host].nick,
+            "id": rid, "name": r.name, "host_nick": _players[r.host].nick, "game": r.game,
             "count": r.members.size(), "max": r.max, "state": r.state, "bot_fill": r.bot_fill,
         })
     out.sort_custom(func(a, b): return a.id < b.id)
@@ -309,7 +313,8 @@ func _respond_status(peer: StreamPeerTCP, request: String) -> void:
 func _status_data() -> Dictionary:
     var room_list := []
     for r in _public_rooms():
-        room_list.append({"name": r.name, "host": r.host_nick, "players": r.count, "max": r.max, "state": r.state})
+        room_list.append({"name": r.name, "host": r.host_nick, "game": GameRegistry.display_name(r.game),
+                "players": r.count, "max": r.max, "state": r.state})
     return {
         "status": "ok",
         "game": ProjectSettings.get_setting("application/config/name"),
@@ -327,11 +332,11 @@ func _status_html() -> String:
     var uptime := "%d일 %02d:%02d:%02d" % [up / 86400, (up / 3600) % 24, (up / 60) % 60, up % 60]
     var rows := ""
     for r in d.rooms:
-        rows += "<tr><td>%s</td><td>%s</td><td>%d / %d</td><td>%s</td></tr>" % [
-            String(r.name).xml_escape(), String(r.host).xml_escape(), r.players, r.max,
+        rows += "<tr><td>%s</td><td>%s</td><td>%s</td><td>%d / %d</td><td>%s</td></tr>" % [
+            String(r.name).xml_escape(), String(r.game).xml_escape(), String(r.host).xml_escape(), r.players, r.max,
             "게임 중" if r.state == "playing" else "대기 중"]
     if rows == "":
-        rows = "<tr><td colspan=4 class=m>열린 방 없음</td></tr>"
+        rows = "<tr><td colspan=5 class=m>열린 방 없음</td></tr>"
     return """<!doctype html><html lang=ko><meta charset=utf-8><meta name=viewport content="width=device-width">
 <title>%s 서버</title><meta http-equiv=refresh content=10>
 <style>body{font-family:system-ui,sans-serif;background:linear-gradient(#6aa8f8,#b8edd2);min-height:100vh;margin:0;display:flex;justify-content:center;align-items:flex-start}
@@ -340,7 +345,7 @@ h1{margin:0 0 4px}.ok{color:#2e9e5b;font-weight:700}.m{color:#778}table{width:10
 td,th{padding:8px;border-bottom:1px solid #eef;text-align:left}</style>
 <div class=c><h1>%s</h1><p class=ok>● 서버 정상</p>
 <p>접속 %d · 로그인 %d명 · 방 %d개<br><span class=m>가동 %s · Godot %s · 10초마다 새로고침</span></p>
-<table><tr><th>방</th><th>방장</th><th>인원</th><th>상태</th></tr>%s</table></div></html>""" % [
+<table><tr><th>방</th><th>게임</th><th>방장</th><th>인원</th><th>상태</th></tr>%s</table></div></html>""" % [
         d.game, d.game, d.connections, d.players, d.rooms.size(), uptime, d.godot, rows]
 
 
@@ -371,7 +376,7 @@ func c_request_rooms() -> void:
 
 
 @rpc("any_peer", "call_remote", "reliable")
-func c_create_room(room_name: String, max_players: int, bot_fill: bool) -> void:
+func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id: String) -> void:
     var id := _sender()
     if not is_server or id == 0:
         return
@@ -381,15 +386,16 @@ func c_create_room(room_name: String, max_players: int, bot_fill: bool) -> void:
     room_name = room_name.strip_edges().left(ROOM_NAME_MAX)
     if room_name == "":
         room_name = "%s의 방" % _players[id].nick
+    var module = GameRegistry.get_or_default(game_id)
     var rid := _next_room_id
     _next_room_id += 1
     _rooms[rid] = {
-        "id": rid, "name": room_name, "host": id,
-        "max": clampi(max_players, 2, MAX_PLAYERS_LIMIT), "bot_fill": bot_fill,
+        "id": rid, "name": room_name, "host": id, "game": module.id,
+        "max": clampi(max_players, 2, mini(MAX_PLAYERS_LIMIT, module.max_players)), "bot_fill": bot_fill,
         "state": "waiting", "members": [id], "ready": {}, "returned": {},
     }
     _players[id].room = rid
-    print("[server] 방 생성 #%d '%s' by %s" % [rid, room_name, _players[id].nick])
+    print("[server] 방 생성 #%d '%s' [%s] by %s" % [rid, room_name, module.id, _players[id].nick])
     _send_room(rid)
     _room_system_chat(rid, "방이 만들어졌습니다")
     _broadcast_room_list()
@@ -459,9 +465,20 @@ func c_update_settings(settings: Dictionary) -> void:
         var n := String(settings.name).strip_edges().left(ROOM_NAME_MAX)
         if n != "":
             r.name = n
+    if settings.has("game"):
+        var m = GameRegistry.find(String(settings.game))
+        if m != null and m.id != r.game:
+            r.game = m.id
+            _room_system_chat(rid, "게임이 '%s'(으)로 바뀌었습니다" % m.display_name)
+            if r.max > m.max_players:
+                r.max = maxi(m.max_players, r.members.size())
+            if not m.supports_bots:
+                r.bot_fill = false
+            r.ready.clear()     # 게임이 바뀌면 다시 레디
+    var game_max: int = GameRegistry.get_or_default(r.game).max_players
     if settings.has("max"):
         var want := int(settings.max)
-        r.max = clampi(want, maxi(2, r.members.size()), MAX_PLAYERS_LIMIT)
+        r.max = clampi(want, maxi(2, r.members.size()), mini(MAX_PLAYERS_LIMIT, game_max))
         if r.max != want:
             s_error.rpc_id(id, "현재 인원(%d명)보다 적게 줄일 수 없습니다" % r.members.size())
     if settings.has("bot_fill"):
@@ -595,6 +612,7 @@ func s_game_start(snap: Dictionary) -> void:
     room = snap
     match_config = snap.duplicate(true)
     match_config["my_id"] = my_id
+    match_config["game_id"] = String(snap.get("game", ""))
     game_started.emit(snap)
 
 
@@ -667,8 +685,8 @@ func request_rooms() -> void:
     c_request_rooms.rpc_id(1)
 
 
-func create_room(room_name: String, max_players: int, bot_fill: bool) -> void:
-    c_create_room.rpc_id(1, room_name, max_players, bot_fill)
+func create_room(room_name: String, max_players: int, bot_fill: bool, game_id: String) -> void:
+    c_create_room.rpc_id(1, room_name, max_players, bot_fill, game_id)
 
 
 func join_room(rid: int) -> void:

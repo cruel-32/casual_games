@@ -1,9 +1,11 @@
 class_name Sweeper
 extends Node3D
 ## 아레나 중앙 축을 중심으로 시계침(풍차)처럼 도는 바닥 기둥. 양쪽 팔이 있어 한 바퀴에 두 번 지나간다.
-## 점프로 넘어야 하며, 닿으면 풀차징 밀치기와 같은 효과(넉백 17 · 띄움 5.5 · 경직 1.8초).
+## - 물리적으로 막는 벽: 어느 쪽에서도 걸어서 통과할 수 없고 점프로 넘어야 한다
+## - 회전 진행 방향 쪽에서 닿으면 풀차징 밀치기와 같은 효과(넉백 17 · 띄움 5.5 · 경직 1.8초)
+## - 밀려 날아가다 기둥에 부딪히면 아레나 벽과 똑같이 '벽꽝'(경직 1.5배) — arena_wall 그룹
 
-const Toon := preload("res://scripts/toon.gd")
+const Toon := preload("res://scripts/world/toon.gd")
 
 @export var arm_length := 17.2
 @export var beam_radius := 0.3
@@ -21,7 +23,7 @@ var game: Node
 var arena_length_hint := -1.0          # 설정되면 팔 길이 = 아레나 반폭 - 0.8
 var angle := 0.0
 var _hit_cd := {}
-var _beam: Node3D
+var _beam: AnimatableBody3D
 
 
 func angular_speed() -> float:
@@ -74,9 +76,21 @@ func _ready() -> void:
     hc.position.y = 0.65
     hub.add_child(hc)
 
-    # 회전하는 기둥 (판정은 코드로, 물리 충돌 없음)
-    _beam = Node3D.new()
+    # 회전하는 기둥: 움직이는 물리 벽 (캐릭터만 막는 레이어 4, 벽꽝 대상)
+    _beam = AnimatableBody3D.new()
+    _beam.collision_layer = 4
+    _beam.collision_mask = 0
+    _beam.sync_to_physics = true
+    _beam.add_to_group(&"arena_wall")
     add_child(_beam)
+    var beam_shape := CapsuleShape3D.new()
+    beam_shape.radius = beam_radius
+    beam_shape.height = arm_length * 2.0 + beam_radius * 2.0
+    var col := CollisionShape3D.new()
+    col.shape = beam_shape
+    col.rotation.z = PI * 0.5                         # Y축 캡슐 → X축으로 눕힘
+    col.position.y = beam_height
+    _beam.add_child(col)
     var red := Toon.make(Color(0.9, 0.25, 0.2), {"shade_softness": 0.06, "rim_strength": 0.5})
     var white := Toon.make(Color(0.96, 0.94, 0.9), {"shade_softness": 0.06, "rim_strength": 0.5})
     var segs := 14
@@ -129,15 +143,20 @@ func _physics_process(delta: float) -> void:
         var along := p.dot(dir)
         if absf(along) > arm_length + 0.3:
             continue
-        var perp := (p - dir * along).length()
-        if perp > beam_radius + Fighter.RADIUS:
+        var perp_vec := p - dir * along
+        var perp := perp_vec.length()
+        # 물리 충돌로 캐릭터는 기둥 표면에 막혀 있으므로 약간의 여유를 둔다
+        if perp > beam_radius + Fighter.RADIUS + 0.12:
             continue
         if feet > beam_height + beam_radius - 0.05:
             continue                                   # 점프로 넘음
-        # 회전 진행 방향(접선)으로 쳐낸다
+        # 회전 진행 방향(접선)
         var tangent := Vector3(w * p.z, 0.0, -w * p.x)
         if tangent.length() < 0.3:
             tangent = Vector3(-dir.z, 0.0, dir.x) * signf(along if absf(along) > 0.01 else 1.0)
+        # 기둥 뒤쪽(진행 반대편)에서 닿은 것은 그냥 벽 — 쳐내지 않음
+        if perp_vec.dot(tangent) < 0.0:
+            continue
         var push := tangent.normalized()
         _hit_cd[f] = hit_cooldown
         if f.receive_push(push * HIT_FORCE + Vector3.UP * HIT_LIFT, HIT_STUN, null):

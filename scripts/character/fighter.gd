@@ -10,8 +10,8 @@ extends CharacterBody3D
 
 signal died(fighter: Fighter)
 
-const Toon := preload("res://scripts/toon.gd")
-const Procedural := preload("res://scripts/procedural.gd")
+const Toon := preload("res://scripts/world/toon.gd")
+const Procedural := preload("res://scripts/world/procedural.gd")
 
 @export_group("Move")
 @export var move_speed := 6.0
@@ -54,6 +54,12 @@ const CLASH_FORCE := 11.0
 
 var game: Node
 var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
+
+# 터치 입력 (TouchControls 가 채움)
+var touch_mode := false
+var touch_move := Vector2.ZERO      # 스틱: x 오른쪽, y 아래(=뒤) — Input.get_vector 와 같은 방향
+var touch_jump := false             # 눌린 순간 true, 한 번 쓰고 false
+var touch_push := false             # 누르고 있는 동안 true (차징)
 
 # 조작 의도
 var intent_move := Vector3.ZERO     # 월드 방향, 길이 0~1
@@ -117,8 +123,10 @@ var arrow_shaft: MeshInstance3D
 var arrow_head: MeshInstance3D
 var arrow_mat: StandardMaterial3D
 var name_tag: Label3D
-var helmet_mi: MeshInstance3D
+var helmet_mi: Node3D
 var helmet_mat: ShaderMaterial
+var helmet_trim_mat: ShaderMaterial
+var helmet_extra: Node3D
 var boots: Array[Node3D] = []
 var wings: Node3D
 var pitch_pivot: Node3D
@@ -138,7 +146,8 @@ func _ready() -> void:
     _build_name_tag()
     if is_human:
         _build_camera()
-        Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+        if not touch_device():
+            Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
 # ================================================================ 조회
@@ -258,14 +267,40 @@ func _build_mannequin() -> void:
 
 
 func _build_item_visuals() -> void:
-    # 헬멧 (1개: 노랑, 2개: 주황·조금 크게)
-    var hm := SphereMesh.new()
-    hm.radius = 0.45
-    hm.height = 0.42
-    hm.is_hemisphere = true
-    helmet_mat = Toon.make(Color(1.0, 0.82, 0.2), {"rim_strength": 0.8, "shade_softness": 0.05})
-    helmet_mi = _part(head, hm, Vector3(0, 0.02, 0), helmet_mat)
+    # 헬멧: 눈에 띄는 안전모 (돔 + 둥근 챙 + 가운데 볏). 1개 = 노랑, 2개 = 빨강 + 크게
+    helmet_mat = Toon.make(Color(1.0, 0.82, 0.05), {"rim_strength": 1.2, "shade_softness": 0.04})
+    helmet_trim_mat = Toon.make(Color(1, 1, 1), {"rim_strength": 0.8, "shade_softness": 0.04})
+    helmet_mi = Node3D.new()
+    helmet_mi.position = Vector3(0, 0.1, 0)
     helmet_mi.visible = false
+    head.add_child(helmet_mi)
+    var dome := SphereMesh.new()
+    dome.radius = 0.48
+    dome.height = 0.46
+    dome.is_hemisphere = true
+    _part(helmet_mi, dome, Vector3.ZERO, helmet_mat)
+    var brim := CylinderMesh.new()
+    brim.top_radius = 0.6
+    brim.bottom_radius = 0.62
+    brim.height = 0.05
+    _part(helmet_mi, brim, Vector3(0, 0.01, 0), helmet_mat)
+    var crest := BoxMesh.new()
+    crest.size = Vector3(0.1, 0.08, 0.78)
+    _part(helmet_mi, crest, Vector3(0, 0.44, 0), helmet_trim_mat)
+    # 2중 헬멧 표시: 흰 띠 + 위로 솟은 두 번째 돔
+    helmet_extra = Node3D.new()
+    helmet_extra.visible = false
+    helmet_mi.add_child(helmet_extra)
+    var band := CylinderMesh.new()
+    band.top_radius = 0.47
+    band.bottom_radius = 0.5
+    band.height = 0.1
+    _part(helmet_extra, band, Vector3(0, 0.12, 0), helmet_trim_mat)
+    var dome2 := SphereMesh.new()
+    dome2.radius = 0.3
+    dome2.height = 0.26
+    dome2.is_hemisphere = true
+    _part(helmet_extra, dome2, Vector3(0, 0.36, 0), helmet_mat)
 
     # 무거운 신발
     var bm := BoxMesh.new()
@@ -294,11 +329,13 @@ func _build_item_visuals() -> void:
 func _update_item_fx() -> void:
     helmet_mi.visible = helmets > 0
     if helmets >= 2:
-        helmet_mat.set_shader_parameter("albedo", Color(1.0, 0.45, 0.15))
-        helmet_mi.scale = Vector3.ONE * 1.12
+        helmet_mat.set_shader_parameter("albedo", Color(0.9, 0.1, 0.08))
+        helmet_mi.scale = Vector3.ONE * 1.1
+        helmet_extra.visible = true
     else:
-        helmet_mat.set_shader_parameter("albedo", Color(1.0, 0.82, 0.2))
+        helmet_mat.set_shader_parameter("albedo", Color(1.0, 0.82, 0.05))
         helmet_mi.scale = Vector3.ONE
+        helmet_extra.visible = false
     for b in boots:
         b.visible = heavy_timer > 0.0
     wings.visible = double_jump_timer > 0.0
@@ -377,14 +414,11 @@ func _unhandled_input(event: InputEvent) -> void:
         return
     var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
 
+    if touch_mode:
+        return      # 터치 기기: 시점·버튼은 TouchControls 가 처리 (터치가 흉내 낸 마우스 입력은 무시)
     if event is InputEventMouseMotion and captured:
         var motion := event as InputEventMouseMotion
-        if dead:
-            pitch_pivot.rotation.y -= motion.relative.x * mouse_sensitivity
-        else:
-            rotate_y(-motion.relative.x * mouse_sensitivity)
-        pitch_pivot.rotation.x = clampf(pitch_pivot.rotation.x - motion.relative.y * mouse_sensitivity,
-                deg_to_rad(-70.0), deg_to_rad(50.0))
+        apply_look(motion.relative * mouse_sensitivity)
     elif event is InputEventMouseButton and event.pressed:
         var mb := event as InputEventMouseButton
         if not captured and mb.button_index == MOUSE_BUTTON_LEFT:
@@ -398,7 +432,37 @@ func _unhandled_input(event: InputEvent) -> void:
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 
+## 휴대폰·태블릿인가 (모바일 앱, 안드로이드/iOS 웹, iPad 웹)
+## 터치스크린 노트북은 제외 — 마우스 조작을 유지한다
+static func touch_device() -> bool:
+    if OS.has_feature("mobile") or OS.has_feature("web_android") or OS.has_feature("web_ios"):
+        return true
+    # iPad Safari 는 macOS 로 보고되지만 Mac 에는 터치스크린이 없다
+    return OS.has_feature("web_macos") and DisplayServer.is_touchscreen_available()
+
+
+## 시점 회전 (라디안 단위: x = 좌우, y = 상하). 마우스·터치 공용
+func apply_look(delta_rad: Vector2) -> void:
+    if pitch_pivot == null:
+        return
+    if dead:
+        pitch_pivot.rotation.y -= delta_rad.x
+    else:
+        rotate_y(-delta_rad.x)
+    pitch_pivot.rotation.x = clampf(pitch_pivot.rotation.x - delta_rad.y,
+            deg_to_rad(-70.0), deg_to_rad(50.0))
+
+
 func _read_human_input() -> void:
+    if touch_mode:
+        var tv := touch_move
+        var td := global_transform.basis * Vector3(tv.x, 0.0, tv.y)
+        td.y = 0.0
+        intent_move = td.normalized() * minf(tv.length(), 1.0) if td.length() > 0.001 else Vector3.ZERO
+        intent_jump = touch_jump
+        touch_jump = false
+        intent_charge = touch_push
+        return
     var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
     var v := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
     var d := global_transform.basis * Vector3(v.x, 0.0, v.y)
@@ -442,6 +506,8 @@ func _physics_process(delta: float) -> void:
         velocity.y = jump_velocity
         _jump_buffer = 0.0
         _coyote = 0.0
+        if charging:
+            _cancel_charge(false)       # 점프하면 차징 취소
     elif _jump_buffer > 0.0 and _coyote <= 0.0 and controllable and lock_timer <= 0.0 \
             and double_jump_timer > 0.0 and not _air_jump_used:
         velocity.y = jump_velocity * 0.95     # 깃털: 공중 점프 1회
@@ -520,23 +586,28 @@ func _tick_timers(delta: float) -> void:
 
 # ================================================================ 밀치기
 func _update_push(delta: float, pressed: bool) -> void:
+    var grounded := is_on_floor() or _coyote > 0.0
     if charging:
         if not can_act() or is_stunned():
             _cancel_charge()
+        elif not grounded:
+            _cancel_charge(false)       # 공중에 뜨면(점프·낙하·띄워짐) 차징 취소
         else:
             charge_time += delta
             if not pressed:
                 _release_push()
-    elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0:
+    elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0 and grounded:
         charging = true
         charge_time = 0.0
     _charge_was_pressed = pressed
 
 
-func _cancel_charge() -> void:
+## penalty: 경직 등으로 끊겼을 때 짧은 쿨타임. 점프로 스스로 취소한 경우는 쿨타임 없음
+func _cancel_charge(penalty: bool = true) -> void:
     charging = false
-    cooldown_total = maxf(cooldown_timer, 0.25)
-    cooldown_timer = cooldown_total
+    if penalty:
+        cooldown_total = maxf(cooldown_timer, 0.25)
+        cooldown_timer = cooldown_total
 
 
 func _release_push() -> void:
@@ -672,23 +743,26 @@ func kill() -> int:
     return 1
 
 
-## 아이템 획득. 거부하면 false (헬멧이 이미 최대)
-func apply_item(kind: int) -> bool:
-    match kind:
-        ItemPickup.Kind.HELMET:
-            if helmets >= MAX_HELMETS:
-                return false
-            helmets += 1
-        ItemPickup.Kind.FEATHER:
-            double_jump_timer = FEATHER_TIME
-        ItemPickup.Kind.BOOTS:
-            heavy_timer = BOOTS_TIME
-            knock = Vector3.ZERO
-        ItemPickup.Kind.SHIELD5:
-            invuln_timer = maxf(invuln_timer, 5.0)
-        ItemPickup.Kind.SHIELD10:
-            invuln_timer = maxf(invuln_timer, 10.0)
+# ---- 파워업 (게임 모듈의 아이템이 호출하는 공용 효과)
+## 헬멧 1개 추가. 이미 최대면 false
+func add_helmet() -> bool:
+    if helmets >= MAX_HELMETS:
+        return false
+    helmets += 1
     return true
+
+
+func give_double_jump(seconds: float = FEATHER_TIME) -> void:
+    double_jump_timer = maxf(double_jump_timer, seconds)
+
+
+func give_heavy(seconds: float = BOOTS_TIME) -> void:
+    heavy_timer = maxf(heavy_timer, seconds)
+    knock = Vector3.ZERO
+
+
+func give_invuln(seconds: float) -> void:
+    invuln_timer = maxf(invuln_timer, seconds)
 
 
 func _check_wall_slam() -> void:

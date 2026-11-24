@@ -3,8 +3,8 @@ extends Node3D
 ## 낙석: 생성 순간의 바람을 반영한 '등속 직선' 궤적으로 떨어진다(사선 낙하).
 ## 궤적이 직선이므로 착지 지점을 정확히 예측해 바닥에 표시할 수 있다.
 
-const WARN_SHADER := preload("res://shaders/warning.gdshader")
-const Toon := preload("res://scripts/toon.gd")
+const WARN_SHADER := preload("res://games/rock_dodge/warning.gdshader")
+const Toon := preload("res://scripts/world/toon.gd")
 
 var game: Node
 var radius := 1.0

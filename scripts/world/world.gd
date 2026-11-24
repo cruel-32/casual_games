@@ -1,11 +1,13 @@
 extends Node3D
-## Small Party World — 월드(하늘·조명·지형·풀·배경 오브젝트) 구성 후 ArenaGame(대결 규칙)을 올린다.
+## Small Party World — 공용 월드 (경기 씬 scenes/match.tscn 의 루트)
+## 하늘·조명·지형·풀·배경 오브젝트를 만든 뒤, 선택된 게임 모듈의 게임 노드(PartyGame)를 올린다.
+## 어떤 게임을 할지: 온라인이면 방장이 고른 Net.match_config.game_id, 오프라인이면 offline_game_id
 
-const GAME_SCRIPT := preload("res://scripts/game.gd")
-const Procedural := preload("res://scripts/procedural.gd")
-const TERRAIN_SCRIPT := preload("res://scripts/terrain.gd")
-const GRASS_SCRIPT := preload("res://scripts/grass.gd")
-const Toon := preload("res://scripts/toon.gd")
+const GameRegistry := preload("res://scripts/core/game_registry.gd")
+const Procedural := preload("res://scripts/world/procedural.gd")
+const TERRAIN_SCRIPT := preload("res://scripts/world/terrain.gd")
+const GRASS_SCRIPT := preload("res://scripts/world/grass.gd")
+const Toon := preload("res://scripts/world/toon.gd")
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
 const TERRAIN_SHADER := preload("res://shaders/terrain.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
@@ -334,10 +336,17 @@ func _build_ruins() -> void:
 
 
 # ---------------------------------------------------------------- 게임
+## 오프라인 연습에서 고른 게임 (메뉴가 경기 씬으로 넘어가기 전에 설정)
+static var offline_game_id := ""
+
+
 func _start_game() -> void:
-	var game: Node3D = GAME_SCRIPT.new()
+	var game_id := String(Net.match_config.get("game_id", offline_game_id))
+	var module = GameRegistry.get_or_default(game_id)
+	var game: Node3D = module.create_game()
 	game.name = "Game"
 	game.terrain = terrain
 	game.grass_material = grass_material
 	game.arena_half = arena_half
+	game.online_match = Net.match_config
 	add_child(game)

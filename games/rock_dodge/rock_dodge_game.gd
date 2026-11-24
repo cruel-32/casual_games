@@ -1,37 +1,33 @@
-class_name ArenaGame
-extends Node3D
-## 3D 돌피하기 대결 규칙
-## - 사각형 아레나(투명 벽) 안에서 플레이어 1 + 봇 N 대결, 마지막 생존자 승리
+class_name RockDodgeGame
+extends PartyGame
+## [게임 모듈] 3D 돌피하기 — 규칙
+## - 사각형 아레나(투명 벽) 안에서 플레이어 + 봇 대결, 마지막 생존자 승리
 ## - 하늘에서 무작위 낙석. 풍향/풍속이 계속 바뀌고 낙석은 바람을 받아 사선으로 떨어진다
 ## - 시간이 갈수록 낙석 빈도·크기·속도·바람이 강해진다
 
-const BOT_BRAIN := preload("res://scripts/bot_brain.gd")
+const BOT_BRAIN := preload("res://games/rock_dodge/bot_brain.gd")
 const WALL_SHADER := preload("res://shaders/arena_wall.gdshader")
-const HUD_SCRIPT := preload("res://scripts/hud.gd")
-const Toon := preload("res://scripts/toon.gd")
-const Procedural := preload("res://scripts/procedural.gd")
+const HUD_SCRIPT := preload("res://games/rock_dodge/hud.gd")
+const Toon := preload("res://scripts/world/toon.gd")
+const Procedural := preload("res://scripts/world/procedural.gd")
 
-enum State { COUNTDOWN, PLAYING, ENDED }
-
-@export var arena_half := 18.0
 @export var bot_count := 5
-@export var countdown_time := 3.0
 @export var rock_height := 32.0
 @export var difficulty_ramp_time := 90.0   # 이 시간(초)에 걸쳐 최고 난이도 도달
 @export var max_wind_start := 3.0
 @export var max_wind_end := 8.0
 @export var target_player_ratio := 0.0     # 캐릭터 근처를 노리는 낙석 비율 (0 = 아레나 전체 균등 랜덤)
-@export var last_two_rate_mult := 3.5
+@export var last_two_rate_mult := 3.5       # 2명 남았을 때 낙석 빈도 배수 (전원 생존 시 1배)
 
 @export_group("Items")
-@export var item_interval_min := 5.0
-@export var item_interval_max := 8.0
-@export var max_items := 3
+@export var item_interval_min := 2.0
+@export var item_interval_max := 3.5
+@export var max_items := 5
 @export var item_lifetime := 15.0
 ## 등장 가중치: 헬멧, 깃털, 무거운 신발, 무적5, 무적10
 @export var item_weights: Array[float] = [30.0, 25.0, 20.0, 17.0, 8.0]
 
-const KILL_CREDIT_TIME := 3.0      # 민 뒤 이 시간 안에 낙석에 맞으면 민 사람 득점      # 2명 남았을 때 낙석 빈도 배수 (전원 생존 시 1배)
+const KILL_CREDIT_TIME := 3.0      # 민 뒤 이 시간 안에 낙석에 맞으면 민 사람 득점
 
 const BOT_COLORS: Array[Color] = [
     Color(0.85, 0.22, 0.22), Color(0.22, 0.42, 0.90), Color(0.95, 0.68, 0.08),
@@ -39,21 +35,14 @@ const BOT_COLORS: Array[Color] = [
     Color(0.10, 0.65, 0.70), Color(0.88, 0.30, 0.60),
 ]
 
-var terrain: Node
-var grass_material: ShaderMaterial
-
-var fighters: Array[Fighter] = []
-var human: Fighter
 var rocks: Array = []
-var state := State.COUNTDOWN
-var state_time := 0.0
 var elapsed := 0.0
 var winner: Fighter = null
 var human_death_time := -1.0
-var last_intensify_time := -10.0
+var last_intensify_time := -10.0     # 탈락자 발생 → "낙석 증가!" 알림용
 var items: Array = []
 var kill_feed: Array = []            # [{text, color, time}]
-var _item_timer := 4.0     # 탈락자 발생 → 낙석 강화 알림용
+var _item_timer := 2.0
 
 var wind := Vector2.ZERO
 var _wind_target := Vector2.ZERO
@@ -63,13 +52,7 @@ var _rock_meshes: Array[ArrayMesh] = []
 var _rock_mats: Array[ShaderMaterial] = []
 var _wind_fx: CPUParticles3D
 var sweeper: Sweeper
-## 온라인 방에서 시작한 경우 Net.match_config (비어 있으면 오프라인 연습)
-## ※ 게임 동기화(4단계) 전까지: 다른 참가자 자리는 그 닉네임을 단 봇이 대신 움직인다
-var online_match: Dictionary = {}
-
-
-func is_playing() -> bool:
-    return state == State.PLAYING
+## ※ 게임 동기화(4단계) 전까지: 온라인 방의 다른 참가자 자리는 그 닉네임을 단 봇이 대신 움직인다
 
 
 func difficulty() -> float:
@@ -83,14 +66,6 @@ func elimination_pressure() -> float:
         return 1.0
     var alive := alive_fighters().size()
     return clampf(float(total - alive) / float(total - 2), 0.0, 1.0)
-
-
-func alive_fighters() -> Array[Fighter]:
-    var out: Array[Fighter] = []
-    for f in fighters:
-        if not f.dead:
-            out.append(f)
-    return out
 
 
 func _ready() -> void:
@@ -115,26 +90,7 @@ func _ready() -> void:
     var hud: Control = HUD_SCRIPT.new()
     hud.game = self
     layer.add_child(hud)
-
-
-func is_online_match() -> bool:
-    return not online_match.is_empty()
-
-
-func _unhandled_input(event: InputEvent) -> void:
-    if state == State.ENDED and event.is_action_pressed(&"ui_accept"):
-        leave_to_menu()
-        return
-    if not is_online_match() and event.is_action_pressed(&"restart"):
-        get_tree().reload_current_scene()
-
-
-## 결과 화면에서 Enter: 온라인이면 방으로, 오프라인이면 메인 메뉴로
-func leave_to_menu() -> void:
-    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-    if is_online_match():
-        Net.return_to_room()
-    get_tree().change_scene_to_file("res://scenes/app.tscn")
+    add_common_ui(layer)     # 터치 컨트롤·세로 화면 안내 (PartyGame)
 
 
 # ================================================================ 구성
@@ -393,24 +349,6 @@ func nearest_item(pos: Vector3, max_dist: float, f: Fighter) -> Node3D:
             best_d = d
             best = it
     return best
-
-
-func popup_text(pos: Vector3, text: String, color: Color) -> void:
-    var l := Label3D.new()
-    l.text = text
-    l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-    l.font_size = 56
-    l.outline_size = 12
-    l.pixel_size = 0.006
-    l.modulate = color
-    l.no_depth_test = true
-    add_child(l)
-    l.global_position = pos
-    var tw := create_tween()
-    tw.set_parallel(true)
-    tw.tween_property(l, "global_position", pos + Vector3(0, 1.0, 0), 0.9)
-    tw.tween_property(l, "modulate:a", 0.0, 0.6).set_delay(0.4)
-    tw.chain().tween_callback(l.queue_free)
 
 
 func _feed(text: String, color: Color) -> void:

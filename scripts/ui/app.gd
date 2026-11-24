@@ -6,7 +6,8 @@ const UI := preload("res://scripts/ui/ui_kit.gd")
 const TITLE := preload("res://scripts/ui/title_screen.gd")
 const LOBBY := preload("res://scripts/ui/lobby_screen.gd")
 const ROOM := preload("res://scripts/ui/room_screen.gd")
-const GAME_SCENE := "res://scenes/main.tscn"
+const GAME_SCENE := "res://scenes/match.tscn"
+const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const SETTINGS_PATH := "user://settings.cfg"
 
 var current_name := ""
@@ -54,6 +55,8 @@ func _ready() -> void:
     else:
         show_screen("title")
     add_child(_toast)
+    if Fighter.touch_device():
+        add_child(load("res://scripts/ui/rotate_hint.gd").new())
 
 
 func show_screen(screen: String) -> void:
@@ -117,8 +120,9 @@ func start_local_server(port: int) -> bool:
     return local_server_pid > 0
 
 
-func start_offline_practice() -> void:
+func start_offline_practice(game_id: String = "") -> void:
     Net.match_config = {}
+    load("res://scripts/world/world.gd").offline_game_id = game_id if game_id != "" else GameRegistry.default_id()
     get_tree().change_scene_to_file(GAME_SCENE)
 
 
