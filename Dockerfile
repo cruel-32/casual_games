@@ -18,5 +18,9 @@ COPY . /game
 RUN godot --headless --path /game --import >/dev/null 2>&1 || true
 
 ENV GAME_PORT=7777
-EXPOSE 7777
-CMD ["sh", "-c", "exec godot --headless --path /game -- --server --port ${GAME_PORT}"]
+ENV STATUS_PORT=7778
+EXPOSE 7777 7778
+# 상태 페이지의 /health 로 헬스체크 → docker ps 에 (healthy) 표시
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD wget -qO- "http://127.0.0.1:${STATUS_PORT}/health" || exit 1
+CMD ["sh", "-c", "exec godot --headless --path /game -- --server --port ${GAME_PORT} --status-port ${STATUS_PORT}"]

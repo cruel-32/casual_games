@@ -2,7 +2,8 @@ extends Node
 ## 온라인 로비/방 네트워크 (오토로드: /root/Net)
 ## - 같은 스크립트가 서버와 클라이언트 양쪽에서 실행된다 (WebSocket + RPC, 서버 권위)
 ## - 서버는 평문 ws:// 로 열고, 외부에서는 리버스 프록시(Caddy)가 wss:// (HTTPS 443) 를 받아 전달한다
-## - 실행 인자 `-- --server [--port 7777]` 이면 전용 서버로 시작
+## - 실행 인자 `-- --server [--port 7777] [--status-port 7778]` 이면 전용 서버로 시작
+## - 상태 페이지(HTTP): status-port 의 `/` (HTML), `/health` (헬스체크, "ok")
 ## - 클라이언트 → 서버: c_* RPC / 서버 → 클라이언트: s_* RPC
 
 signal connected
@@ -43,6 +44,9 @@ var _players := {}                      # peer_id -> {nick, room}
 var _rooms := {}                        # room_id -> {id, name, host, max, bot_fill, state, members[], ready{}, returned{}}
 var _next_room_id := 1
 var _nick_regex := RegEx.new()
+var _status_server: TCPServer
+var _status_clients: Array = []         # [{peer: StreamPeerTCP, buf: String, t: float}]
+var _started_at := 0.0
 
 
 func _ready() -> void:
@@ -59,7 +63,12 @@ func _ready() -> void:
         var i := args.find("--port")
         if i >= 0 and i + 1 < args.size():
             port = int(args[i + 1])
-        start_server(port)
+        var status_port := port + 1
+        var j := args.find("--status-port")
+        if j >= 0 and j + 1 < args.size():
+            status_port = int(args[j + 1])
+        if start_server(port) == OK:
+            _start_status_server(status_port)
 
 
 # ================================================================ 공통
@@ -230,6 +239,100 @@ func _check_all_returned(rid: int) -> void:
     r.ready.clear()
     r.returned.clear()
     _room_system_chat(rid, "모두 돌아왔습니다. 다시 레디해 주세요")
+
+
+# ---- 상태 페이지 (HTTP, 헬스체크용)
+func _start_status_server(port: int) -> void:
+    _started_at = Time.get_unix_time_from_system()
+    _status_server = TCPServer.new()
+    var err := _status_server.listen(port)
+    if err != OK:
+        printerr("[server] 상태 페이지 포트 %d 열기 실패 (%s)" % [port, error_string(err)])
+        _status_server = null
+        return
+    print("[server] 상태 페이지 — http://0.0.0.0:%d/  (헬스체크 /health)" % port)
+
+
+func _process(_delta: float) -> void:
+    if _status_server == null:
+        return
+    while _status_server.is_connection_available():
+        _status_clients.append({"peer": _status_server.take_connection(), "buf": "", "t": 0.0})
+    var keep: Array = []
+    for c in _status_clients:
+        var peer: StreamPeerTCP = c.peer
+        peer.poll()
+        c.t += _delta
+        if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
+            continue
+        var n := peer.get_available_bytes()
+        if n > 0:
+            c.buf += peer.get_utf8_string(mini(n, 4096))
+        if c.buf.contains("\r\n\r\n") or c.buf.contains("\n\n") or c.t > 2.0:
+            _respond_status(peer, c.buf)
+            peer.disconnect_from_host()
+        elif c.buf.length() < 16384:
+            keep.append(c)
+    _status_clients = keep
+
+
+func _respond_status(peer: StreamPeerTCP, request: String) -> void:
+    var path := "/"
+    var first := request.get_slice("\n", 0).split(" ")
+    if first.size() >= 2:
+        path = first[1]
+    var body: String
+    var ctype := "text/html; charset=utf-8"
+    if path.begins_with("/health"):
+        body = "ok"
+        ctype = "text/plain; charset=utf-8"
+    elif path.begins_with("/status.json"):
+        body = JSON.stringify(_status_data())
+        ctype = "application/json; charset=utf-8"
+    else:
+        body = _status_html()
+    var bytes := body.to_utf8_buffer()
+    var head := "HTTP/1.1 200 OK\r\nContent-Type: %s\r\nContent-Length: %d\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n" % [ctype, bytes.size()]
+    peer.put_data(head.to_utf8_buffer())
+    peer.put_data(bytes)
+
+
+func _status_data() -> Dictionary:
+    var room_list := []
+    for r in _public_rooms():
+        room_list.append({"name": r.name, "host": r.host_nick, "players": r.count, "max": r.max, "state": r.state})
+    return {
+        "status": "ok",
+        "game": ProjectSettings.get_setting("application/config/name"),
+        "godot": Engine.get_version_info().string,
+        "uptime_sec": int(Time.get_unix_time_from_system() - _started_at),
+        "connections": multiplayer.get_peers().size(),
+        "players": _players.size(),
+        "rooms": room_list,
+    }
+
+
+func _status_html() -> String:
+    var d := _status_data()
+    var up := int(d.uptime_sec)
+    var uptime := "%d일 %02d:%02d:%02d" % [up / 86400, (up / 3600) % 24, (up / 60) % 60, up % 60]
+    var rows := ""
+    for r in d.rooms:
+        rows += "<tr><td>%s</td><td>%s</td><td>%d / %d</td><td>%s</td></tr>" % [
+            String(r.name).xml_escape(), String(r.host).xml_escape(), r.players, r.max,
+            "게임 중" if r.state == "playing" else "대기 중"]
+    if rows == "":
+        rows = "<tr><td colspan=4 class=m>열린 방 없음</td></tr>"
+    return """<!doctype html><html lang=ko><meta charset=utf-8><meta name=viewport content="width=device-width">
+<title>%s 서버</title><meta http-equiv=refresh content=10>
+<style>body{font-family:system-ui,sans-serif;background:linear-gradient(#6aa8f8,#b8edd2);min-height:100vh;margin:0;display:flex;justify-content:center;align-items:flex-start}
+.c{background:#fff;margin:48px 16px;padding:28px 32px;border-radius:20px;box-shadow:0 8px 24px #0002;max-width:640px;width:100%%}
+h1{margin:0 0 4px}.ok{color:#2e9e5b;font-weight:700}.m{color:#778}table{width:100%%;border-collapse:collapse;margin-top:12px}
+td,th{padding:8px;border-bottom:1px solid #eef;text-align:left}</style>
+<div class=c><h1>%s</h1><p class=ok>● 서버 정상</p>
+<p>접속 %d · 로그인 %d명 · 방 %d개<br><span class=m>가동 %s · Godot %s · 10초마다 새로고침</span></p>
+<table><tr><th>방</th><th>방장</th><th>인원</th><th>상태</th></tr>%s</table></div></html>""" % [
+        d.game, d.game, d.connections, d.players, d.rooms.size(), uptime, d.godot, rows]
 
 
 # ---- 클라이언트 → 서버 요청
