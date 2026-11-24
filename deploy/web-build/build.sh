@@ -25,6 +25,9 @@ cp "$L/index.html" "$L/links.json" /tmp/web/
 cp "$L/hero.jpg" /game/fonts/BlackHanSans-Regular.ttf /tmp/web/assets/
 cp /game/ui/portraits/slot_0.png /game/ui/portraits/slot_1.png /game/ui/portraits/slot_2.png \
    /game/ui/portraits/slot_3.png /game/ui/portraits/slot_4.png /tmp/web/assets/
+# 게임 소개 페이지 (/about/)
+mkdir -p /tmp/web/about
+cp "$L/about/index.html" "$L"/about/*.jpg /tmp/web/about/
 
 if [ "${BUILD_WINDOWS:-1}" = "1" ]; then
     # 실행 파일(.exe)과 게임 데이터(.pck)가 따로 나온다 (백신 오탐을 줄이려고 pck를 exe에 합치지 않음)

@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small Party World — 게임 소개</title>
+<meta name="description" content="친구들과 최대 12명이 함께 즐기는 캐주얼 파티 게임. 하늘에서 떨어지는 돌을 피하고, 친구를 밀쳐내고, 끝까지 살아남으세요!">
+<meta property="og:title" content="Small Party World">
+<meta property="og:description" content="떨어지는 돌을 피하고, 밀쳐내고, 살아남자! 친구들과 즐기는 캐주얼 파티 게임">
+<meta property="og:image" content="/about/shot_1.jpg">
+<link rel="icon" href="/play/index.icon.png">
+<style>
+@font-face { font-family: "BHS"; src: url("/assets/BlackHanSans-Regular.ttf") format("truetype"); font-display: swap; }
+:root { --ink: #1c1f33; --cta: #ffd12e; --blue: #3d94ff; --coral: #ff7852; --green: #3dc26b; --soft: #eef3ff; --muted: #5b6075; }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; color: var(--ink); background: #5aa8f5;
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+}
+a { color: inherit; }
+.disp { font-family: "BHS", system-ui, sans-serif; letter-spacing: .5px; font-weight: 400; }
+.outline { text-shadow:
+  -3px -3px 0 var(--ink), 3px -3px 0 var(--ink), -3px 3px 0 var(--ink), 3px 3px 0 var(--ink),
+  0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), 0 7px 0 var(--ink); }
+.thin { text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink), 0 3px 0 var(--ink); }
+.inner { width: min(1080px, 92vw); margin: 0 auto; }
+
+/* 상단 바 */
+.nav { position: sticky; top: 0; z-index: 10; background: rgba(28,31,51,.82); backdrop-filter: blur(6px); }
+.nav .inner { display: flex; align-items: center; gap: 18px; height: 58px; }
+.nav .brand { color: #fff; text-decoration: none; font-size: 22px; margin-right: auto; }
+.nav .brand b:nth-child(1) { color: #4dadff; } .nav .brand b:nth-child(2) { color: var(--cta); } .nav .brand b:nth-child(3) { color: var(--coral); }
+.nav .brand b { font-weight: 400; }
+.nav a.link { color: #dfe6ff; text-decoration: none; font-size: 15px; }
+.nav a.link:hover { color: #fff; }
+@media (max-width: 720px) { .nav a.link { display: none; } }
+
+/* 버튼 */
+.btn {
+  display: inline-block; text-decoration: none; text-align: center; cursor: pointer;
+  border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink);
+  padding: 13px 22px 14px; font-size: 22px; color: var(--ink); background: #fff; transition: transform .06s, box-shadow .06s;
+}
+.btn:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
+.btn.cta { background: var(--cta); }
+.btn.blue { background: var(--blue); color: #fff; }
+.btn.small { font-size: 16px; padding: 8px 14px 9px; border-radius: 12px; box-shadow: 0 4px 0 var(--ink); }
+.btn.disabled { background: #d9dce5; color: #8b90a3; pointer-events: none; }
+.hidden { display: none !important; }
+
+/* 히어로 */
+.hero { position: relative; color: #fff; text-align: center; padding: 9vh 0 11vh; overflow: hidden; }
+.hero::before {
+  content: ""; position: absolute; inset: 0; z-index: -1;
+  background: linear-gradient(rgba(14,20,50,.5), rgba(14,20,50,.15) 45%, rgba(14,20,50,.6)),
+              url("/assets/hero.jpg") center / cover no-repeat;
+}
+.hero h1 { font-size: clamp(44px, 8vw, 104px); line-height: 1.05; margin: 0; }
+.hero h1 span { white-space: nowrap; }
+.hero h1 span:nth-child(1) { color: #4dadff; } .hero h1 span:nth-child(2) { color: var(--cta); } .hero h1 span:nth-child(3) { color: var(--coral); }
+.hero .tag { font-size: clamp(17px, 2.6vw, 26px); margin: 18px 0 6px; }
+.hero .faces { display: flex; justify-content: center; margin: 18px 0 26px; }
+.hero .faces img { width: clamp(60px, 10vw, 110px); margin: 0 -9px; filter: drop-shadow(0 5px 0 rgba(28,31,51,.35)); }
+.hero .actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+.hero .actions .btn { font-size: 26px; min-width: 240px; }
+.hero .note { margin-top: 18px; font-size: 14px; opacity: .9; }
+
+/* 섹션 */
+section { padding: 70px 0; }
+section.white { background: #fff; }
+section.soft { background: var(--soft); }
+section.blue { background: #5aa8f5; color: #fff; }
+.sec-title { font-size: clamp(30px, 4.4vw, 46px); margin: 0 0 10px; text-align: center; }
+.sec-sub { text-align: center; color: var(--muted); margin: 0 0 40px; font-size: 17px; line-height: 1.6; }
+section.blue .sec-sub { color: #eef4ff; }
+
+/* 카드 */
+.card {
+  background: #fff; color: var(--ink); border: 3px solid var(--ink); border-radius: 22px;
+  box-shadow: 0 7px 0 var(--ink); padding: 24px;
+}
+.grid { display: grid; gap: 22px; }
+.g3 { grid-template-columns: repeat(3, 1fr); }
+.g2 { grid-template-columns: repeat(2, 1fr); }
+@media (max-width: 860px) { .g3, .g2 { grid-template-columns: 1fr; } }
+.feat h3 { margin: 12px 0 8px; font-size: 25px; }
+.feat p { margin: 0; color: var(--muted); line-height: 1.6; font-size: 16px; }
+.icon { width: 60px; height: 60px; border-radius: 18px; border: 3px solid var(--ink); display: grid; place-items: center; font-size: 30px; box-shadow: 0 4px 0 var(--ink); }
+
+/* 스크린샷 */
+.shots { display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; gap: 18px; }
+.shots figure { margin: 0; border: 3px solid var(--ink); border-radius: 20px; overflow: hidden; box-shadow: 0 7px 0 var(--ink); background: #233; position: relative; }
+.shots figure:first-child { grid-row: span 2; }
+.shots img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.shots figcaption { position: absolute; left: 12px; bottom: 12px; background: rgba(28,31,51,.82); color: #fff; padding: 5px 11px; border-radius: 10px; font-size: 14px; }
+@media (max-width: 860px) { .shots { grid-template-columns: 1fr; grid-template-rows: none; } .shots figure:first-child { grid-row: auto; } }
+
+/* 규칙 단계 */
+.steps { counter-reset: s; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+@media (max-width: 860px) { .steps { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
+.step { position: relative; padding-top: 34px; }
+.step::before {
+  counter-increment: s; content: counter(s); position: absolute; top: -18px; left: 20px;
+  width: 44px; height: 44px; border-radius: 50%; background: var(--cta); border: 3px solid var(--ink);
+  display: grid; place-items: center; font-family: "BHS", sans-serif; font-size: 22px; box-shadow: 0 3px 0 var(--ink);
+}
+.step h3 { margin: 0 0 6px; font-size: 21px; }
+.step p { margin: 0; color: var(--muted); line-height: 1.55; font-size: 15px; }
+
+/* 아이템 */
+.items { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+@media (max-width: 860px) { .items { grid-template-columns: repeat(2, 1fr); } }
+.item { text-align: center; padding: 18px 12px; }
+.item .dot { width: 54px; height: 54px; border-radius: 50%; margin: 0 auto 10px; border: 3px solid var(--ink); }
+.item h4 { margin: 0 0 6px; font-size: 18px; }
+.item p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; }
+
+/* 조작법 */
+table.keys { width: 100%; border-collapse: collapse; font-size: 16px; }
+table.keys th, table.keys td { text-align: left; padding: 11px 8px; border-bottom: 2px dashed #d5dbee; vertical-align: top; }
+table.keys th { width: 26%; font-family: "BHS", sans-serif; font-weight: 400; font-size: 18px; }
+kbd { display: inline-block; background: var(--soft); border: 2px solid var(--ink); border-bottom-width: 4px; border-radius: 7px; padding: 1px 8px; font-size: 14px; font-family: inherit; }
+
+/* 다운로드 */
+.dl { text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.dl h3 { margin: 4px 0 0; font-size: 26px; }
+.dl p { margin: 0; color: var(--muted); font-size: 15px; line-height: 1.55; }
+.dl .btn { width: 100%; }
+.dl.mine { outline: 5px solid var(--cta); outline-offset: 4px; }
+.mine-badge { background: var(--cta); border: 2px solid var(--ink); border-radius: 999px; font-size: 13px; padding: 2px 10px; }
+.sub { font-size: 13px; color: #8b90a3; }
+
+/* FAQ */
+details { background: #fff; border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 5px 0 var(--ink); padding: 16px 20px; margin-bottom: 16px; }
+summary { cursor: pointer; font-family: "BHS", sans-serif; font-size: 19px; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "Q. "; color: var(--coral); }
+details p { margin: 12px 0 2px; color: var(--muted); line-height: 1.65; }
+
+footer { background: var(--ink); color: #b9c0dc; text-align: center; padding: 34px 0 40px; font-size: 14px; line-height: 1.8; }
+footer a { color: #fff; }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="inner">
+    <a class="brand disp" href="/about/"><b>Small</b> <b>Party</b> <b>World</b></a>
+    <a class="link" href="#play">게임 방법</a>
+    <a class="link" href="#items">아이템</a>
+    <a class="link" href="#controls">조작법</a>
+    <a class="link" href="#faq">FAQ</a>
+    <a class="btn small cta disp" href="#download">다운로드</a>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="inner">
+    <h1 class="disp outline"><span>Small</span> <span>Party</span> <span>World</span></h1>
+    <p class="tag disp thin">하늘에서 돌이 쏟아진다! 피하고, 밀쳐내고, 끝까지 살아남자!</p>
+    <div class="faces">
+      <img src="/assets/slot_0.png" alt=""><img src="/assets/slot_1.png" alt=""><img src="/assets/slot_2.png" alt="">
+      <img src="/assets/slot_3.png" alt=""><img src="/assets/slot_4.png" alt="">
+    </div>
+    <div class="actions">
+      <a class="btn cta disp" id="hero-dl" href="#download">무료 다운로드</a>
+      <a class="btn blue disp" id="hero-play" href="/play/">웹에서 바로 체험</a>
+    </div>
+    <p class="note" id="hero-note">무료 · 최대 12명 온라인 · 친구가 없으면 봇과 함께</p>
+  </div>
+</header>
+
+<section class="white">
+  <div class="inner">
+    <h2 class="sec-title disp">이런 게임이에요</h2>
+    <p class="sec-sub">Small Party World는 친구들과 가볍게 모여 한 판씩 즐기는 캐주얼 파티 게임 모음이에요.<br>첫 번째 게임 <b>3D 돌피하기</b>로 시작합니다.</p>
+    <div class="grid g3">
+      <div class="card feat">
+        <div class="icon" style="background:#ffe8df">🪨</div>
+        <h3 class="disp">피하고</h3>
+        <p>하늘에서 떨어지는 돌의 그림자를 보고 재빨리 피하세요. 시간이 갈수록 돌은 더 크고, 더 빠르고, 더 많아집니다.</p>
+      </div>
+      <div class="card feat">
+        <div class="icon" style="background:#fff3c4">💥</div>
+        <h3 class="disp">밀쳐내고</h3>
+        <p>다른 플레이어를 밀쳐 돌 밑으로 보내 버리세요. 꾹 눌러 차징하면 멀리 돌진하며 잠깐 무적이 됩니다.</p>
+      </div>
+      <div class="card feat">
+        <div class="icon" style="background:#dff5e6">🏆</div>
+        <h3 class="disp">살아남자</h3>
+        <p>마지막까지 버틴 한 명이 승리! 회전하는 기둥과 바람까지 피해 가며 끝까지 살아남으세요.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="soft">
+  <div class="inner">
+    <h2 class="sec-title disp">게임 화면</h2>
+    <p class="sec-sub">귀여운 카툰풍 캐릭터와 넓은 초원 아레나</p>
+    <div class="shots">
+      <figure><img src="/about/shot_1.jpg" alt="아레나 전경" loading="lazy"><figcaption>아레나 전경</figcaption></figure>
+      <figure><img src="/about/shot_2.jpg" alt="회전 기둥과 캐릭터" loading="lazy"><figcaption>회전 기둥을 조심하세요</figcaption></figure>
+      <figure><img src="/about/shot_3.jpg" alt="쏟아지는 낙석" loading="lazy"><figcaption>쏟아지는 낙석을 피하세요</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section class="white" id="play">
+  <div class="inner">
+    <h2 class="sec-title disp">게임 방법</h2>
+    <p class="sec-sub">닉네임만 정하면 바로 시작!</p>
+    <div class="steps">
+      <div class="card step"><h3 class="disp">서버 접속</h3><p>닉네임을 입력하고 서버에 입장하세요. 회원가입은 필요 없어요.</p></div>
+      <div class="card step"><h3 class="disp">방 만들기·참가</h3><p>로비에서 방을 만들거나 친구 방에 들어가세요. 한 방에 최대 12명까지.</p></div>
+      <div class="card step"><h3 class="disp">레디!</h3><p>모두 준비되면 방장이 시작해요. 빈자리는 봇으로 채울 수 있어요.</p></div>
+      <div class="card step"><h3 class="disp">최후의 1인</h3><p>돌에 맞으면 탈락! 헬멧이 있으면 한 번은 버틸 수 있어요.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="soft" id="items">
+  <div class="inner">
+    <h2 class="sec-title disp">아이템</h2>
+    <p class="sec-sub">아레나에 떨어지는 아이템을 먼저 주워서 유리하게!</p>
+    <div class="items">
+      <div class="card item"><div class="dot" style="background:#ffd133"></div><h4 class="disp">헬멧</h4><p>돌에 한 번 맞아도 버텨요. 최대 2개</p></div>
+      <div class="card item"><div class="dot" style="background:#d9f2ff"></div><h4 class="disp">깃털</h4><p>공중에서 한 번 더 점프 (2단 점프)</p></div>
+      <div class="card item"><div class="dot" style="background:#8a6a4f"></div><h4 class="disp">무거운 신발</h4><p>밀쳐져도 덜 밀려나요</p></div>
+      <div class="card item"><div class="dot" style="background:#5ae6ff"></div><h4 class="disp">무적 5초</h4><p>잠깐 동안 돌도 밀치기도 무시</p></div>
+      <div class="card item"><div class="dot" style="background:#ffbf26"></div><h4 class="disp">무적 10초</h4><p>더 오래 가는 무적</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="white" id="controls">
+  <div class="inner">
+    <h2 class="sec-title disp">조작법</h2>
+    <p class="sec-sub">PC는 키보드·마우스, 모바일은 화면 터치로 즐겨요</p>
+    <div class="grid g2">
+      <div class="card">
+        <h3 class="disp" style="margin:0 0 10px;font-size:24px">PC</h3>
+        <table class="keys">
+          <tr><th>이동</th><td><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd></td></tr>
+          <tr><th>시점</th><td>마우스</td></tr>
+          <tr><th>점프</th><td><kbd>Space</kbd></td></tr>
+          <tr><th>밀치기</th><td>좌클릭 또는 <kbd>E</kbd> — 길게 누르면 차징 돌진</td></tr>
+          <tr><th>마우스 해제</th><td><kbd>Esc</kbd></td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3 class="disp" style="margin:0 0 10px;font-size:24px">모바일</h3>
+        <table class="keys">
+          <tr><th>이동</th><td>화면 왼쪽 스틱</td></tr>
+          <tr><th>시점</th><td>화면 오른쪽 드래그 (버튼을 누른 채 끌어도 돼요)</td></tr>
+          <tr><th>점프</th><td>점프 버튼</td></tr>
+          <tr><th>밀치기</th><td>밀치기 버튼 — 길게 누르면 차징 돌진</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blue" id="download">
+  <div class="inner">
+    <h2 class="sec-title disp outline" style="color:#fff">다운로드</h2>
+    <p class="sec-sub">PC와 모바일 앱이 가장 부드럽게 돌아가요. 웹 버전은 체험판이에요.</p>
+    <div class="grid g3">
+      <div class="card dl" id="dl-win">
+        <div class="icon" style="background:#e3efff">🖥️</div>
+        <h3 class="disp">Windows</h3>
+        <p>압축을 풀고 <b>SmallPartyWorld.exe</b>를 실행하세요.</p>
+        <a class="btn cta disp" id="btn-win" href="/download/SmallPartyWorld-windows.zip">PC 버전 다운로드</a>
+        <span class="sub">Windows 10/11 · 64비트 · zip</span>
+      </div>
+      <div class="card dl" id="dl-android">
+        <div class="icon" style="background:#dff5e6">🤖</div>
+        <h3 class="disp">Android</h3>
+        <p id="txt-android">Google Play 출시를 준비하고 있어요.</p>
+        <a class="btn disabled disp" id="btn-android" href="#">출시 준비 중</a>
+        <span class="sub">Android 휴대폰·태블릿</span>
+      </div>
+      <div class="card dl" id="dl-ios">
+        <div class="icon" style="background:#f0e6ff">🍎</div>
+        <h3 class="disp">iPhone · iPad</h3>
+        <p id="txt-ios">App Store 출시를 준비하고 있어요.</p>
+        <a class="btn disabled disp" id="btn-ios" href="#">출시 준비 중</a>
+        <span class="sub">iOS · iPadOS</span>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:34px">
+      <a class="btn blue disp" id="btn-play" href="/play/">웹 체험판 실행</a>
+    </div>
+  </div>
+</section>
+
+<section class="soft" id="faq">
+  <div class="inner" style="max-width:820px">
+    <h2 class="sec-title disp">자주 묻는 질문</h2>
+    <p class="sec-sub">궁금한 점이 있나요?</p>
+    <details><summary>무료인가요?</summary><p>네, 무료로 즐길 수 있어요.</p></details>
+    <details><summary>혼자서도 할 수 있나요?</summary><p>방을 만들고 빈자리를 봇으로 채우면 혼자서도 바로 시작할 수 있어요. 접속 화면의 "오프라인 연습"으로 서버 없이 연습할 수도 있어요.</p></details>
+    <details><summary>Mac에서도 되나요?</summary><p>지금은 PC 버전이 Windows 전용이에요. Mac에서는 웹 체험판으로 즐겨 주세요.</p></details>
+    <details><summary>백신이 파일을 막아요.</summary><p>새로 나온 게임이라 일부 백신이 낯선 프로그램으로 판단해 막는 경우가 있어요. 공식 다운로드 주소(spw.cloudish.cloud)에서 받은 파일이라면 안심하고 실행해도 돼요.</p></details>
+    <details><summary>웹 버전이 느려요.</summary><p>웹 버전은 체험판이라 기기에 따라 느릴 수 있어요. 부드러운 플레이는 PC 버전이나 모바일 앱을 이용해 주세요.</p></details>
+    <details><summary>서버에 접속이 안 돼요.</summary><p><a href="https://spwsv.cloudish.cloud" target="_blank" rel="noopener">서버 상태 페이지</a>에서 서버가 정상인지 확인해 주세요. 게임 버전이 오래됐다면 최신 버전을 다시 받아 주세요.</p></details>
+  </div>
+</section>
+
+<footer>
+  <div class="inner">
+    <div class="disp" style="font-size:20px;color:#fff">Small Party World</div>
+    <a href="/">시작 페이지</a> · <a href="/play/">웹 체험판</a> · <a href="https://spwsv.cloudish.cloud" target="_blank" rel="noopener">서버 상태</a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var ua = navigator.userAgent || "";
+  var iPadOS = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || iPadOS;
+  var isAndroid = /Android/i.test(ua);
+  var isMobile = isIOS || isAndroid || /Mobi/i.test(ua);
+  var isWindows = /Windows/i.test(ua) && !isMobile;
+  var $ = function (id) { return document.getElementById(id); };
+
+  function enable(btn, url, label) {
+    btn.href = url; btn.textContent = label;
+    btn.classList.remove("disabled"); btn.classList.add("cta");
+  }
+  function mark(id) {
+    var c = $(id); c.classList.add("mine");
+    var b = document.createElement("span"); b.className = "mine-badge disp"; b.textContent = "내 기기";
+    c.insertBefore(b, c.firstChild);
+  }
+  function apply(links) {
+    var play = links.play || "/play/";
+    $("btn-play").href = play; $("hero-play").href = play;
+    if (links.windows) $("btn-win").href = links.windows;
+    if (links.android) { enable($("btn-android"), links.android, "Google Play에서 설치"); $("txt-android").textContent = "Google Play에서 설치하세요."; }
+    if (links.ios) { enable($("btn-ios"), links.ios, "App Store에서 설치"); $("txt-ios").textContent = "App Store에서 설치하세요."; }
+
+    // 접속한 기기에 맞는 다운로드를 강조하고, 상단 버튼도 바로 그 링크로
+    var hero = $("hero-dl");
+    if (isWindows) { mark("dl-win"); hero.href = $("btn-win").href; hero.textContent = "PC 버전 다운로드"; }
+    else if (isAndroid) { mark("dl-android"); if (links.android) { hero.href = links.android; hero.textContent = "앱 설치하기"; } }
+    else if (isIOS) { mark("dl-ios"); if (links.ios) { hero.href = links.ios; hero.textContent = "앱 설치하기"; } }
+    else { mark("dl-win"); }
+  }
+  fetch("/links.json", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(apply)
+    .catch(function () { apply({ windows: "/download/SmallPartyWorld-windows.zip", play: "/play/" }); });
+})();
+</script>
+</body>
+</html>
