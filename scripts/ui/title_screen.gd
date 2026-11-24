@@ -21,7 +21,7 @@ func _ready() -> void:
 
     var title := UI.title("Small Party World", 64)
     root.add_child(title)
-    var sub := UI.title("3D 똥피하기 대결", 24)
+    var sub := UI.title("3D 돌피하기 대결", 24)
     root.add_child(sub)
 
     var center := CenterContainer.new()
