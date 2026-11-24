@@ -29,14 +29,16 @@ services:
 
   # 웹 빌더: 소스를 웹으로 내보내 Caddy가 제공하는 폴더(spw.cloudish.cloud)에 배포
   #   docker compose --profile build run --rm web-build
-  #   (Windows 실행 파일도 함께: docker compose --profile build run --rm -e BUILD_WINDOWS=1 web-build)
+  #   웹 + Windows zip(/download/SmallPartyWorld-windows.zip) 을 함께 만든다. 웹만: -e BUILD_WINDOWS=0
   web-build:
     profiles: ["build"]
     build: deploy/web-build
-    image: small-party-world-web-builder:4.7.2
+    image: small-party-world-web-builder:4.7.2-zip
     volumes:
       - ./:/game
       - /srv/small_party_world/web:/out
+      # 빌드 스크립트는 이미지에 굽지 않고 매번 최신 파일을 씀 (스크립트만 바뀌면 이미지 재빌드 불필요)
+      - ./deploy/web-build/build.sh:/usr/local/bin/build-web:ro
 
 # networks:
 #   caddy:

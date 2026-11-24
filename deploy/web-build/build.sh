@@ -1,7 +1,9 @@
 #!/bin/sh
 # /game (프로젝트 소스) 를 웹으로 내보내 /out (Caddy가 제공하는 폴더) 에 배포
-# BUILD_WINDOWS=1 이면 Windows 실행 파일도 /out/download/ 에 함께 넣음
+# Windows 실행 파일(zip)도 /out/download/ 에 함께 넣음 (건너뛰려면 BUILD_WINDOWS=0)
 set -e
+echo "[web-build] 시작 (Windows zip: ${BUILD_WINDOWS:-1})"
+[ "${BUILD_WINDOWS:-1}" != "1" ] || command -v zip >/dev/null || { echo "[web-build] 실패: zip 없음 → docker compose build web-build 로 빌더 이미지를 다시 만드세요"; exit 1; }
 echo "[web-build] 리소스 임포트"
 godot --headless --path /game --import >/dev/null 2>&1 || true
 godot --headless --path /game --import >/dev/null 2>&1
@@ -12,7 +14,7 @@ godot --headless --path /game --export-release "Web" /tmp/web/index.html >/tmp/e
     || { tail -30 /tmp/export.log; exit 1; }
 test -f /tmp/web/index.wasm || { echo "[web-build] 실패: index.wasm 없음"; tail -30 /tmp/export.log; exit 1; }
 
-if [ "${BUILD_WINDOWS:-0}" = "1" ]; then
+if [ "${BUILD_WINDOWS:-1}" = "1" ]; then
     # 실행 파일(.exe)과 게임 데이터(.pck)가 따로 나온다 (백신 오탐을 줄이려고 pck를 exe에 합치지 않음)
     # → 둘이 같은 폴더에 있어야 실행되므로 zip 하나로 묶어 배포
     echo "[web-build] Windows 내보내기"

@@ -97,7 +97,7 @@ docker compose --profile build run --rm web-build   # 웹 게임도 같은 버�
 | 대상 | 방법 | 결과 |
 |---|---|---|
 | **웹** (spw.cloudish.cloud) | 홈서버 프로젝트 폴더에서 `docker compose --profile build run --rm web-build` | `/srv/small_party_world/web/` 교체 → 브라우저 새로고침 |
-| 웹 + Windows 실행 파일 | `docker compose --profile build run --rm -e BUILD_WINDOWS=1 web-build` | 위 + `https://spw.cloudish.cloud/download/SmallPartyWorld-windows.zip` (exe + pck, 압축 풀고 실행) |
+| (위 명령에 Windows 포함) | 기본으로 함께 만듦. 웹만: `-e BUILD_WINDOWS=0` | `https://spw.cloudish.cloud/download/SmallPartyWorld-windows.zip` (exe + pck, 압축 풀고 실행) |
 | 게임 서버 | `docker compose up -d --build` | 컨테이너 재시작 |
 | PC에서 직접 | 에디터 **프로젝트 → 내보내기** (Web / Windows / Linux 프리셋 준비됨, 결과는 `build/`) | 템플릿 필요: 에디터 → 내보내기 템플릿 관리 → 다운로드 |
 
