@@ -13,10 +13,20 @@ godot --headless --path /game --export-release "Web" /tmp/web/index.html >/tmp/e
 test -f /tmp/web/index.wasm || { echo "[web-build] 실패: index.wasm 없음"; tail -30 /tmp/export.log; exit 1; }
 
 if [ "${BUILD_WINDOWS:-0}" = "1" ]; then
+    # 실행 파일(.exe)과 게임 데이터(.pck)가 따로 나온다 (백신 오탐을 줄이려고 pck를 exe에 합치지 않음)
+    # → 둘이 같은 폴더에 있어야 실행되므로 zip 하나로 묶어 배포
     echo "[web-build] Windows 내보내기"
-    mkdir -p /tmp/web/download
-    godot --headless --path /game --export-release "Windows" /tmp/web/download/SmallPartyWorld.exe >/tmp/export_win.log 2>&1 \
+    rm -rf /tmp/win && mkdir -p /tmp/win/SmallPartyWorld /tmp/web/download
+    godot --headless --path /game --export-release "Windows" /tmp/win/SmallPartyWorld/SmallPartyWorld.exe >/tmp/export_win.log 2>&1 \
         || { tail -30 /tmp/export_win.log; exit 1; }
+    test -f /tmp/win/SmallPartyWorld/SmallPartyWorld.pck || { echo "[web-build] 실패: .pck 없음"; exit 1; }
+    printf '%s\r\n' "Small Party World (Windows)" "" \
+        "1. 이 zip 파일의 압축을 모두 푼다 (zip 안에서 바로 실행하지 말 것)" \
+        "2. SmallPartyWorld.exe 를 실행한다" \
+        "   SmallPartyWorld.pck 는 게임 데이터 — exe 와 같은 폴더에 있어야 한다" \
+        > /tmp/win/SmallPartyWorld/README.txt
+    (cd /tmp/win && zip -qr /tmp/web/download/SmallPartyWorld-windows.zip SmallPartyWorld)
+    ls -la /tmp/web/download
 fi
 
 echo "[web-build] /out 교체"
