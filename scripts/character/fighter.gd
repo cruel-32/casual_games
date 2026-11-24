@@ -567,8 +567,6 @@ func _physics_process(delta: float) -> void:
         _jump_arc = true
         _jump_buffer = 0.0
         _coyote = 0.0
-        if charging:
-            _cancel_charge(false)       # 점프하면 차징 취소
 
     # 봇 회전 (사람은 마우스로 회전)
     if not is_human and controllable and lock_timer <= 0.0:
@@ -642,17 +640,15 @@ func _tick_timers(delta: float) -> void:
 
 # ================================================================ 밀치기
 func _update_push(delta: float, pressed: bool) -> void:
-    var grounded := is_on_floor() or _coyote > 0.0
+    # 땅·공중 모두 밀치기/차징 가능 (점프해도 차징 유지)
     if charging:
         if not can_act() or is_stunned():
             _cancel_charge()
-        elif not grounded:
-            _cancel_charge(false)       # 공중에 뜨면(점프·낙하·띄워짐) 차징 취소
         else:
             charge_time += delta
             if not pressed:
                 _release_push()
-    elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0 and grounded:
+    elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0:
         charging = true
         charge_time = 0.0
     _charge_was_pressed = pressed
@@ -701,6 +697,8 @@ func _check_push_hits() -> void:
         if o == self or o.dead or _push_hits.has(o):
             continue
         var to := o.global_position - global_position
+        if absf(to.y) > HEIGHT * 0.85:      # 공중 밀치기: 높이가 크게 다르면(머리 위를 지나감) 안 맞음
+            continue
         to.y = 0.0
         var d := to.length()
         if d > push_reach or d < 0.001:
@@ -757,8 +755,9 @@ func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null) -> bo
         return false
     knock = Vector3(impulse.x, 0.0, impulse.z)
     control_vel = Vector3.ZERO
-    velocity.y = maxf(velocity.y, impulse.y)
-    _jump_arc = false               # 넉백으로 뜬 궤적은 보통 중력
+    # 점프·낙하 중에 맞아도 땅에서 맞은 것과 똑같은 궤적: 세로 속도를 넉백 값으로 덮어쓰고 보통 중력
+    velocity.y = impulse.y
+    _jump_arc = false
     stun_timer = maxf(stun_timer, stun)
     dash_timer = 0.0
     lock_timer = 0.0

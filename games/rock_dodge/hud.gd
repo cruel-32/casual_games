@@ -156,8 +156,6 @@ func _skill_text() -> String:
         return "차징 %d%%" % int(c * 100.0) + extra
     if h.cooldown_timer > 0.0:
         return "쿨타임 %.1f초" % h.cooldown_timer + extra
-    if not h.is_on_floor():
-        return "공중에서는 밀치기 불가" + extra
     return "밀치기 준비 — 좌클릭/E" + extra
 
 
