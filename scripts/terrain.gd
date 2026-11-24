@@ -3,6 +3,7 @@ extends StaticBody3D
 
 @export var size := 256          # 한 변 길이(m). 1m 간격 정점
 @export var noise_seed := 1337
+@export var flat_half := 22.0     # 이 사각형 안쪽은 거의 평평하게 (대결 아레나)
 
 var n := 0                        # 한 변 정점 수
 var half := 0.0
@@ -38,7 +39,8 @@ func generate(material: Material) -> void:
 func _height_fn(x: float, z: float) -> float:
     var d := Vector2(x, z).length()
     var h := _hills.get_noise_2d(x, z) * 11.0 + _detail.get_noise_2d(x, z) * 0.5
-    h *= lerpf(0.2, 1.0, smoothstep(10.0, 50.0, d))      # 중앙은 평평하게
+    var box_d := maxf(absf(x), absf(z))
+    h *= lerpf(0.0, 1.0, smoothstep(flat_half, flat_half + 28.0, box_d))    # 아레나는 완전히 평평 (회전 기둥용)
     var ridge := smoothstep(70.0, 126.0, d)
     h += ridge * ridge * 48.0 * (0.75 + 0.35 * _hills.get_noise_2d(x * 2.5, z * 2.5))
     return h
@@ -123,3 +125,8 @@ func get_slope(x: float, z: float) -> float:
     var nrm := Vector3(get_height(x - 1.0, z) - get_height(x + 1.0, z), 2.0,
             get_height(x, z - 1.0) - get_height(x, z + 1.0)).normalized()
     return 1.0 - nrm.y
+
+
+func get_normal(x: float, z: float) -> Vector3:
+    return Vector3(get_height(x - 1.0, z) - get_height(x + 1.0, z), 2.0,
+            get_height(x, z - 1.0) - get_height(x, z + 1.0)).normalized()

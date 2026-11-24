@@ -1,0 +1,7 @@
+.godot/
+.git/
+*.png
+*.md
+deploy/
+Dockerfile
+docker-compose.yml

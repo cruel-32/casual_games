@@ -3,13 +3,19 @@ config_version=5
 
 [application]
 
-config/name="Open Field Prototype"
-run/main_scene="res://scenes/main.tscn"
+config/name="casual_games"
+run/main_scene="res://scenes/app.tscn"
+
+[autoload]
+
+Net="*res://scripts/net/net.gd"
 
 [display]
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
 
 [rendering]
 
