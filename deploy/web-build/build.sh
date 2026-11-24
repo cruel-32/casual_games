@@ -1,5 +1,9 @@
 #!/bin/sh
 # /game (프로젝트 소스) 를 웹으로 내보내 /out (Caddy가 제공하는 폴더) 에 배포
+#   /            안내 페이지 (deploy/web-landing) — PC는 Windows 다운로드, 모바일은 앱 설치로 유도
+#   /play/       웹 체험판 (Godot 웹 빌드)
+#   /download/   Windows zip
+#   /links.json  다운로드·앱 스토어 주소 (deploy/web-landing/links.json 을 고쳐서 다시 빌드)
 # Windows 실행 파일(zip)도 /out/download/ 에 함께 넣음 (건너뛰려면 BUILD_WINDOWS=0)
 set -e
 echo "[web-build] 시작 (Windows zip: ${BUILD_WINDOWS:-1})"
@@ -9,10 +13,18 @@ godot --headless --path /game --import >/dev/null 2>&1 || true
 godot --headless --path /game --import >/dev/null 2>&1
 
 echo "[web-build] 웹 내보내기"
-rm -rf /tmp/web && mkdir -p /tmp/web
-godot --headless --path /game --export-release "Web" /tmp/web/index.html >/tmp/export.log 2>&1 \
+rm -rf /tmp/web && mkdir -p /tmp/web/play
+godot --headless --path /game --export-release "Web" /tmp/web/play/index.html >/tmp/export.log 2>&1 \
     || { tail -30 /tmp/export.log; exit 1; }
-test -f /tmp/web/index.wasm || { echo "[web-build] 실패: index.wasm 없음"; tail -30 /tmp/export.log; exit 1; }
+test -f /tmp/web/play/index.wasm || { echo "[web-build] 실패: index.wasm 없음"; tail -30 /tmp/export.log; exit 1; }
+
+echo "[web-build] 안내 페이지"
+L=/game/deploy/web-landing
+mkdir -p /tmp/web/assets
+cp "$L/index.html" "$L/links.json" /tmp/web/
+cp "$L/hero.jpg" /game/fonts/BlackHanSans-Regular.ttf /tmp/web/assets/
+cp /game/ui/portraits/slot_0.png /game/ui/portraits/slot_1.png /game/ui/portraits/slot_2.png \
+   /game/ui/portraits/slot_3.png /game/ui/portraits/slot_4.png /tmp/web/assets/
 
 if [ "${BUILD_WINDOWS:-1}" = "1" ]; then
     # 실행 파일(.exe)과 게임 데이터(.pck)가 따로 나온다 (백신 오탐을 줄이려고 pck를 exe에 합치지 않음)
@@ -35,4 +47,4 @@ echo "[web-build] /out 교체"
 find /out -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 cp -r /tmp/web/. /out/
 ls -la /out
-echo "[web-build] 완료 — https://spw.cloudish.cloud 새로고침"
+echo "[web-build] 완료 — https://spw.cloudish.cloud (안내) / https://spw.cloudish.cloud/play/ (웹 체험판)"

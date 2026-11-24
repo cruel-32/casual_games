@@ -59,7 +59,8 @@ const SERVER_LIST := [
 | 도메인 | 용도 |
 |---|---|
 | `spwsv.cloudish.cloud` | 게임 서버(중계 서버). 게임 접속(wss) + 브라우저로 열면 서버 상태 페이지 |
-| `spw.cloudish.cloud` | 웹 게임 플레이 페이지 (Godot 웹 빌드 파일 제공) |
+| `spw.cloudish.cloud` | 안내 페이지 — PC(Windows)는 PC 버전 다운로드, 모바일은 앱 설치로 유도 (`deploy/web-landing`) |
+| `spw.cloudish.cloud/play/` | 웹 체험판 (Godot 웹 빌드). 게임 첫 화면 오른쪽 위에도 PC 버전/앱 안내 카드 |
 주소 칸 입력 규칙: 도메인 → `wss://도메인`, IP/localhost → `ws://IP:포트`(기본 7777), `ws://`·`wss://`는 그대로.
 
 ### 홈서버 배포 (Ubuntu + Docker Compose + Caddy)
@@ -80,6 +81,43 @@ const SERVER_LIST := [
    웹 게임 페이지(`spw.cloudish.cloud`)는 웹 빌드 전까지 `deploy/web-placeholder/index.html`을 `/srv/small_party_world/web/`에 넣어 두기
 6. 업데이트: 코드 변경 후 `docker compose up -d --build`
 
+### 자동 빌드·배포 (GitHub Actions)
+`main` 에 푸시하면 `.github/workflows/build-deploy.yml` 이 돈다. (GitHub > Actions 에서 수동 실행도 가능)
+
+| 작업 | 어디서 | 하는 일 |
+|---|---|---|
+| deploy | 홈서버 (셀프 호스티드 러너, 라벨 `homeserver`) | 게임 서버 재빌드·재시작 → 웹(안내 페이지·체험판·Windows zip) 빌드·배포 → 상태 확인 |
+| android | GitHub 리눅스 러너 (공개 저장소라 무료) | AAB 빌드 → Google Play **내부 테스트** 트랙 업로드 |
+| iOS | (예정) 이 Mac 을 셀프 호스티드 러너로 | Apple 개발자 계정 재결제 후 TestFlight 업로드까지 |
+
+**1) 홈서버 러너 설치 (한 번)**
+1. GitHub 저장소 > Settings > Actions > Runners > New self-hosted runner > Linux — 나오는 명령을 홈서버에서 실행
+2. `./config.sh` 에서 라벨을 물으면 `homeserver` 추가
+3. 서비스로 등록: `sudo ./svc.sh install && sudo ./svc.sh start`
+4. 러너 사용자가 docker 를 쓸 수 있게: `sudo usermod -aG docker <러너 사용자>` (그 후 서비스 재시작)
+5. 저장소 > Settings > Actions > General > "Fork pull request workflows from outside collaborators" 를
+   **Require approval for all outside collaborators** 로 (공개 저장소 보안). 워크플로는 main 푸시에만 반응한다
+6. 기존 수동 명령(`~/spw` 에서 `docker compose …`)과 같은 프로젝트 이름(`spw`)을 쓰므로 섞어 써도 된다
+
+**2) Android 업로드 준비 (한 번)**
+1. 업로드 키 만들기 (분실하면 앱 업데이트 불가 — 안전하게 보관):
+   `keytool -genkeypair -v -keystore spw-release.keystore -alias spw -keyalg RSA -keysize 2048 -validity 10000`
+2. 저장소 > Settings > Secrets and variables > Actions 에 시크릿 추가
+   - `ANDROID_KEYSTORE_BASE64` = `base64 -i spw-release.keystore` 결과
+   - `ANDROID_KEY_ALIAS` = `spw`, `ANDROID_KEY_PASSWORD` = 키 비밀번호
+3. 첫 AAB 는 Play Console 에서 직접 올린다 (Actions 실행 결과의 `android-aab` 아티팩트 다운로드 → 앱 만들기 → 내부 테스트에 업로드).
+   패키지 이름 `cloud.cloudish.spw` — **첫 업로드 후에는 바꿀 수 없음** (`export_presets.cfg` Android 프리셋)
+4. 자동 업로드: Google Cloud 서비스 계정 만들기 → Play Console > 사용자 및 권한에서 그 계정에 앱 권한 부여 →
+   JSON 키를 시크릿 `PLAY_SERVICE_ACCOUNT_JSON` 에 넣기
+5. 앱이 처음 검토를 통과하기 전에는 Play 가 "초안(draft)" 업로드만 허용한다. 통과 후 저장소 변수(Variables)
+   `PLAY_RELEASE_STATUS` = `completed` 로 바꾸면 내부 테스트에 바로 배포된다
+- 시크릿이 없으면 Android 작업은 경고만 남기고 건너뛴다
+- 버전 코드는 Actions 실행 번호로 자동 증가, 버전 이름은 Android 프리셋의 `version/name`
+- 개인 개발자 계정(2023-11-13 이후 생성)은 정식 출시 전에 12명 이상 · 14일 연속 비공개 테스트가 필요하다
+
+**주의: 서버와 앱 버전.** 서버·웹은 푸시 즉시 바뀌지만 스토어 앱은 심사·업데이트가 늦다.
+`net.gd` `PROTOCOL_VERSION` 을 올리는 변경은 이미 설치된 앱의 접속을 막으므로, 앱 출시 후에는 호환 유지 또는 강제 업데이트 안내가 필요하다.
+
 ### 서버가 예전 버전일 때 (접속 후 무한 로딩·상태 페이지가 casual_games)
 상태 페이지(`https://spwsv.cloudish.cloud`)의 이름·Godot 버전·프로토콜 버전으로 서버 버전을 확인할 수 있다.
 정상: `Small Party World` · `Godot 4.7.2` · `프로토콜 v3` (`net.gd` `PROTOCOL_VERSION`)
@@ -98,6 +136,7 @@ docker compose --profile build run --rm web-build   # 웹 게임도 같은 버�
 |---|---|---|
 | **웹** (spw.cloudish.cloud) | 홈서버 프로젝트 폴더에서 `docker compose --profile build run --rm web-build` | `/srv/small_party_world/web/` 교체 → 브라우저 새로고침 |
 | (위 명령에 Windows 포함) | 기본으로 함께 만듦. 웹만: `-e BUILD_WINDOWS=0` | `https://spw.cloudish.cloud/download/SmallPartyWorld-windows.zip` (exe + pck, 압축 풀고 실행) |
+| 다운로드·앱 주소 | `deploy/web-landing/links.json` 수정 후 위 명령 다시 실행 | `windows` / `android` / `ios` — 앱 주소가 비어 있으면 "앱 준비 중" 표시 |
 | 게임 서버 | `docker compose up -d --build` | 컨테이너 재시작 |
 | PC에서 직접 | 에디터 **프로젝트 → 내보내기** (Web / Windows / Linux 프리셋 준비됨, 결과는 `build/`) | 템플릿 필요: 에디터 → 내보내기 템플릿 관리 → 다운로드 |
 

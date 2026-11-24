@@ -98,12 +98,86 @@ func _ready() -> void:
     bottom.add_child(pad)
 
     _build_help()
+    if OS.has_feature("web"):
+        _build_web_promo()
 
     Net.connected.connect(_on_connected)
     Net.connection_failed.connect(_on_failed)
     Net.login_result.connect(_on_login_result)
     if not Fighter.touch_device():
         _nick.grab_focus.call_deferred()
+
+
+# ---- 웹 체험판 안내: PC는 Windows 다운로드, 모바일은 앱 설치로 유도
+# 주소는 웹 서버의 /links.json (deploy/web-landing/links.json)
+var _promo: PanelContainer
+var _promo_text: Label
+var _promo_btn: Button
+var _promo_url := ""
+
+
+func _build_web_promo() -> void:
+    _promo = PanelContainer.new()
+    _promo.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 18)
+    _promo.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+    _promo.custom_minimum_size.x = 300
+    _promo.visible = false
+    var sb := UI.box(Color.WHITE, 18, 16, UI.INK, UI.OUTLINE, 5)
+    _promo.add_theme_stylebox_override("panel", sb)
+    add_child(_promo)
+    var v := UI.vbox(8)
+    _promo.add_child(v)
+    var head := UI.hbox(8)
+    v.add_child(head)
+    head.add_child(UI.badge("웹 체험판", UI.PRIMARY))
+    _promo_text = UI.label("", 15, UI.MUTED)
+    _promo_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _promo_text.custom_minimum_size.x = 268
+    v.add_child(_promo_text)
+    _promo_btn = UI.cta_button("")
+    _promo_btn.custom_minimum_size.y = 50
+    _promo_btn.add_theme_font_size_override("font_size", 21)
+    _promo_btn.pressed.connect(func():
+        if _promo_url != "":
+            # 같은 탭에서 이동 (새 창은 팝업 차단될 수 있음). zip 은 다운로드만 되고 페이지는 그대로
+            JavaScriptBridge.eval("window.location.href = %s;" % JSON.stringify(_promo_url)))
+    v.add_child(_promo_btn)
+
+    var origin := str(JavaScriptBridge.eval("window.location.origin", true))
+    var http := HTTPRequest.new()
+    add_child(http)
+    http.request_completed.connect(func(result, code, _h, body):
+        var links: Dictionary = {}
+        if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+            var d = JSON.parse_string(body.get_string_from_utf8())
+            if d is Dictionary:
+                links = d
+        _show_web_promo(links)
+        http.queue_free())
+    if http.request(origin + "/links.json") != OK:
+        _show_web_promo({})
+
+
+func _show_web_promo(links: Dictionary) -> void:
+    var windows := String(links.get("windows", "/download/SmallPartyWorld-windows.zip"))
+    if Fighter.touch_device():
+        var ios := OS.has_feature("web_ios")
+        var url := String(links.get("ios" if ios else "android", ""))
+        if url == "":
+            _promo_text.text = "모바일 앱을 준비하고 있어요. 앱이 나오면 더 부드럽게 즐길 수 있어요!"
+            _promo_btn.visible = false
+        else:
+            _promo_text.text = "앱으로 설치하면 더 부드럽고 조작도 편해요."
+            _promo_btn.text = "앱 설치하기"
+            _promo_url = url
+    elif OS.has_feature("web_windows"):
+        _promo_text.text = "PC 버전이 훨씬 부드럽고 그래픽도 좋아요. 압축을 풀고 SmallPartyWorld.exe 실행!"
+        _promo_btn.text = "PC 버전 다운로드"
+        _promo_url = windows
+    else:
+        _promo_text.text = "PC 버전은 현재 Windows 전용이에요. 이 기기에서는 웹 체험판으로 즐겨 주세요."
+        _promo_btn.visible = false
+    _promo.visible = true
 
 
 # ---- 조작법 창

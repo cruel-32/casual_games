@@ -1,6 +1,7 @@
 extends SceneTree
 ## 개발용: 게임 선택 카드용 썸네일 (games/rock_dodge/thumbnail.png)
 ##   xvfb-run godot --rendering-method gl_compatibility --resolution 640x360 --fixed-fps 60 --path . -s tools/render_thumbnail.gd
+## 웹 안내 페이지 배경: OUT=deploy/web-landing/hero.png, --resolution 1600x900 으로 렌더 후 hero.jpg 로 변환(용량)
 var m: Node
 var g
 var frame := 0
@@ -30,7 +31,9 @@ func _process(_d) -> bool:
         cam.look_at(Vector3(-0.5, 0.6, 0.0), Vector3.UP)
         cam.current = true
     if t0 > 0 and frame - t0 == 170:
-        root.get_texture().get_image().save_png(ProjectSettings.globalize_path("res://games/rock_dodge/thumbnail.png"))
+        var out := OS.get_environment("OUT")
+        var path := ProjectSettings.globalize_path("res://" + out) if out != "" else ProjectSettings.globalize_path("res://games/rock_dodge/thumbnail.png")
+        root.get_texture().get_image().save_png(path)
         print("saved thumbnail")
         quit()
     if frame > 2000:

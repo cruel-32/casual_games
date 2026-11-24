@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small Party World</title>
+<meta name="description" content="친구들과 즐기는 캐주얼 파티 게임 모음 — 떨어지는 돌을 피하고, 밀쳐내고, 살아남자!">
+<link rel="icon" href="/play/index.icon.png">
+<style>
+@font-face { font-family: "BHS"; src: url("/assets/BlackHanSans-Regular.ttf") format("truetype"); font-display: swap; }
+:root { --ink: #1c1f33; --cta: #ffd12e; --blue: #3d94ff; --coral: #ff7852; --green: #3dc26b; }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body {
+  font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  color: #fff; background: #5aa8f5;
+  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+}
+body::before {   /* 배경 이미지 (고정) + 글자가 잘 보이게 위·아래를 어둡게 — iOS 는 background-attachment:fixed 미지원이라 고정 레이어로 */
+  content: ""; position: fixed; inset: 0; z-index: -1;
+  background: linear-gradient(rgba(14,20,50,.45), rgba(14,20,50,.15) 40%, rgba(14,20,50,.55)),
+              url("/assets/hero.jpg") center / cover no-repeat;
+}
+.wrap { width: min(980px, 92vw); padding: 7vh 0 40px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
+.disp { font-family: "BHS", system-ui, sans-serif; letter-spacing: .5px; }
+.outline { -webkit-text-stroke: 0; text-shadow:
+  -3px -3px 0 var(--ink), 3px -3px 0 var(--ink), -3px 3px 0 var(--ink), 3px 3px 0 var(--ink),
+  0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), 0 7px 0 var(--ink); }
+.logo { font-size: clamp(42px, 7.2vw, 92px); line-height: 1.05; text-align: center; margin: 0; }
+.logo span { white-space: nowrap; }
+.thin { text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink), 0 3px 0 var(--ink); }
+.logo span:nth-child(1) { color: #4dadff; } .logo span:nth-child(2) { color: var(--cta); } .logo span:nth-child(3) { color: var(--coral); }
+.tag { font-size: clamp(15px, 2.2vw, 21px); margin: 0; text-align: center; }
+.faces { display: flex; justify-content: center; margin: -4px 0 -8px; }
+.faces img { width: clamp(64px, 11vw, 112px); margin: 0 -10px; filter: drop-shadow(0 5px 0 rgba(28,31,51,.35)); }
+.card {
+  width: min(560px, 100%); background: #fff; color: var(--ink); border: 3px solid var(--ink); border-radius: 22px;
+  box-shadow: 0 7px 0 var(--ink); padding: 24px 24px 22px; display: flex; flex-direction: column; gap: 14px; text-align: center;
+}
+.card h2 { margin: 0; font-size: 26px; }
+.card p { margin: 0; color: #5b6075; font-size: 15px; line-height: 1.55; }
+.btn {
+  display: block; text-decoration: none; text-align: center; cursor: pointer;
+  border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink);
+  padding: 14px 18px 15px; font-size: 24px; color: var(--ink); background: #fff; transition: transform .06s, box-shadow .06s;
+}
+.btn:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
+.btn.cta { background: var(--cta); font-size: 28px; }
+.btn.blue { background: var(--blue); color: #fff; }
+.btn.small { font-size: 18px; padding: 10px 14px 11px; }
+.btn.disabled { background: #d9dce5; color: #8b90a3; pointer-events: none; }
+.sub { font-size: 13px; color: #8b90a3; }
+.hidden { display: none !important; }
+.foot { font-size: 13px; opacity: .85; text-align: center; }
+.foot a { color: #fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1 class="logo disp outline"><span>Small</span> <span>Party</span> <span>World</span></h1>
+  <p class="tag disp thin">친구들과 즐기는 캐주얼 파티 게임 모음 · 떨어지는 돌을 피하고, 밀쳐내고, 살아남자!</p>
+  <div class="faces">
+    <img src="/assets/slot_0.png" alt=""><img src="/assets/slot_1.png" alt=""><img src="/assets/slot_2.png" alt="">
+    <img src="/assets/slot_3.png" alt=""><img src="/assets/slot_4.png" alt="">
+  </div>
+
+  <!-- PC (Windows) -->
+  <div class="card hidden" id="pc">
+    <h2 class="disp">PC 버전으로 즐기세요</h2>
+    <p>PC 버전이 훨씬 부드럽고 그래픽도 더 좋아요.<br>압축을 풀고 <b>SmallPartyWorld.exe</b> 를 실행하면 바로 시작!</p>
+    <a class="btn cta disp" id="pc-download" href="#">PC 버전 다운로드</a>
+    <span class="sub">Windows 10/11 · 64비트</span>
+  </div>
+
+  <!-- PC (Mac/Linux): 아직 Windows 전용 -->
+  <div class="card hidden" id="pc-other">
+    <h2 class="disp">PC 버전은 Windows 전용이에요</h2>
+    <p>지금은 Windows 버전만 있어요. 이 컴퓨터에서는 웹 체험판으로 즐겨 주세요.</p>
+    <a class="btn small disp" id="pc-other-download" href="#">Windows 버전 받기</a>
+  </div>
+
+  <!-- 모바일 -->
+  <div class="card hidden" id="mobile">
+    <h2 class="disp">앱으로 즐기세요</h2>
+    <p id="mobile-text">앱이 더 부드럽고 조작감도 좋아요.</p>
+    <a class="btn cta disp hidden" id="app-android" href="#">Google Play 에서 설치</a>
+    <a class="btn cta disp hidden" id="app-ios" href="#">App Store 에서 설치</a>
+    <a class="btn disabled disp hidden" id="app-soon" href="#">앱 준비 중</a>
+  </div>
+
+  <div class="card">
+    <p id="web-note">웹 버전은 <b>체험판</b>이에요. 기기에 따라 느릴 수 있어요.</p>
+    <a class="btn blue disp" id="play" href="/play/">웹에서 체험하기</a>
+  </div>
+
+  <p class="foot">서버 상태: <a href="https://spwsv.cloudish.cloud" target="_blank" rel="noopener">spwsv.cloudish.cloud</a></p>
+</div>
+<script>
+(function () {
+  var ua = navigator.userAgent || "";
+  var iPadOS = navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || iPadOS;
+  var isAndroid = /Android/i.test(ua);
+  var isMobile = isIOS || isAndroid || /Mobi/i.test(ua);
+  var isWindows = /Windows/i.test(ua) && !isMobile;
+  var $ = function (id) { return document.getElementById(id); };
+  var show = function (id) { $(id).classList.remove("hidden"); };
+
+  function apply(links) {
+    $("play").href = links.play || "/play/";
+    if (isMobile) {
+      show("mobile");
+      var url = isIOS ? links.ios : (isAndroid ? links.android : "");
+      if (url) {
+        var b = $(isIOS ? "app-ios" : "app-android");
+        b.href = url; b.classList.remove("hidden");
+      } else {
+        show("app-soon");
+        $("mobile-text").textContent = "모바일 앱은 준비 중이에요. 그동안 웹 체험판으로 즐겨 주세요!";
+      }
+    } else if (isWindows) {
+      show("pc");
+      $("pc-download").href = links.windows;
+    } else {
+      show("pc-other");
+      $("pc-other-download").href = links.windows;
+    }
+  }
+  fetch("/links.json", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(apply)
+    .catch(function () { apply({ windows: "/download/SmallPartyWorld-windows.zip", play: "/play/" }); });
+})();
+</script>
+</body>
+</html>

@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Small Party World"
+config/version="0.1.0"
 run/main_scene="res://scenes/app.tscn"
 config/features=PackedStringArray("4.7")
 
@@ -24,6 +25,7 @@ window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
+window/handheld/orientation=4
 
 [gui]
 
