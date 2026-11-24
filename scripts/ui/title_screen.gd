@@ -19,7 +19,7 @@ func _ready() -> void:
     root.alignment = BoxContainer.ALIGNMENT_CENTER
     add_child(root)
 
-    var title := UI.title("casual_games", 64)
+    var title := UI.title("Small Party World", 64)
     root.add_child(title)
     var sub := UI.title("3D 똥피하기 대결", 24)
     root.add_child(sub)
@@ -38,7 +38,7 @@ func _ready() -> void:
     v.add_child(_nick)
 
     v.add_child(UI.label("서버 주소", 16, UI.MUTED))
-    _addr = UI.line_edit("예: spw.cloudish.cloud  /  127.0.0.1:7777", String(app.load_setting("server_url", Net.DEFAULT_SERVER)))
+    _addr = UI.line_edit("예: spwsv.cloudish.cloud  /  127.0.0.1:7777", String(app.load_setting("server_url", Net.DEFAULT_SERVER)))
     _addr.text_submitted.connect(func(_t): _on_connect_pressed())
     v.add_child(_addr)
 

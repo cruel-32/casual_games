@@ -18,7 +18,7 @@ signal chat_received(nick: String, text: String, system: bool)
 signal game_started(room: Dictionary)
 
 const DEFAULT_PORT := 7777
-const DEFAULT_SERVER := "wss://spw.cloudish.cloud"
+const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
 const MAX_PLAYERS_LIMIT := 12
 const MIN_PLAYERS_TO_START := 2       # 봇 채우기가 꺼져 있을 때 필요한 최소 인원
 const NICK_MIN := 2

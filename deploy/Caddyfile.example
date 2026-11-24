@@ -1,11 +1,13 @@
-# 기존 Caddyfile에 아래 블록을 추가(또는 교체)한 뒤 Caddy를 reload 하세요.
+# Small Party World — Caddy 설정
+# 기존 Caddyfile에 아래 두 블록을 추가(기존 spw.cloudish.cloud 블록은 교체)한 뒤 reload 하세요.
 #   Caddy를 Ubuntu에 직접 설치: sudo systemctl reload caddy
 #   Caddy가 Docker 컨테이너:   docker exec <caddy컨테이너> caddy reload --config /etc/caddy/Caddyfile
-#
-# - WebSocket(게임 접속) 요청 → 7777
-# - 그 외(브라우저로 도메인 열기) → 7778 상태 페이지
 
-spw.cloudish.cloud {
+# ---------------------------------------------------------------
+# 1) 게임 서버 (중계 서버) — spwsv.cloudish.cloud
+#    WebSocket(게임 접속) → 7777 / 그 외(브라우저) → 7778 상태 페이지
+# ---------------------------------------------------------------
+spwsv.cloudish.cloud {
 	@websocket {
 		header Connection *Upgrade*
 		header Upgrade websocket
@@ -21,6 +23,23 @@ spw.cloudish.cloud {
 	}
 }
 
+# ---------------------------------------------------------------
+# 2) 웹 게임 플레이 페이지 — spw.cloudish.cloud
+#    Godot 웹 빌드 결과물(index.html, .wasm, .pck, .js)을 아래 폴더에 두면 됩니다.
+#    웹 빌드 전까지는 deploy/web-placeholder/index.html 을 넣어 두세요.
+# ---------------------------------------------------------------
+spw.cloudish.cloud {
+	root * /srv/small_party_world/web
+	encode zstd gzip
+	file_server
+	# 웹 빌드에서 '스레드 지원'을 켠 경우에만 필요 (끈 빌드는 불필요):
+	# header {
+	# 	Cross-Origin-Opener-Policy same-origin
+	# 	Cross-Origin-Embedder-Policy require-corp
+	# }
+}
+
 # Caddy가 Docker 컨테이너이고 게임 서버와 같은 Docker 네트워크에 있다면
 # 127.0.0.1 대신 컨테이너 이름을 쓰세요:
-#   reverse_proxy casual-games-server:7777   /   reverse_proxy casual-games-server:7778
+#   reverse_proxy small-party-world-server:7777   /   reverse_proxy small-party-world-server:7778
+# 웹 파일 폴더(/srv/small_party_world/web)도 Caddy 컨테이너에 볼륨으로 마운트해야 합니다.
