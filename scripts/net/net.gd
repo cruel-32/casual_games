@@ -23,6 +23,9 @@ signal game_message(msg: Array)          # 클라이언트: 서버의 게임 모
 
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 
+## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
+const PROTOCOL_VERSION := 3
+const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
 
@@ -494,6 +497,7 @@ func _status_data() -> Dictionary:
         "status": "ok",
         "game": ProjectSettings.get_setting("application/config/name"),
         "godot": Engine.get_version_info().string,
+        "protocol": PROTOCOL_VERSION,
         "uptime_sec": int(Time.get_unix_time_from_system() - _started_at),
         "connections": multiplayer.get_peers().size(),
         "players": _players.size(),
@@ -520,18 +524,24 @@ func _status_html() -> String:
 h1{margin:0 0 4px}.ok{color:#2e9e5b;font-weight:700}.m{color:#778}table{width:100%%;border-collapse:collapse;margin-top:12px}
 td,th{padding:8px;border-bottom:1px solid #eef;text-align:left}</style>
 <div class=c><h1>%s</h1><p class=ok>● 서버 정상</p>
-<p>접속 %d · 로그인 %d명 · 방 %d개<br><span class=m>가동 %s · Godot %s · 10초마다 새로고침</span></p>
+<p>접속 %d · 로그인 %d명 · 방 %d개<br><span class=m>가동 %s · Godot %s · 프로토콜 v%d · 10초마다 새로고침</span></p>
 <table><tr><th>방</th><th>게임</th><th>방장</th><th>인원</th><th>상태</th></tr>%s</table></div></html>""" % [
-        d.game, d.game, d.connections, d.players, d.rooms.size(), uptime, d.godot, rows]
+        d.game, d.game, d.connections, d.players, d.rooms.size(), uptime, d.godot, d.protocol, rows]
 
 
 # ---- 클라이언트 → 서버 요청
 @rpc("any_peer", "call_remote", "reliable")
-func c_login(nick: String) -> void:
+func c_login(nick: String, protocol: int) -> void:
     if not is_server:
         return
     var id := multiplayer.get_remote_sender_id()
     if _players.has(id):
+        return
+    if protocol != PROTOCOL_VERSION:
+        var newer := protocol > PROTOCOL_VERSION
+        s_login_result.rpc_id(id, false, "게임 버전이 서버와 다릅니다 (%s). %s" % [
+            "게임이 더 새 버전" if newer else "게임이 예전 버전",
+            "서버 업데이트가 필요합니다" if newer else "새로고침하거나 최신 버전을 받아 주세요"])
         return
     nick = nick.strip_edges()
     var err := _validate_nick(nick)
@@ -856,7 +866,7 @@ func disconnect_from_server() -> void:
 
 
 func login(nick: String) -> void:
-    c_login.rpc_id(1, nick)
+    c_login.rpc_id(1, nick, PROTOCOL_VERSION)
 
 
 func request_rooms() -> void:

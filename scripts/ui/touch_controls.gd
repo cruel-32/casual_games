@@ -5,6 +5,10 @@ extends Control
 ## - 오른쪽 아래 버튼: 밀치기(길게 누르면 차징), 점프
 ## - 결과 화면: 방으로 / 다시 하기 / 메인으로 버튼
 ## 멀티터치(스틱을 움직이며 동시에 시점 회전·버튼)를 지원한다.
+## - 점프·밀치기 버튼을 누른 손가락을 그대로 끌면 시점도 함께 돌아간다
+## - 시점 회전량은 손가락별로 직접 기록한 위치 차이로 계산한다.
+##   (모바일 웹에서 여러 손가락을 동시에 쓰면 드래그 이벤트의 relative 값이 다른 손가락
+##    기준으로 계산돼 크게 튀는 경우가 있어, 그 값을 쓰지 않는다)
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
 
@@ -12,6 +16,8 @@ const STICK_RADIUS := 80.0
 const KNOB_RADIUS := 34.0
 const DEAD_ZONE := 0.15
 const LOOK_SENSITIVITY := 0.0045
+const BUTTON_LOOK_SLOP := 10.0      # 버튼 손가락이 이만큼(px) 움직여야 시점 회전 시작 (누를 때 떨림 무시)
+const MAX_LOOK_STEP := 90.0         # 한 번의 드래그 이벤트에서 인정하는 최대 이동(px) — 튀는 값 방지
 
 var game: Node
 var fighter: Fighter
@@ -22,6 +28,9 @@ var _stick_pos := Vector2.ZERO
 var _look_index := -1
 var _push_index := -1
 var _jump_index := -1
+var _last_pos := {}                 # 손가락 index -> 마지막 위치
+var _press_pos := {}                # 손가락 index -> 누른 위치
+var _button_looking := {}           # 버튼 손가락이 시점 회전을 시작했는가
 var _result_box: HBoxContainer
 
 
@@ -86,14 +95,33 @@ func _input(event: InputEvent) -> void:
             _on_touch_up(t.index)
     elif event is InputEventScreenDrag:
         var d := event as InputEventScreenDrag
+        var last: Vector2 = _last_pos.get(d.index, d.position)
+        _last_pos[d.index] = d.position
         if d.index == _stick_index:
             _stick_pos = d.position
             _update_stick()
         elif d.index == _look_index:
-            fighter.apply_look(d.relative * LOOK_SENSITIVITY)
+            _look(d.position - last)
+        elif d.index == _push_index or d.index == _jump_index:
+            # 버튼을 누른 채 끌기 → 시점 회전 (조금 움직인 뒤부터)
+            if not _button_looking.get(d.index, false):
+                if d.position.distance_to(_press_pos.get(d.index, d.position)) < BUTTON_LOOK_SLOP:
+                    return
+                _button_looking[d.index] = true
+                last = d.position          # 문턱을 넘는 순간 시점이 튀지 않게
+            _look(d.position - last)
+
+
+func _look(delta_px: Vector2) -> void:
+    if delta_px.length() > MAX_LOOK_STEP:
+        delta_px = delta_px.normalized() * MAX_LOOK_STEP
+    fighter.apply_look(delta_px * LOOK_SENSITIVITY)
 
 
 func _on_touch_down(index: int, pos: Vector2) -> void:
+    _last_pos[index] = pos
+    _press_pos[index] = pos
+    _button_looking.erase(index)
     if _result_box.visible:
         return   # 결과 화면에선 버튼(Control)이 처리
     if pos.distance_to(_push_center()) <= _push_radius() + 12.0:
@@ -115,6 +143,9 @@ func _on_touch_down(index: int, pos: Vector2) -> void:
 
 
 func _on_touch_up(index: int) -> void:
+    _last_pos.erase(index)
+    _press_pos.erase(index)
+    _button_looking.erase(index)
     if index == _stick_index:
         _stick_index = -1
         fighter.touch_move = Vector2.ZERO

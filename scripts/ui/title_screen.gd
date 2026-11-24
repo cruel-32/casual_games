@@ -14,6 +14,7 @@ var _pending_nick := ""
 var _retry_left := 0
 var _retry_url := ""
 var _retry_name := ""
+var _login_try := 0
 
 
 func _ready() -> void:
@@ -149,6 +150,14 @@ func _start_connect(url: String, display_name: String, retries: int) -> void:
 func _on_connected() -> void:
     _set_status("로그인 중…", UI.MUTED)
     Net.login(_pending_nick)
+    # 응답이 없으면(서버가 예전 버전이라 요청을 못 알아듣는 경우 등) 무한 대기하지 않게
+    var my_try := _login_try + 1
+    _login_try = my_try
+    await get_tree().create_timer(Net.LOGIN_TIMEOUT).timeout
+    if is_inside_tree() and _login_try == my_try and not Net.is_logged_in() and Net.is_online():
+        Net.disconnect_from_server()
+        _set_busy(false)
+        _set_status("%s 응답 없음 — 서버와 게임 버전이 다를 수 있습니다 (서버 업데이트 필요)" % _retry_name, UI.DANGER)
 
 
 func _on_failed(reason: String) -> void:
@@ -162,6 +171,7 @@ func _on_failed(reason: String) -> void:
 
 
 func _on_login_result(ok: bool, message: String) -> void:
+    _login_try += 1
     if ok:
         app.show_screen("lobby")
         app.toast("%s 님, 환영합니다!" % message, UI.GOOD)
