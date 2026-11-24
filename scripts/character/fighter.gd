@@ -3,7 +3,7 @@ extends CharacterBody3D
 ## 대결 캐릭터 (사람/봇 공용)
 ## - 이동, 점프
 ## - 밀치기: 짧게 누르면 제자리 밀기, 길게 누르면 차징(이동 감속 + 화살표) → 떼면 화살표 방향으로 돌진하며 밀쳐냄
-##   풀차징: 더 멀리 돌진 + 잠시 무적(낙석·밀치기 모두 무시). 차징이 길수록 쿨타임 증가
+##   풀차징: 더 멀리 돌진. 차징이 길수록 쿨타임 증가 (무적은 무적 아이템으로만)
 ## - 맞으면 넉백 + 경직(조작 불가), 몸끼리 부딪히면 살짝 튕김
 ## - 낙석에 닿으면 사망
 ## 사람은 입력을, 봇은 BotBrain이 intent_* 값을 채운다.
@@ -14,10 +14,11 @@ signal died(fighter: Fighter)
 
 const Toon := preload("res://scripts/world/toon.gd")
 const Procedural := preload("res://scripts/world/procedural.gd")
+const SHIELD_SHADER := preload("res://shaders/shield.gdshader")
 
 @export_group("Move")
 @export var move_speed := 6.0
-@export var jump_velocity := 6.5
+@export var jump_velocity := 9.2         # 점프 높이는 예전(6.5 / 중력 1배)과 비슷하게, 대신 빠르게 오르내림
 @export var ground_accel := 14.0
 @export var air_accel := 4.0
 @export var charge_move_mult := 0.55
@@ -30,7 +31,6 @@ const Procedural := preload("res://scripts/world/procedural.gd")
 @export var charge_cooldown_max := 1.8
 @export var dash_distance_min := 1.0
 @export var dash_distance_max := 3.5
-@export var full_charge_invuln := 1.0
 @export var push_reach := 1.45
 @export var tap_lock_time := 0.3            # 탭 밀치기 동안 제자리 정지
 @export var dash_end_lock_min := 0.25       # 차징 돌진 후 제자리 정지 (차징 0%)
@@ -54,7 +54,10 @@ const COYOTE := 0.1
 const JUMP_BUFFER := 0.12
 const BUMP_FORCE := 3.5
 const MAX_HELMETS := 2
-const FEATHER_TIME := 15.0
+const JUMP_GRAVITY_MULT := 2.0      # 스스로 점프한 동안의 중력 배수 (넉백으로 뜬 것은 1배)
+const MAX_STACKS := 8               # 차징 가속·쿨타임 감소 아이템 최대 중첩
+const CHARGE_RATE_PER_STACK := 0.25 # 차징 속도 +25% / 개
+const COOLDOWN_PER_STACK := 0.2     # 쿨타임 = 기본 / (1 + 0.2 × 개수)
 const BOOTS_TIME := 8.0
 const WALL_SLAM_STUN_MULT := 1.5
 const CHAIN_MIN_SPEED := 5.0
@@ -82,7 +85,7 @@ var slot := 0                       # 게임 안 캐릭터 번호 (네트워크 
 var peer_id := 0                    # 사람 플레이어의 접속 id (봇·오프라인은 0)
 var remote := false
 var net_on_floor := true
-var net_invuln := false             # 주인이 보낸 무적 여부 (풀차징 무적 등)
+var net_invuln := false             # 주인이 보낸 무적 여부
 var net_buffer: Array = []          # 클라이언트: 보간용 상태 버퍼
 var net_history: Array = []         # 서버: [[t, pos], ...] 최근 1초 위치 (판정 검증용)
 var net_pending: Array = []         # 서버: 아직 낙석 판정하지 않은 사람 플레이어 상태
@@ -111,9 +114,11 @@ var shake := 0.0
 
 # 아이템
 var helmets := 0
-var double_jump_timer := 0.0
 var heavy_timer := 0.0
-var _air_jump_used := false
+var shield_timer := 0.0             # 무적 아이템 (헬멧이 막은 직후의 짧은 무적 invuln_timer 와 별개 — 보호막 연출용)
+var charge_stacks := 0              # 차징 가속 아이템 개수 (경기 끝까지 유지, 중첩)
+var cooldown_stacks := 0            # 쿨타임 감소 아이템 개수 (〃)
+var _jump_arc := false              # 스스로 점프해서 떠 있는 중 (중력 배수 적용)
 
 # 밀치기 상호작용
 var kills := 0
@@ -150,7 +155,9 @@ var helmet_mat: ShaderMaterial
 var helmet_trim_mat: ShaderMaterial
 var helmet_extra: Node3D
 var boots: Array[Node3D] = []
-var wings: Node3D
+var shield_mi: Node3D
+var shield_mat: ShaderMaterial
+var shield_rings: Array[MeshInstance3D] = []
 var pitch_pivot: Node3D
 var spring_arm: SpringArm3D
 var camera: Camera3D
@@ -182,7 +189,17 @@ func facing() -> Vector3:
 func get_charge_ratio() -> float:
     if not charging:
         return 0.0
-    return clampf((charge_time - tap_threshold) / (charge_max_time - tap_threshold), 0.0, 1.0)
+    return clampf((charge_time - tap_threshold) / (charge_full_time() - tap_threshold), 0.0, 1.0)
+
+
+## 풀차징까지 걸리는 시간 (차징 가속 아이템이 많을수록 짧아짐)
+func charge_full_time() -> float:
+    return tap_threshold + (charge_max_time - tap_threshold) / (1.0 + CHARGE_RATE_PER_STACK * charge_stacks)
+
+
+## 쿨타임 배수 (쿨타임 감소 아이템이 많을수록 작아짐)
+func cooldown_mult() -> float:
+    return 1.0 / (1.0 + COOLDOWN_PER_STACK * cooldown_stacks)
 
 
 func dash_distance_for(c: float) -> float:
@@ -190,7 +207,7 @@ func dash_distance_for(c: float) -> float:
 
 
 func is_invulnerable() -> bool:
-    return invuln_timer > 0.0 or net_invuln
+    return invuln_timer > 0.0 or shield_timer > 0.0 or net_invuln
 
 
 func is_stunned() -> bool:
@@ -333,20 +350,37 @@ func _build_item_visuals() -> void:
         b.visible = false
         boots.append(b)
 
-    # 깃털 날개 (등)
-    wings = Node3D.new()
-    wings.position = Vector3(0, 0.8, 0.26)
-    wings.visible = false
-    visual.add_child(wings)
-    var wm := SphereMesh.new()
-    wm.radius = 0.15
-    wm.height = 0.3
-    var wing_mat := Toon.make(Color(0.6, 0.85, 1.0), {"rim_strength": 0.8})
-    for side: float in [-1.0, 1.0]:
-        var w := _part(wings, wm, Vector3(side * 0.22, 0.05, 0.05), wing_mat)
-        w.scale = Vector3(1.6, 0.9, 0.25)
-        w.rotation.z = side * 0.5
-
+    # 무적 보호막: 몸을 감싸는 빛나는 구(가장자리가 밝음) + 주위를 도는 고리 2개
+    shield_mi = Node3D.new()
+    shield_mi.position = Vector3(0, HEIGHT * 0.5, 0)
+    shield_mi.visible = false
+    add_child(shield_mi)
+    shield_mat = ShaderMaterial.new()
+    shield_mat.shader = SHIELD_SHADER
+    var bubble := SphereMesh.new()
+    bubble.radius = 0.95
+    bubble.height = 1.9
+    var bmi := MeshInstance3D.new()
+    bmi.mesh = bubble
+    bmi.material_override = shield_mat
+    bmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    shield_mi.add_child(bmi)
+    var ring_mat := StandardMaterial3D.new()
+    ring_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ring_mat.albedo_color = Color(1.0, 0.92, 0.45)
+    ring_mat.emission_enabled = true
+    ring_mat.emission = Color(1.0, 0.85, 0.3)
+    var ring := TorusMesh.new()
+    ring.inner_radius = 0.97
+    ring.outer_radius = 1.06
+    for i in 2:
+        var rmi := MeshInstance3D.new()
+        rmi.mesh = ring
+        rmi.material_override = ring_mat
+        rmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        rmi.rotation = Vector3(0.6 if i == 0 else -0.6, 0.0, 0.3 if i == 0 else -0.3)
+        shield_mi.add_child(rmi)
+        shield_rings.append(rmi)
 
 func _update_item_fx() -> void:
     helmet_mi.visible = helmets > 0
@@ -360,11 +394,6 @@ func _update_item_fx() -> void:
         helmet_extra.visible = false
     for b in boots:
         b.visible = heavy_timer > 0.0
-    wings.visible = double_jump_timer > 0.0
-    if wings.visible:
-        var flap := sin(_t * (18.0 if not is_on_floor() else 5.0)) * 0.3
-        wings.get_child(0).rotation.y = flap
-        wings.get_child(1).rotation.y = -flap
 
 
 func _build_arrow() -> void:
@@ -511,7 +540,7 @@ func _physics_process(delta: float) -> void:
         _read_human_input()
 
     if not is_on_floor():
-        velocity.y -= gravity * delta
+        velocity.y -= gravity * (JUMP_GRAVITY_MULT if _jump_arc else 1.0) * delta
 
     if dead:
         knock *= exp(-5.0 * delta)
@@ -531,19 +560,15 @@ func _physics_process(delta: float) -> void:
     else:
         _jump_buffer -= delta
     intent_jump = false
-    if on_floor:
-        _air_jump_used = false
+    if on_floor and velocity.y <= 0.0:
+        _jump_arc = false
     if _jump_buffer > 0.0 and _coyote > 0.0 and controllable and lock_timer <= 0.0:
         velocity.y = jump_velocity
+        _jump_arc = true
         _jump_buffer = 0.0
         _coyote = 0.0
         if charging:
             _cancel_charge(false)       # 점프하면 차징 취소
-    elif _jump_buffer > 0.0 and _coyote <= 0.0 and controllable and lock_timer <= 0.0 \
-            and double_jump_timer > 0.0 and not _air_jump_used:
-        velocity.y = jump_velocity * 0.95     # 깃털: 공중 점프 1회
-        _jump_buffer = 0.0
-        _air_jump_used = true
 
     # 봇 회전 (사람은 마우스로 회전)
     if not is_human and controllable and lock_timer <= 0.0:
@@ -611,7 +636,7 @@ func _tick_timers(delta: float) -> void:
     lock_timer = maxf(lock_timer - delta, 0.0)
     bump_cooldown = maxf(bump_cooldown - delta, 0.0)
     shake = maxf(shake - delta * 2.5, 0.0)
-    double_jump_timer = maxf(double_jump_timer - delta, 0.0)
+    shield_timer = maxf(shield_timer - delta, 0.0)
     heavy_timer = maxf(heavy_timer - delta, 0.0)
 
 
@@ -656,14 +681,12 @@ func _release_push() -> void:
         dash_time = 0.12       # 제자리 밀기
         dash_speed = 0.0
         lock_after = maxf(tap_lock_time - dash_time, 0.0)
-        cooldown_total = tap_cooldown
+        cooldown_total = tap_cooldown * cooldown_mult()
     else:
         dash_time = lerpf(0.12, 0.22, c)
         dash_speed = dash_distance_for(c) / dash_time
-        cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c)
+        cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c) * cooldown_mult()
         lock_after = lerpf(dash_end_lock_min, dash_end_lock_max, c)
-        if c >= 0.999:
-            invuln_timer = full_charge_invuln
     dash_timer = dash_time
     lock_timer = dash_time + lock_after
     push_window = dash_time + 0.12
@@ -687,7 +710,7 @@ func _check_push_hits() -> void:
         _push_hits.append(o)
         var dir := (to / d + f).normalized()
 
-        # 맞밀치기: 서로 마주 보고 동시에 밀면 둘 다 크게 튕김 (풀차징 무적이면 이긴다)
+        # 맞밀치기: 서로 마주 보고 동시에 밀면 둘 다 크게 튕김 (무적이면 이긴다)
         # (온라인에서 다른 PC가 움직이는 캐릭터와는 판정하지 않음)
         if not o.remote and o.push_window > 0.0 and o.facing().dot(-to / d) > 0.4:
             o._push_hits.append(self)
@@ -735,6 +758,7 @@ func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null) -> bo
     knock = Vector3(impulse.x, 0.0, impulse.z)
     control_vel = Vector3.ZERO
     velocity.y = maxf(velocity.y, impulse.y)
+    _jump_arc = false               # 넉백으로 뜬 궤적은 보통 중력
     stun_timer = maxf(stun_timer, stun)
     dash_timer = 0.0
     lock_timer = 0.0
@@ -794,7 +818,7 @@ func die() -> void:
     name_tag.modulate = Color(0.6, 0.6, 0.6, 0.6)
     shake = 1.0
     helmet_mi.visible = false
-    wings.visible = false
+    shield_mi.visible = false
     for b in boots:
         b.visible = false
     died.emit(self)
@@ -809,8 +833,21 @@ func add_helmet() -> bool:
     return true
 
 
-func give_double_jump(seconds: float = FEATHER_TIME) -> void:
-    double_jump_timer = maxf(double_jump_timer, seconds)
+## 차징 가속 1개 추가 (중첩). 이미 최대면 false
+func add_charge_stack() -> bool:
+    if charge_stacks >= MAX_STACKS:
+        return false
+    charge_stacks += 1
+    return true
+
+
+## 쿨타임 감소 1개 추가 (중첩). 이미 최대면 false
+func add_cooldown_stack() -> bool:
+    if cooldown_stacks >= MAX_STACKS:
+        return false
+    cooldown_stacks += 1
+    cooldown_timer = minf(cooldown_timer, cooldown_total * cooldown_mult())
+    return true
 
 
 func give_heavy(seconds: float = BOOTS_TIME) -> void:
@@ -818,8 +855,9 @@ func give_heavy(seconds: float = BOOTS_TIME) -> void:
     knock = Vector3.ZERO
 
 
+## 무적 아이템: 보호막 (낙석·밀치기 모두 무시)
 func give_invuln(seconds: float) -> void:
-    invuln_timer = maxf(invuln_timer, seconds)
+    shield_timer = maxf(shield_timer, seconds)
 
 
 func _check_wall_slam() -> void:
@@ -873,15 +911,29 @@ func _update_arrow() -> void:
 
 
 func _update_invuln_fx() -> void:
-    if is_invulnerable():
-        var speed := 30.0 if invuln_timer < 1.5 else 7.0
-        var k := 0.5 + 0.5 * sin(_t * speed)
-        skin_mat.set_shader_parameter("albedo", body_color.lerp(Color(1.0, 0.95, 0.7), 0.3 + 0.4 * k))
-        skin_mat.set_shader_parameter("rim_strength", 1.6)
+    var shielded := shield_timer > 0.0
+    shield_mi.visible = shielded and not dead
+    if shielded:
+        # 끝나기 1.5초 전부터 빠르게 깜빡여 곧 풀린다는 걸 알림 (원격 캐릭터는 남은 시간을 모름 → 깜빡이지 않음)
+        var ending := not remote and shield_timer < 1.5
+        var pulse := 0.75 + 0.25 * sin(_t * 6.0)
+        if ending and fmod(_t * 8.0, 1.0) < 0.45:
+            pulse = 0.15
+        shield_mat.set_shader_parameter("strength", pulse)
+        shield_mi.scale = Vector3.ONE * (1.0 + 0.04 * sin(_t * 5.0))
+        shield_rings[0].rotate_object_local(Vector3.UP, 0.05)
+        shield_rings[1].rotate_object_local(Vector3.UP, -0.07)
+        var k := 0.5 + 0.5 * sin(_t * 7.0)
+        skin_mat.set_shader_parameter("albedo", body_color.lerp(Color(1.0, 0.92, 0.55), 0.15 + 0.2 * k))
+        skin_mat.set_shader_parameter("rim_strength", 2.0)
+    elif is_invulnerable():
+        # 헬멧이 막은 직후 등의 짧은 무적: 살짝 깜빡임만
+        var k := 0.5 + 0.5 * sin(_t * 30.0)
+        skin_mat.set_shader_parameter("albedo", body_color.lerp(Color(1.0, 0.95, 0.7), 0.3 * k))
+        skin_mat.set_shader_parameter("rim_strength", 1.0)
     else:
         skin_mat.set_shader_parameter("albedo", body_color)
         skin_mat.set_shader_parameter("rim_strength", 0.4)
-
 
 func _animate(delta: float) -> void:
     var k := clampf(delta * 14.0, 0.0, 1.0)

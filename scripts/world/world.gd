@@ -16,7 +16,7 @@ const GRASS_A := Color(0.22, 0.42, 0.13)
 const GRASS_B := Color(0.36, 0.53, 0.16)
 
 @export var grass_density := 2.5     # m²당 풀 덩어리 수 (덩어리 = 3가닥). 사양 낮으면 1.0
-@export var grass_radius := 110.0
+@export var grass_radius := 90.0     # 풀은 80m 밖에서 안 그려지므로 그 너머는 심지 않음
 @export var tree_count := 55
 @export var rock_count := 35
 @export var arena_half := 18.0       # 대결 구역(사각형) 반폭

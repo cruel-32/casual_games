@@ -1,24 +1,28 @@
 class_name ItemPickup
 extends Area3D
 ## 아레나에 떨어지는 아이템. 캐릭터가 닿으면 획득 (거부되면 그대로 남음 — 예: 헬멧 2개 꽉 참)
+## 차징 가속·쿨타임 감소는 경기 끝까지 유지되고 먹을수록 중첩된다 (최대 Fighter.MAX_STACKS 개)
 
 const Toon := preload("res://scripts/world/toon.gd")
 
-enum Kind { HELMET, FEATHER, BOOTS, SHIELD5, SHIELD10 }
+## 순서 = 네트워크로 보내는 번호 (바꾸면 PROTOCOL_VERSION 도 올릴 것)
+enum Kind { HELMET, CHARGE_UP, BOOTS, SHIELD5, SHIELD10, COOL_DOWN }
 
 const NAMES := {
     Kind.HELMET: "헬멧",
-    Kind.FEATHER: "깃털 (2단 점프)",
+    Kind.CHARGE_UP: "차징 가속",
     Kind.BOOTS: "무거운 신발",
     Kind.SHIELD5: "무적 5초",
     Kind.SHIELD10: "무적 10초",
+    Kind.COOL_DOWN: "쿨타임 감소",
 }
 const COLORS := {
     Kind.HELMET: Color(1.0, 0.82, 0.2),
-    Kind.FEATHER: Color(0.85, 0.95, 1.0),
+    Kind.CHARGE_UP: Color(1.0, 0.45, 0.15),
     Kind.BOOTS: Color(0.55, 0.36, 0.22),
     Kind.SHIELD5: Color(0.35, 0.9, 1.0),
     Kind.SHIELD10: Color(1.0, 0.75, 0.15),
+    Kind.COOL_DOWN: Color(0.3, 0.9, 0.45),
 }
 
 var game: Node
@@ -38,8 +42,10 @@ static func apply_to(f: Fighter, k: int) -> bool:
     match k:
         Kind.HELMET:
             return f.add_helmet()
-        Kind.FEATHER:
-            f.give_double_jump()
+        Kind.CHARGE_UP:
+            return f.add_charge_stack()
+        Kind.COOL_DOWN:
+            return f.add_cooldown_stack()
         Kind.BOOTS:
             f.give_heavy()
         Kind.SHIELD5:
@@ -114,13 +120,36 @@ func _build_mesh(color: Color) -> void:
             m.height = 0.64
             m.is_hemisphere = true
             mi.mesh = m
-        Kind.FEATHER:
-            var m := SphereMesh.new()
-            m.radius = 0.12
-            m.height = 0.24
+        Kind.CHARGE_UP:
+            # 번개: 기울어진 납작한 막대 2개를 지그재그로
+            var m := BoxMesh.new()
+            m.size = Vector3(0.14, 0.42, 0.1)
             mi.mesh = m
-            mi.scale = Vector3(0.6, 3.5, 0.25)
-            mi.rotation.z = 0.5
+            mi.position = Vector3(0.06, 0.16, 0)
+            mi.rotation.z = -0.5
+            var mi2 := MeshInstance3D.new()
+            mi2.mesh = m
+            mi2.material_override = mat
+            mi2.position = Vector3(-0.06, -0.16, 0)
+            mi2.rotation.z = -0.5
+            _pivot.add_child(mi2)
+        Kind.COOL_DOWN:
+            # 모래시계: 위아래로 맞붙은 원뿔 2개
+            var m := CylinderMesh.new()
+            m.top_radius = 0.26
+            m.bottom_radius = 0.03
+            m.height = 0.3
+            mi.mesh = m
+            mi.position.y = 0.15
+            var mi2 := MeshInstance3D.new()
+            var m2 := CylinderMesh.new()
+            m2.top_radius = 0.03
+            m2.bottom_radius = 0.26
+            m2.height = 0.3
+            mi2.mesh = m2
+            mi2.material_override = mat
+            mi2.position.y = -0.15
+            _pivot.add_child(mi2)
         Kind.BOOTS:
             var m := BoxMesh.new()
             m.size = Vector3(0.28, 0.3, 0.45)

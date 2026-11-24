@@ -24,7 +24,7 @@ signal game_message(msg: Array)          # 클라이언트: 서버의 게임 모
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 3
+const PROTOCOL_VERSION := 4
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)

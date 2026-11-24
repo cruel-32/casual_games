@@ -152,7 +152,7 @@ func _skill_text() -> String:
         if h.charge_time < h.tap_threshold:
             return "밀치기" + extra
         if c >= 0.999:
-            return "풀차징! 놓으면 돌진 (무적)" + extra
+            return "풀차징! 놓으면 돌진" + extra
         return "차징 %d%%" % int(c * 100.0) + extra
     if h.cooldown_timer > 0.0:
         return "쿨타임 %.1f초" % h.cooldown_timer + extra
@@ -168,12 +168,14 @@ func _status_text() -> String:
     var parts: PackedStringArray = []
     if h.helmets > 0:
         parts.append("헬멧 %d/%d" % [h.helmets, Fighter.MAX_HELMETS])
-    if h.double_jump_timer > 0.0:
-        parts.append("2단 점프 %.0f초" % ceilf(h.double_jump_timer))
+    if h.charge_stacks > 0:
+        parts.append("차징 가속 ×%d" % h.charge_stacks)
+    if h.cooldown_stacks > 0:
+        parts.append("쿨타임 감소 ×%d" % h.cooldown_stacks)
     if h.heavy_timer > 0.0:
         parts.append("무거운 신발 %.0f초" % ceilf(h.heavy_timer))
-    if h.invuln_timer > 0.7:
-        parts.append("무적 %.1f초" % h.invuln_timer)
+    if h.shield_timer > 0.0:
+        parts.append("무적 %.1f초" % h.shield_timer)
     return "  ·  ".join(parts)
 
 

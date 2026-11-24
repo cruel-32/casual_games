@@ -14,7 +14,7 @@ const F_INVULN := 4
 const F_PUSH_ANIM := 8
 const F_STUN := 16
 const F_HEAVY := 32
-const F_FEATHER := 64
+const F_SHIELD := 64             # 무적 아이템 보호막 (보기용)
 const F_PUSH_WINDOW := 128
 
 const BUFFER_MAX := 32
@@ -35,8 +35,8 @@ static func flags_of(f: Fighter) -> int:
         fl |= F_STUN
     if f.heavy_timer > 0.0:
         fl |= F_HEAVY
-    if f.double_jump_timer > 0.0:
-        fl |= F_FEATHER
+    if f.shield_timer > 0.0:
+        fl |= F_SHIELD
     if f.push_window > 0.0:
         fl |= F_PUSH_WINDOW
     return fl
@@ -124,7 +124,7 @@ static func _apply(f: Fighter, pos: Vector3, rot: float, vel: Vector3, e: Array)
     var fl := int(e[4])
     f.invuln_timer = 0.3 if fl & F_INVULN else 0.0
     f.heavy_timer = 1.0 if fl & F_HEAVY else 0.0
-    f.double_jump_timer = 1.0 if fl & F_FEATHER else 0.0
+    f.shield_timer = 1.0 if fl & F_SHIELD else 0.0
 
 
 ## 보기용 상태 플래그 (서버의 사람 캐릭터와 클라이언트의 원격 캐릭터 공용)

@@ -5,6 +5,10 @@ const CHUNK := 16.0
 
 
 ## lawn_half > 0 이면 그 사각형 안쪽 풀은 짧게 깎는다 (낙석 표시가 풀에 가리지 않도록)
+## 아레나에서 OUTER_MARGIN 보다 먼 바깥은 OUTER_KEEP 비율만 심는다 (배경이라 듬성듬성해도 충분, 그리기 부담 감소)
+const OUTER_MARGIN := 6.0
+const OUTER_KEEP := 0.3
+
 func generate(terrain: Node, material: Material, density: float, radius: float,
         rng: RandomNumberGenerator, lawn_half: float = -1.0) -> void:
     var mesh := _make_clump_mesh()
@@ -31,6 +35,9 @@ func generate(terrain: Node, material: Material, density: float, radius: float,
                 var wx := center.x + lx
                 var wz := center.y + lz
                 if Vector2(wx, wz).length() > radius:
+                    continue
+                var outer := maxf(absf(wx), absf(wz)) > maxf(lawn_half, 0.0) + OUTER_MARGIN
+                if outer and rng.randf() > OUTER_KEEP:
                     continue
                 var slope: float = terrain.get_slope(wx, wz)
                 if slope > 0.3:

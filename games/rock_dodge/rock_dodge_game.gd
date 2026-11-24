@@ -40,8 +40,8 @@ const PUSH_REWIND_MAX := 0.6    # 서버: 이보다 오래된 시점의 밀치�
 @export var item_interval_max := 3.5
 @export var max_items := 5
 @export var item_lifetime := 15.0
-## 등장 가중치: 헬멧, 깃털, 무거운 신발, 무적5, 무적10
-@export var item_weights: Array[float] = [30.0, 25.0, 20.0, 17.0, 8.0]
+## 등장 가중치 (ItemPickup.Kind 순서): 헬멧, 차징 가속, 무거운 신발, 무적5, 무적10, 쿨타임 감소
+@export var item_weights: Array[float] = [26.0, 20.0, 16.0, 14.0, 6.0, 20.0]
 
 const KILL_CREDIT_TIME := 3.0      # 민 뒤 이 시간 안에 낙석에 맞으면 민 사람 득점
 
@@ -398,6 +398,10 @@ func on_item_picked(it: ItemPickup, f: Fighter) -> void:
     var text := "%s!" % ItemPickup.kind_name(it.kind)
     if it.kind == ItemPickup.Kind.HELMET:
         text = "헬멧 (%d/%d)" % [f.helmets, Fighter.MAX_HELMETS]
+    elif it.kind == ItemPickup.Kind.CHARGE_UP:
+        text = "차징 가속 ×%d" % f.charge_stacks
+    elif it.kind == ItemPickup.Kind.COOL_DOWN:
+        text = "쿨타임 감소 ×%d" % f.cooldown_stacks
     popup_text(f.global_position + Vector3(0, 2.4, 0), text, ItemPickup.COLORS[it.kind].lightened(0.2))
 
 
@@ -408,6 +412,10 @@ func nearest_item(pos: Vector3, max_dist: float, f: Fighter) -> Node3D:
         if not is_instance_valid(it):
             continue
         if it.kind == ItemPickup.Kind.HELMET and f.helmets >= Fighter.MAX_HELMETS:
+            continue
+        if it.kind == ItemPickup.Kind.CHARGE_UP and f.charge_stacks >= Fighter.MAX_STACKS:
+            continue
+        if it.kind == ItemPickup.Kind.COOL_DOWN and f.cooldown_stacks >= Fighter.MAX_STACKS:
             continue
         var d: float = pos.distance_to(it.global_position)
         if d < best_d:
