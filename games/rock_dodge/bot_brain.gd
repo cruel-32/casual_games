@@ -62,8 +62,10 @@ func _physics_process(delta: float) -> void:
     var avoid := Vector3.ZERO
     var danger := false
     for r in game.rocks:
+        if not is_instance_valid(r):
+            continue
         var rock := r as FallingRock
-        if not is_instance_valid(rock) or rock.landed or rock.age < reaction:
+        if rock.landed or rock.age < reaction:
             continue
         var to := pos - rock.target_point
         to.y = 0.0
@@ -141,8 +143,7 @@ func _physics_process(delta: float) -> void:
 func _pick_target() -> Fighter:
     var best: Fighter = null
     var best_d := 12.0
-    for node in f.get_tree().get_nodes_in_group(&"fighters"):
-        var o := node as Fighter
+    for o: Fighter in game.fighters:
         if o == f or o.dead:
             continue
         var d := o.global_position.distance_to(f.global_position) + randf_range(0.0, 3.0)

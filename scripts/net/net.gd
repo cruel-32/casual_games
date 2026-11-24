@@ -5,6 +5,9 @@ extends Node
 ## - 실행 인자 `-- --server [--port 7777] [--status-port 7778]` 이면 전용 서버로 시작
 ## - 상태 페이지(HTTP): status-port 의 `/` (HTML), `/health` (헬스체크, "ok")
 ## - 클라이언트 → 서버: c_* RPC / 서버 → 클라이언트: s_* RPC
+## - 게임 중: 서버가 방마다 경기(match.tscn)를 따로 돌린다 (SubViewport + 독립 물리 월드).
+##   게임 모듈끼리 주고받는 메시지는 c_game / s_game (내용은 게임 모듈이 정함)
+## - 시계 맞추기: 클라이언트가 주기적으로 ping → server_now() 로 서버 시계를 추정
 
 signal connected
 signal connection_failed(reason: String)
@@ -16,6 +19,7 @@ signal left_room(reason: String)
 signal error_message(text: String)
 signal chat_received(nick: String, text: String, system: bool)
 signal game_started(room: Dictionary)
+signal game_message(msg: Array)          # 클라이언트: 서버의 게임 모듈이 보낸 메시지
 
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 
@@ -36,6 +40,7 @@ const NICK_MAX := 12
 const ROOM_NAME_MAX := 20
 const CHAT_MAX := 120
 const CONNECT_TIMEOUT := 6.0
+const MATCH_SCENE := "res://scenes/match.tscn"
 
 var is_server := false
 var server_name := ""                   # 현재 접속한 서버의 표시 이름
@@ -49,6 +54,12 @@ var match_config: Dictionary = {}       # 게임 시작 시 받은 방 정보 (�
 var chat_log: Array = []                # 현재 방 채팅 기록 [{nick, text, system}]
 var _connect_timer: SceneTreeTimer
 var _connecting := false
+var rtt := 0.0                          # 왕복 지연(초)
+var _clock_offset := 0.0                # 서버 시계 - 내 시계
+var _clock_samples: Array = []          # [[rtt, offset], ...]
+var _clock_synced := false
+var _ping_timer := 0.0
+var _ping_count := 0
 
 # ---- 서버 상태
 var _players := {}                      # peer_id -> {nick, room}
@@ -58,6 +69,7 @@ var _nick_regex := RegEx.new()
 var _status_server: TCPServer
 var _status_clients: Array = []         # [{peer: StreamPeerTCP, buf: String, t: float}]
 var _started_at := 0.0
+var _matches := {}                      # room_id -> {vp: SubViewport, game: Node}
 
 
 func _ready() -> void:
@@ -87,6 +99,22 @@ func is_online() -> bool:
     var p := multiplayer.multiplayer_peer
     return p != null and not (p is OfflineMultiplayerPeer) \
             and p.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+
+
+## 이 PC의 시계(초)
+static func local_time() -> float:
+    return Time.get_ticks_usec() / 1000000.0
+
+
+## 서버 시계(초) — 클라이언트는 ping 으로 추정한 값
+func server_now() -> float:
+    if is_server:
+        return local_time()
+    return local_time() + _clock_offset
+
+
+func is_clock_synced() -> bool:
+    return is_server or _clock_synced
 
 
 func is_logged_in() -> bool:
@@ -227,8 +255,10 @@ func _leave_room(pid: int, reason: String) -> void:
     if _peer_alive(pid):
         s_left_room.rpc_id(pid, reason)
         s_room_list.rpc_id(pid, _public_rooms())
+    _match_player_left(rid, pid)
     if r.members.is_empty():
         _rooms.erase(rid)
+        _free_match(rid)
         print("[server] 방 삭제 #%d" % rid)
     else:
         _room_system_chat(rid, "%s 님이 나갔습니다" % _players[pid].nick)
@@ -251,7 +281,149 @@ func _check_all_returned(rid: int) -> void:
     r.state = "waiting"
     r.ready.clear()
     r.returned.clear()
+    _free_match(rid)
     _room_system_chat(rid, "모두 돌아왔습니다. 다시 레디해 주세요")
+
+
+# ---- 경기 (서버가 방마다 게임을 직접 돌림)
+func _create_match(rid: int, snap: Dictionary) -> void:
+    _free_match(rid)
+    var vp := SubViewport.new()
+    vp.name = "Match%d" % rid
+    vp.own_world_3d = true                  # 방마다 독립된 물리 공간
+    vp.size = Vector2i(2, 2)
+    vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+    add_child(vp)
+    var world: Node = load(MATCH_SCENE).instantiate()
+    var cfg := snap.duplicate(true)
+    cfg["game_id"] = String(snap.get("game", ""))
+    cfg["room_id"] = rid
+    world.set("server_config", cfg)
+    vp.add_child(world)
+    _matches[rid] = {"vp": vp, "game": world.get_node_or_null("Game")}
+    print("[server] 경기 시작 #%d [%s]" % [rid, cfg.game_id])
+
+
+func _free_match(rid: int) -> void:
+    if not _matches.has(rid):
+        return
+    var m: Dictionary = _matches[rid]
+    _matches.erase(rid)
+    if is_instance_valid(m.vp):
+        m.vp.queue_free()
+    print("[server] 경기 정리 #%d" % rid)
+
+
+func _match_game(rid: int) -> Node:
+    if not _matches.has(rid):
+        return null
+    var g = _matches[rid].game
+    return g if is_instance_valid(g) else null
+
+
+func _match_player_left(rid: int, pid: int) -> void:
+    var g := _match_game(rid)
+    if g and g.has_method(&"on_player_left"):
+        g.on_player_left(pid)
+
+
+## 서버: 게임 모듈 → 특정 플레이어
+func send_game_to(pid: int, msg: Array, reliable: bool = true) -> void:
+    if not _peer_alive(pid):
+        return
+    if reliable:
+        s_game.rpc_id(pid, msg)
+    else:
+        s_game_u.rpc_id(pid, msg)
+
+
+## 서버: 게임 모듈 → 방 안 모든 플레이어 (except_pid 제외)
+func broadcast_game(rid: int, msg: Array, reliable: bool = true, except_pid: int = 0) -> void:
+    if not _rooms.has(rid):
+        return
+    for pid in _rooms[rid].members:
+        if pid != except_pid:
+            send_game_to(pid, msg, reliable)
+
+
+## 클라이언트: 게임 모듈 → 서버
+func send_game(msg: Array, reliable: bool = true) -> void:
+    if not is_online():
+        return
+    if reliable:
+        c_game.rpc_id(1, msg)
+    else:
+        c_game_u.rpc_id(1, msg)
+
+
+func _route_client_game(msg: Array) -> void:
+    var id := _sender()
+    if not is_server or id == 0:
+        return
+    var g := _match_game(int(_players[id].room))
+    if g and g.has_method(&"on_client_message"):
+        g.on_client_message(id, msg)
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func c_game(msg: Array) -> void:
+    _route_client_game(msg)
+
+
+@rpc("any_peer", "call_remote", "unreliable_ordered")
+func c_game_u(msg: Array) -> void:
+    _route_client_game(msg)
+
+
+@rpc("authority", "call_remote", "reliable")
+func s_game(msg: Array) -> void:
+    game_message.emit(msg)
+
+
+@rpc("authority", "call_remote", "unreliable_ordered")
+func s_game_u(msg: Array) -> void:
+    game_message.emit(msg)
+
+
+# ---- 시계 맞추기
+@rpc("any_peer", "call_remote", "unreliable")
+func c_ping(client_t: float) -> void:
+    if is_server:
+        s_pong.rpc_id(multiplayer.get_remote_sender_id(), client_t, local_time())
+
+
+@rpc("authority", "call_remote", "unreliable")
+func s_pong(client_t: float, server_t: float) -> void:
+    var now := local_time()
+    var r := now - client_t
+    if r < 0.0 or r > 5.0:
+        return
+    _clock_samples.append([r, server_t + r * 0.5 - now])
+    if _clock_samples.size() > 12:
+        _clock_samples.pop_front()
+    # 왕복이 가장 짧았던 측정이 가장 정확하다
+    var best: Array = _clock_samples[0]
+    for smp in _clock_samples:
+        if smp[0] < best[0]:
+            best = smp
+    var target: float = best[1]
+    if not _clock_synced or absf(target - _clock_offset) > 0.25:
+        _clock_offset = target
+    else:
+        _clock_offset = lerpf(_clock_offset, target, 0.2)
+    rtt = lerpf(rtt, r, 0.3) if _clock_synced else r
+    _clock_synced = true
+
+
+func _update_clock(delta: float) -> void:
+    if not is_online():
+        return
+    _ping_timer -= delta
+    if _ping_timer > 0.0:
+        return
+    _ping_count += 1
+    _ping_timer = 0.2 if _ping_count < 8 else 1.0     # 접속 직후엔 빠르게 여러 번
+    c_ping.rpc_id(1, local_time())
 
 
 # ---- 상태 페이지 (HTTP, 헬스체크용)
@@ -266,7 +438,10 @@ func _start_status_server(port: int) -> void:
     print("[server] 상태 페이지 — http://0.0.0.0:%d/  (헬스체크 /health)" % port)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+    if not is_server:
+        _update_clock(delta)
+        return
     if _status_server == null:
         return
     while _status_server.is_connection_available():
@@ -275,7 +450,7 @@ func _process(_delta: float) -> void:
     for c in _status_clients:
         var peer: StreamPeerTCP = c.peer
         peer.poll()
-        c.t += _delta
+        c.t += delta
         if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:
             continue
         var n := peer.get_available_bytes()
@@ -323,6 +498,7 @@ func _status_data() -> Dictionary:
         "connections": multiplayer.get_peers().size(),
         "players": _players.size(),
         "rooms": room_list,
+        "matches": _matches.size(),
     }
 
 
@@ -547,6 +723,7 @@ func c_start_game() -> void:
     print("[server] 게임 시작 #%d (%d명)" % [rid, r.members.size()])
     for pid in r.members:
         s_game_start.rpc_id(pid, snap)
+    _create_match(rid, snap)
     _broadcast_room_list()
 
 
@@ -559,6 +736,7 @@ func c_return_to_room() -> void:
     if rid == 0:
         return
     _rooms[rid].returned[id] = true
+    _match_player_left(rid, id)        # 경기 도중 나가면 기권
     _check_all_returned(rid)
     _send_room(rid)
     _broadcast_room_list()
@@ -729,6 +907,10 @@ func return_to_room() -> void:
 
 func _reset_client() -> void:
     _connecting = false
+    _clock_samples.clear()
+    _clock_synced = false
+    _ping_count = 0
+    _ping_timer = 0.0
     my_id = 0
     nickname = ""
     rooms = []

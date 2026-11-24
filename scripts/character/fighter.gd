@@ -6,7 +6,9 @@ extends CharacterBody3D
 ##   풀차징: 더 멀리 돌진 + 잠시 무적(낙석·밀치기 모두 무시). 차징이 길수록 쿨타임 증가
 ## - 맞으면 넉백 + 경직(조작 불가), 몸끼리 부딪히면 살짝 튕김
 ## - 낙석에 닿으면 사망
-## 사람은 입력을, 봇은 BotBrain이 intent_* 값을 채운다. (네트워크 플레이어도 같은 방식으로 연결 가능)
+## 사람은 입력을, 봇은 BotBrain이 intent_* 값을 채운다.
+## 온라인: remote = true 인 캐릭터는 직접 움직이지 않고 네트워크로 받은 상태를 보여주기만 한다
+##   (클라이언트: 나 이외 전원 / 서버: 사람 플레이어 — 각자 자기 PC에서 움직임)
 
 signal died(fighter: Fighter)
 
@@ -66,6 +68,18 @@ var intent_move := Vector3.ZERO     # 월드 방향, 길이 0~1
 var intent_face := Vector3.ZERO     # 봇: 바라볼 방향 (0이면 이동 방향)
 var intent_jump := false
 var intent_charge := false          # 밀치기 키를 누르고 있는가
+
+# 온라인 동기화
+var slot := 0                       # 게임 안 캐릭터 번호 (네트워크 메시지에서 이 번호로 가리킴)
+var peer_id := 0                    # 사람 플레이어의 접속 id (봇·오프라인은 0)
+var remote := false
+var net_on_floor := true
+var net_invuln := false             # 주인이 보낸 무적 여부 (풀차징 무적 등)
+var net_buffer: Array = []          # 클라이언트: 보간용 상태 버퍼
+var net_history: Array = []         # 서버: [[t, pos], ...] 최근 1초 위치 (판정 검증용)
+var net_pending: Array = []         # 서버: 아직 낙석 판정하지 않은 사람 플레이어 상태
+var net_lag := 0.15                 # 클라이언트: 이 캐릭터 상태가 도착하기까지 걸리는 시간(추정)
+var net_rejects := 0                # 서버: 속도 검사에 걸려 무시한 연속 횟수
 
 # 상태
 var dead := false
@@ -168,7 +182,7 @@ func dash_distance_for(c: float) -> float:
 
 
 func is_invulnerable() -> bool:
-    return invuln_timer > 0.0
+    return invuln_timer > 0.0 or net_invuln
 
 
 func is_stunned() -> bool:
@@ -476,6 +490,15 @@ func _read_human_input() -> void:
 func _physics_process(delta: float) -> void:
     _t += delta
     _tick_timers(delta)
+    if remote:
+        # 위치·상태는 게임이 네트워크로 받은 값으로 채운다. 여기선 보이기만.
+        _animate(delta)
+        if dead:
+            return
+        _update_arrow()
+        _update_invuln_fx()
+        _update_item_fx()
+        return
     if is_human:
         _read_human_input()
 
@@ -643,8 +666,7 @@ func _check_push_hits() -> void:
     if push_window <= 0.0:
         return
     var f := facing()
-    for node in get_tree().get_nodes_in_group(&"fighters"):
-        var o := node as Fighter
+    for o: Fighter in _others():
         if o == self or o.dead or _push_hits.has(o):
             continue
         var to := o.global_position - global_position
@@ -658,7 +680,8 @@ func _check_push_hits() -> void:
         var dir := (to / d + f).normalized()
 
         # 맞밀치기: 서로 마주 보고 동시에 밀면 둘 다 크게 튕김 (풀차징 무적이면 이긴다)
-        if o.push_window > 0.0 and o.facing().dot(-to / d) > 0.4:
+        # (온라인에서 다른 PC가 움직이는 캐릭터와는 판정하지 않음)
+        if not o.remote and o.push_window > 0.0 and o.facing().dot(-to / d) > 0.4:
             o._push_hits.append(self)
             o.receive_push(dir * CLASH_FORCE + Vector3.UP * 3.0, 0.5, self)
             receive_push(-dir * CLASH_FORCE + Vector3.UP * 3.0, 0.5, o)
@@ -676,10 +699,23 @@ func _check_push_hits() -> void:
         var force := 7.0 if push_tap else lerpf(9.0, 17.0, push_power)
         var lift := 2.0 if push_tap else lerpf(3.0, 5.5, push_power)
         var stun := 0.45 if push_tap else lerpf(0.8, 1.8, push_power)
-        if o.receive_push(dir * force + Vector3.UP * lift, stun, self):
+        if _deliver_push(o, dir * force + Vector3.UP * lift, stun):
             dash_timer = 0.0
             knock += -dir * 1.5
             shake = maxf(shake, 0.3)
+
+
+func _others() -> Array:
+    if game and "fighters" in game:
+        return game.fighters
+    return get_tree().get_nodes_in_group(&"fighters")
+
+
+## 상대에게 밀치기 전달. 온라인이면 게임이 서버/상대 PC로 보낸다
+func _deliver_push(o: Fighter, impulse: Vector3, stun: float) -> bool:
+    if game and game.has_method(&"deliver_push"):
+        return game.deliver_push(self, o, impulse, stun)
+    return o.receive_push(impulse, stun, self)
 
 
 ## 밀치기에 맞음. 무적/무거운 신발이면 무시하고 false
@@ -719,11 +755,24 @@ func kill() -> int:
     if dead or is_invulnerable():
         return 0
     if helmets > 0:
-        helmets -= 1
-        invuln_timer = maxf(invuln_timer, 0.6)   # 같은 돌에 연속으로 맞지 않게
-        shake = maxf(shake, 0.7)
+        lose_helmet()
         _popup(global_position, "헬멧 파괴! (%d/%d)" % [helmets, MAX_HELMETS], Color(1.0, 0.8, 0.3))
         return 2
+    die()
+    return 1
+
+
+## 헬멧 1개가 낙석을 막고 부서짐
+func lose_helmet() -> void:
+    helmets = maxi(helmets - 1, 0)
+    invuln_timer = maxf(invuln_timer, 0.6)   # 같은 돌에 연속으로 맞지 않게
+    shake = maxf(shake, 0.7)
+
+
+## 사망 처리 (헬멧·무적 무시). 온라인에서는 서버가 정한 사망을 그대로 반영할 때도 쓴다
+func die() -> void:
+    if dead:
+        return
     dead = true
     charging = false
     dash_timer = 0.0
@@ -740,7 +789,6 @@ func kill() -> int:
     for b in boots:
         b.visible = false
     died.emit(self)
-    return 1
 
 
 # ---- 파워업 (게임 모듈의 아이템이 호출하는 공용 효과)
@@ -791,7 +839,7 @@ func _check_wall_slam() -> void:
 
 func _popup(pos: Vector3, text: String, color: Color) -> void:
     if game and game.has_method(&"popup_text"):
-        game.popup_text(pos + Vector3(0, 2.4, 0), text, color)
+        game.popup_text(pos + Vector3(0, 2.4, 0), text, color, not remote)
 
 
 # ================================================================ 연출
@@ -836,7 +884,7 @@ func _animate(delta: float) -> void:
         return
 
     var hspeed := Vector2(velocity.x, velocity.z).length()
-    var grounded := is_on_floor()
+    var grounded := net_on_floor if remote else is_on_floor()
     var target_amp := 0.0
     if grounded and hspeed > 0.2 and not is_stunned():
         target_amp = clampf(hspeed / move_speed, 0.0, 1.4) * 0.6

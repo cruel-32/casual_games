@@ -30,6 +30,18 @@ func angular_speed() -> float:
     return lerpf(speed_start, speed_end, game.difficulty())
 
 
+## 경기 경과 시간 e 일 때의 각도 — 속도를 시간으로 적분한 값이라
+## 경과 시간만 같으면 서버·모든 클라이언트에서 기둥 위치가 똑같다
+func angle_at(e: float) -> float:
+    var ramp: float = game.difficulty_ramp_time
+    var a: float
+    if e <= ramp:
+        a = speed_start * e + (speed_end - speed_start) * e * e / (2.0 * ramp)
+    else:
+        a = speed_start * ramp + (speed_end - speed_start) * ramp * 0.5 + speed_end * (e - ramp)
+    return wrapf(a, 0.0, TAU)
+
+
 ## 기둥 팔의 방향(월드)
 func arm_dir() -> Vector3:
     return Vector3(cos(angle), 0.0, -sin(angle))
@@ -121,8 +133,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
     if game == null:
         return
-    if game.is_playing():
-        angle = wrapf(angle + angular_speed() * delta, 0.0, TAU)
+    angle = angle_at(game.elapsed)
     _beam.rotation.y = angle
     if not game.is_playing():
         return
@@ -135,8 +146,8 @@ func _physics_process(delta: float) -> void:
     var dir := arm_dir()
     var w := angular_speed()
     for f: Fighter in game.alive_fighters():
-        if _hit_cd.has(f):
-            continue
+        if _hit_cd.has(f) or f.remote:
+            continue                                   # 온라인: 각자 자기 PC에서 판정
         var p := f.global_position - global_position
         var feet := p.y
         p.y = 0.0
@@ -160,4 +171,4 @@ func _physics_process(delta: float) -> void:
         var push := tangent.normalized()
         _hit_cd[f] = hit_cooldown
         if f.receive_push(push * HIT_FORCE + Vector3.UP * HIT_LIFT, HIT_STUN, null):
-            game.popup_text(f.global_position + Vector3(0, 2.4, 0), "쾅!", Color(1.0, 0.4, 0.3))
+            game.popup_text(f.global_position + Vector3(0, 2.4, 0), "쾅!", Color(1.0, 0.4, 0.3), true)

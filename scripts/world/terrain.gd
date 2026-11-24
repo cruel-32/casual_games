@@ -5,6 +5,7 @@ extends StaticBody3D
 @export var noise_seed := 1337
 @export var flat_half := 22.0     # 이 사각형 안쪽은 거의 평평하게 (대결 아레나)
 
+var headless := false             # 서버: 보이는 메시 없이 충돌만
 var n := 0                        # 한 변 정점 수
 var half := 0.0
 var heights := PackedFloat32Array()
@@ -32,7 +33,8 @@ func generate(material: Material) -> void:
         for x in n:
             heights[z * n + x] = _height_fn(x - half, z - half)
 
-    _build_mesh(material)
+    if not headless:
+        _build_mesh(material)
     _build_collision()
 
 

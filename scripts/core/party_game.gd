@@ -11,12 +11,21 @@ extends Node3D
 ## 공통으로 제공하는 것
 ##   - 상태 조회(is_playing, alive_fighters …), 팝업 문구, 메뉴/방 복귀, 결과 화면 입력,
 ##     터치 컨트롤·세로 화면 안내(add_common_ui)
+##   - 온라인 역할(net_role)과 메시지 보내기 도우미
+##
+## 온라인 구조 (서버 판정 + 내 캐릭터는 내 PC에서 즉시 이동)
+##   OFFLINE: 이 PC 혼자 전부 진행
+##   SERVER : 서버가 방마다 같은 게임 노드를 돌린다. 규칙·생성(낙석·아이템·바람)·봇·사망·승패 판정
+##            서버 쪽 게임은 on_client_message(pid, msg) 로 클라이언트 메시지를 받는다
+##   CLIENT : 내 캐릭터만 직접 움직여 상태를 보내고, 나머지는 서버가 보낸 대로 보여준다
+##            on_server_message(msg) 로 서버 메시지를 받는다
 
 const TOUCH_SCRIPT := preload("res://scripts/ui/touch_controls.gd")
 const ROTATE_HINT := preload("res://scripts/ui/rotate_hint.gd")
 const MENU_SCENE := "res://scenes/app.tscn"
 
 enum State { COUNTDOWN, PLAYING, ENDED }
+enum NetRole { OFFLINE, CLIENT, SERVER }
 
 @export var arena_half := 18.0
 @export var countdown_time := 3.0
@@ -26,6 +35,8 @@ var terrain: Node
 var grass_material: ShaderMaterial
 ## 온라인 방에서 시작한 경우 Net.match_config (비어 있으면 오프라인 연습)
 var online_match: Dictionary = {}
+
+var net_role := NetRole.OFFLINE
 
 var fighters: Array[Fighter] = []
 var human: Fighter
@@ -45,6 +56,38 @@ func is_online_match() -> bool:
     return not online_match.is_empty()
 
 
+func is_server() -> bool:
+    return net_role == NetRole.SERVER
+
+
+func is_client() -> bool:
+    return net_role == NetRole.CLIENT
+
+
+func room_id() -> int:
+    return int(online_match.get("room_id", 0))
+
+
+## 서버 시계 (오프라인이면 이 PC 시계)
+func net_now() -> float:
+    return Net.server_now() if net_role != NetRole.OFFLINE else Net.local_time()
+
+
+## CLIENT → 서버
+func send_to_server(msg: Array, reliable: bool = true) -> void:
+    Net.send_game(msg, reliable)
+
+
+## SERVER → 방의 모든 플레이어
+func broadcast(msg: Array, reliable: bool = true, except_pid: int = 0) -> void:
+    Net.broadcast_game(room_id(), msg, reliable, except_pid)
+
+
+## SERVER → 한 플레이어
+func send_to_peer(pid: int, msg: Array, reliable: bool = true) -> void:
+    Net.send_game_to(pid, msg, reliable)
+
+
 func alive_fighters() -> Array[Fighter]:
     var out: Array[Fighter] = []
     for f in fighters:
@@ -54,7 +97,13 @@ func alive_fighters() -> Array[Fighter]:
 
 
 ## 캐릭터 머리 위 등에 잠깐 떠오르는 문구
-func popup_text(pos: Vector3, text: String, color: Color) -> void:
+## relay: 온라인에서 내 캐릭터가 만든 문구를 다른 사람 화면에도 띄운다 (서버를 거쳐 전달)
+func popup_text(pos: Vector3, text: String, color: Color, relay: bool = false) -> void:
+    if net_role == NetRole.SERVER:
+        broadcast(["pop", text, pos, color])
+        return
+    if relay and net_role == NetRole.CLIENT:
+        send_to_server(["pop", text, pos, color])
     var l := Label3D.new()
     l.text = text
     l.billboard = BaseMaterial3D.BILLBOARD_ENABLED

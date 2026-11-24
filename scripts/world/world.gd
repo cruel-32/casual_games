@@ -27,9 +27,16 @@ var terrain: Node
 var grass_material: ShaderMaterial
 var noise_tex: NoiseTexture2D
 var rng := RandomNumberGenerator.new()
+## 서버가 방마다 경기를 돌릴 때 Net 이 채운다 (비어 있으면 일반 클라이언트/오프라인)
+var server_config: Dictionary = {}
 
 
 func _ready() -> void:
+	if not server_config.is_empty():
+		# 서버: 보이는 것 없이 판정에 필요한 지형 충돌만
+		_build_terrain()
+		_start_game()
+		return
 	# 웹(WebGL)·모바일은 GPU 부담을 줄이기 위해 풀 밀도를 낮춘다
 	if OS.has_feature("web") or OS.has_feature("mobile"):
 		grass_density = minf(grass_density, 1.0)
@@ -162,6 +169,7 @@ func _build_terrain() -> void:
 	terrain = TERRAIN_SCRIPT.new()
 	terrain.name = "Terrain"
 	terrain.flat_half = arena_half + 4.0
+	terrain.headless = not server_config.is_empty()
 	add_child(terrain)
 	terrain.generate(mat)
 
@@ -341,12 +349,17 @@ static var offline_game_id := ""
 
 
 func _start_game() -> void:
-	var game_id := String(Net.match_config.get("game_id", offline_game_id))
+	var cfg: Dictionary = server_config if not server_config.is_empty() else Net.match_config
+	var game_id := String(cfg.get("game_id", offline_game_id))
 	var module = GameRegistry.get_or_default(game_id)
 	var game: Node3D = module.create_game()
 	game.name = "Game"
 	game.terrain = terrain
 	game.grass_material = grass_material
 	game.arena_half = arena_half
-	game.online_match = Net.match_config
+	game.online_match = cfg
+	if not server_config.is_empty():
+		game.net_role = PartyGame.NetRole.SERVER
+	elif not cfg.is_empty():
+		game.net_role = PartyGame.NetRole.CLIENT
 	add_child(game)

@@ -14,6 +14,9 @@ var vel := Vector3.ZERO
 var total_time := 2.0
 var age := 0.0
 var landed := false
+var net_id := 0                  # 온라인: 서버가 붙인 번호
+var t0 := 0.0                    # 온라인: 생성 시각(서버 시계) — 시각만 알면 위치를 계산할 수 있다
+var blocked := false             # 헬멧에 막혀 부서짐
 
 var _start := Vector3.ZERO
 var _land_t := 0.0
@@ -46,6 +49,25 @@ func setup(game_ref: Node, mesh: Mesh, mat: Material, r: float, target: Vector3,
 
 func time_to_impact() -> float:
     return maxf(total_time - age, 0.0)
+
+
+## 서버 시계 t 일 때 돌의 중심 위치
+func position_at(t: float) -> Vector3:
+    return _start + vel * clampf(t - t0, 0.0, total_time)
+
+
+## 서버 시계 t 에 pos 에 서 있던 캐릭터가 이 돌에 맞았는가 (온라인 사람 플레이어 판정용)
+func hits_at(t: float, pos: Vector3) -> bool:
+    if blocked or t < t0 or t > t0 + total_time:
+        return false
+    return _hits_capsule(position_at(t), pos)
+
+
+func _hits_capsule(p: Vector3, feet: Vector3) -> bool:
+    var a := feet + Vector3(0, Fighter.RADIUS, 0)
+    var b := feet + Vector3(0, Fighter.HEIGHT - Fighter.RADIUS, 0)
+    var closest := Geometry3D.get_closest_point_to_segment(p, a, b)
+    return p.distance_to(closest) < radius * 0.9 + Fighter.RADIUS
 
 
 func _ready() -> void:
@@ -94,18 +116,22 @@ func _physics_process(delta: float) -> void:
         _land()
 
 
+## 이 PC가 직접 움직이는 캐릭터만 판정 (온라인 클라이언트는 판정하지 않음 — 서버가 결과를 보냄)
 func _check_hits() -> void:
+    if game == null or blocked:
+        return
+    if game.is_client():
+        return
     var p := _rock.global_position
-    for node in get_tree().get_nodes_in_group(&"fighters"):
-        var f := node as Fighter
-        if f.dead:
+    for f: Fighter in game.fighters:
+        if f.dead or f.remote:
             continue
-        var a := f.global_position + Vector3(0, Fighter.RADIUS, 0)
-        var b := f.global_position + Vector3(0, Fighter.HEIGHT - Fighter.RADIUS, 0)
-        var closest := Geometry3D.get_closest_point_to_segment(p, a, b)
-        if p.distance_to(closest) < radius * 0.9 + Fighter.RADIUS:
-            if f.kill() == 2:
-                _shatter()       # 헬멧에 막혀 부서짐
+        if _hits_capsule(p, f.global_position):
+            var res := f.kill()
+            if game.has_method(&"on_rock_hit"):
+                game.on_rock_hit(self, f, res)
+            if res == 2:
+                shatter()       # 헬멧에 막혀 부서짐
                 return
 
 
@@ -117,7 +143,10 @@ func _land() -> void:
         game.on_rock_landed(self)
 
 
-func _shatter() -> void:
+func shatter() -> void:
+    if blocked:
+        return
+    blocked = true
     landed = true
     _land_t = 1.0
     _marker.visible = false

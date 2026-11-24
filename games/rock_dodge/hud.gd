@@ -79,6 +79,9 @@ func _process(_delta: float) -> void:
         PartyGame.State.COUNTDOWN:
             center = str(int(ceil(game.countdown_time - game.state_time)))
             sub = "떨어지는 돌을 피하고, 상대를 밀쳐내 살아남으세요"
+            if game.is_client() and game.play_start_t < 0.0:
+                center = "…"
+                sub = "다른 플레이어를 기다리는 중"
         PartyGame.State.PLAYING:
             if game.state_time < 0.8:
                 center = "시작!"

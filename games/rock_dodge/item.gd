@@ -24,6 +24,7 @@ const COLORS := {
 var game: Node
 var kind := Kind.HELMET
 var lifetime := 15.0
+var net_id := 0                 # 온라인: 서버가 붙인 번호
 var _age := 0.0
 var _pivot: Node3D
 
@@ -48,11 +49,12 @@ static func apply_to(f: Fighter, k: int) -> bool:
     return true
 
 
-func setup(game_ref: Node, k: int, pos: Vector3, life: float) -> void:
+func setup(game_ref: Node, k: int, pos: Vector3, life: float, age: float = 0.0) -> void:
     game = game_ref
     kind = k
     lifetime = life
     position = pos
+    _age = age
 
 
 func _ready() -> void:
@@ -142,8 +144,8 @@ func _physics_process(delta: float) -> void:
     if _age >= lifetime:
         queue_free()
         return
-    if game and not game.is_playing():
-        return
+    if game and (not game.is_playing() or game.is_client()):
+        return              # 온라인 클라이언트: 줍기 판정은 서버가 한다
     for body in get_overlapping_bodies():
         var f := body as Fighter
         if f and not f.dead and apply_to(f, kind):
