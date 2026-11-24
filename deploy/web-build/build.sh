@@ -6,6 +6,10 @@
 #   /links.json  다운로드·앱 스토어 주소 (deploy/web-landing/links.json 을 고쳐서 다시 빌드)
 # Windows 실행 파일(zip)도 /out/download/ 에 함께 넣음 (건너뛰려면 BUILD_WINDOWS=0)
 set -e
+# 컨테이너는 root 로 돌아서 /game 에 만든 파일(.godot 임포트 캐시 등)이 root 소유가 된다.
+# 그러면 GitHub Actions runner(일반 사용자)가 다음 체크아웃 때 지우지 못하므로,
+# 끝날 때(실패해도) /game 폴더 주인에게 소유권을 돌려준다.
+trap 'chown -R "$(stat -c %u:%g /game)" /game 2>/dev/null || true' EXIT
 echo "[web-build] 시작 (Windows zip: ${BUILD_WINDOWS:-1})"
 [ "${BUILD_WINDOWS:-1}" != "1" ] || command -v zip >/dev/null || { echo "[web-build] 실패: zip 없음 → docker compose build web-build 로 빌더 이미지를 다시 만드세요"; exit 1; }
 echo "[web-build] 리소스 임포트"
