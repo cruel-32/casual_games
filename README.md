@@ -26,14 +26,26 @@ WebSocket. 서버는 컨테이너 안에서 평문 `ws://:7777`, 외부는 Caddy
 2. 프로젝트 폴더에서 빌드·실행
    ```bash
    docker compose up -d --build
-   docker compose logs -f        # "[server] 대기 중 — 포트 7777" 확인
+   docker compose logs -f              # "[server] 대기 중 — 포트 7777" 확인
+   curl http://127.0.0.1:7778/health   # "ok" 가 나오면 서버 정상
+   docker ps                           # STATUS 에 (healthy) 표시
    ```
 3. Caddy 설정 추가 — `deploy/Caddyfile.example` 참고
    - Caddy를 Ubuntu에 직접 설치: `reverse_proxy 127.0.0.1:7777` (compose 기본값 그대로)
    - Caddy도 Docker: compose의 `ports` 대신 Caddy와 같은 네트워크에 연결하고 `reverse_proxy casual-games-server:7777`
    - 반영: `sudo systemctl reload caddy` 또는 `docker exec <caddy> caddy reload --config /etc/caddy/Caddyfile`
-4. 클라이언트에서 기본 주소(`wss://spw.cloudish.cloud`)로 접속
-5. 업데이트: 코드 변경 후 `docker compose up -d --build`
+4. 브라우저로 `https://spw.cloudish.cloud` 열기 → **서버 상태 페이지**(접속자·방 목록)가 보이면 Caddy 연결 정상
+5. 게임 클라이언트에서 기본 주소(`wss://spw.cloudish.cloud`)로 접속
+6. 업데이트: 코드 변경 후 `docker compose up -d --build`
+
+### 상태 페이지 / 헬스체크 (포트 7778)
+| 경로 | 내용 |
+|---|---|
+| `/` | 서버 상태 화면 (접속 수, 로그인 수, 방 목록, 가동 시간, 10초마다 새로고침) |
+| `/health` | `ok` (Docker 헬스체크용) |
+| `/status.json` | 같은 정보를 JSON으로 |
+
+게임 접속 포트(7777)는 WebSocket 전용이라 브라우저로 열면 아무것도 안 뜨는 것이 정상입니다.
 
 ### 로컬 테스트 서버
 - 명령줄: `godot --headless --path <프로젝트 폴더> -- --server --port 7777`

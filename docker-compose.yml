@@ -1,6 +1,7 @@
 # casual_games 게임 서버
-# - 컨테이너 안에서는 평문 WebSocket(ws) 7777 포트로 대기
-# - 외부 접속은 Caddy가 https(wss) 443 으로 받아 이 컨테이너로 전달
+# - 7777: 게임 접속 (평문 WebSocket)
+# - 7778: 상태 페이지 (HTTP, / = 상태 화면, /health = 헬스체크)
+# - 외부 접속은 Caddy가 https 443 으로 받아, WebSocket 요청은 7777 / 그 외는 7778 로 전달
 services:
   casual-games-server:
     build: .
@@ -9,9 +10,11 @@ services:
     restart: unless-stopped
     environment:
       - GAME_PORT=7777
+      - STATUS_PORT=7778
     # [A] Caddy를 호스트(Ubuntu)에 직접 설치한 경우: 로컬에서만 열기
     ports:
       - "127.0.0.1:7777:7777"
+      - "127.0.0.1:7778:7778"
     # [B] Caddy도 Docker 컨테이너인 경우: 위 ports 대신 Caddy와 같은 네트워크에 연결
     #     (네트워크 이름은 Caddy compose 쪽 이름으로 바꾸세요)
     # networks:
