@@ -274,19 +274,19 @@ const SKIN_TONES: Array[Color] = [
     Color(0.98, 0.80, 0.66), Color(0.93, 0.72, 0.56), Color(0.80, 0.57, 0.40), Color(0.99, 0.83, 0.70),
     Color(0.66, 0.45, 0.31), Color(0.96, 0.77, 0.62), Color(0.86, 0.64, 0.48), Color(0.98, 0.79, 0.65),
 ]
-const DENIM := Color(0.20, 0.32, 0.55)
 
 
 func _build_mannequin() -> void:
-    # 어린아이 체형 (큰 머리, 짧은 팔다리): 색 티셔츠 + 청 멜빵바지 + 흰 운동화
+    # 어린아이 체형 (큰 머리, 짧은 팔다리): 크림색 티셔츠 + 캐릭터 색 멜빵바지 + 흰 운동화
     var lk: int = (look if look >= 0 else slot) % HAIR_STYLES.size()
-    skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 티셔츠 (캐릭터 색)
+    skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 멜빵바지 (캐릭터 색)
+    var light := body_color.get_luminance() > 0.8
+    var shirt := Toon.make(Color(0.62, 0.78, 0.92) if light else Color(0.98, 0.96, 0.9), {"rim_strength": 0.4, "shade_softness": 0.05})
     var skin := Toon.make(SKIN_TONES[lk], {"rim_strength": 0.3, "shade_softness": 0.08})
     var hair := Toon.make(HAIR_COLORS[lk], {"rim_strength": 0.5, "shade_softness": 0.06})
-    var denim := Toon.make(DENIM, {"rim_strength": 0.3, "shade_softness": 0.05})
     var shoe := Toon.make(Color(0.97, 0.96, 0.93), {"rim_strength": 0.3, "shade_softness": 0.05})
-    var sole := Toon.make(Color(0.9, 0.22, 0.27), {"rim_strength": 0.1, "shade_softness": 0.05})
-    var button := Toon.make(Color(1.0, 0.72, 0.01), {"rim_strength": 0.5, "shade_softness": 0.05})
+    var sole := Toon.make(Color(0.114, 0.208, 0.341), {"rim_strength": 0.1, "shade_softness": 0.05})
+    var button := Toon.make(Color(0.98, 0.97, 0.94), {"rim_strength": 0.5, "shade_softness": 0.05})
     var ink := Toon.make(Color(0.11, 0.13, 0.22), {"rim_strength": 0.0, "shade_softness": 0.3})
     var shine := Toon.make(Color(1, 1, 1), {"rim_strength": 0.0, "shade_softness": 0.5, "shadow_strength": 1.0})
     var blush := Toon.make(SKIN_TONES[lk].lerp(Color(1.0, 0.45, 0.45), 0.45), {"rim_strength": 0.0, "shade_softness": 0.3})
@@ -296,16 +296,16 @@ func _build_mannequin() -> void:
     add_child(visual)
 
     # 몸통: 티셔츠 위 + 멜빵바지 아래
-    _part(visual, _capsule(0.26, 0.6), Vector3(0, 0.68, 0), skin_mat)
-    var pants := _part(visual, _capsule(0.275, 0.42), Vector3(0, 0.52, 0), denim)
+    _part(visual, _capsule(0.26, 0.6), Vector3(0, 0.68, 0), shirt)
+    var pants := _part(visual, _capsule(0.275, 0.42), Vector3(0, 0.52, 0), skin_mat)
     pants.scale = Vector3(1.0, 1.0, 0.98)
     var bib := BoxMesh.new()
     bib.size = Vector3(0.3, 0.2, 0.06)
-    _part(visual, bib, Vector3(0, 0.72, -0.235), denim)
+    _part(visual, bib, Vector3(0, 0.72, -0.235), skin_mat)
     var strap := BoxMesh.new()
     strap.size = Vector3(0.06, 0.34, 0.5)
     for side: float in [-1.0, 1.0]:
-        var st := _part(visual, strap, Vector3(side * 0.12, 0.84, 0.0), denim)
+        var st := _part(visual, strap, Vector3(side * 0.12, 0.84, 0.0), skin_mat)
         st.scale = Vector3(1.0, 1.0, 1.08)
         _part(visual, _sphere(0.032), Vector3(side * 0.11, 0.8, -0.27), button)
 
@@ -326,15 +326,17 @@ func _build_mannequin() -> void:
         ear.scale = Vector3(0.6, 1.0, 0.8)
     var nose := _part(head, _sphere(0.035), Vector3(0, -0.06, -0.375), skin)
     nose.scale = Vector3(1.2, 0.9, 0.8)
-    var mouth := _part(head, _capsule(0.016, 0.1), Vector3(0, -0.15, -0.345), ink)
-    mouth.rotation = Vector3(0.25, 0, PI * 0.5)
+    # 웃는 입: 짧은 막대 두 개를 살짝 V 로
+    for side: float in [-1.0, 1.0]:
+        var mo := _part(head, _capsule(0.011, 0.065), Vector3(side * 0.024, -0.152, -0.343), ink)
+        mo.rotation = Vector3(0.25, 0, PI * 0.5 + side * 0.38)
     _build_hair(HAIR_STYLES[lk], hair)
 
     # 팔: 반팔(캐릭터 색) + 맨팔 + 손
     left_arm = _pivot(visual, Vector3(-0.31, 0.88, 0))
     right_arm = _pivot(visual, Vector3(0.31, 0.88, 0))
     for arm in [left_arm, right_arm]:
-        _part(arm, _capsule(0.095, 0.2), Vector3(0, -0.07, 0), skin_mat)
+        _part(arm, _capsule(0.095, 0.2), Vector3(0, -0.07, 0), shirt)
         _part(arm, _capsule(0.07, 0.26), Vector3(0, -0.2, 0), skin)
         _part(arm, _sphere(0.085), Vector3(0, -0.32, 0), skin)
 
@@ -342,7 +344,7 @@ func _build_mannequin() -> void:
     left_leg = _pivot(visual, Vector3(-0.13, 0.36, 0))
     right_leg = _pivot(visual, Vector3(0.13, 0.36, 0))
     for leg in [left_leg, right_leg]:
-        _part(leg, _capsule(0.1, 0.32), Vector3(0, -0.14, 0), denim)
+        _part(leg, _capsule(0.1, 0.32), Vector3(0, -0.14, 0), skin_mat)
         var foot := _part(leg, _sphere(0.11), Vector3(0, -0.29, -0.04), shoe)
         foot.scale = Vector3(1.0, 0.68, 1.4)
         var so := _part(leg, _sphere(0.112), Vector3(0, -0.33, -0.04), sole)

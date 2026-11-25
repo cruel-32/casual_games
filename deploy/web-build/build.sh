@@ -27,6 +27,7 @@ L=/game/deploy/web-landing
 mkdir -p /tmp/web/assets
 cp "$L/index.html" "$L/links.json" /tmp/web/
 cp /game/fonts/Jua-Regular.ttf /game/ui/portraits/slot_*.png /tmp/web/assets/
+cp /game/icons/icon.png /tmp/web/assets/icon.png
 # 게임 소개 페이지 (/about/)
 mkdir -p /tmp/web/about
 cp "$L/about/index.html" "$L"/about/*.jpg /tmp/web/about/
