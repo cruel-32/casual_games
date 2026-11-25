@@ -28,6 +28,10 @@ var _settings_mode := ""
 var _shown_game := ""
 
 
+var _last_members := -1
+var _last_ready := false
+
+
 func _ready() -> void:
     var margin := MarginContainer.new()
     margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -184,6 +188,18 @@ func _update_columns() -> void:
 func _refresh(r: Dictionary) -> void:
     if r.is_empty():
         return
+    # 소리: 누가 들어오거나 나감, 내 준비 상태 변화
+    var member_count: int = (r.get("members", []) as Array).size()
+    var my_ready: bool = _my_entry(r).get("ready", false)
+    if _last_members >= 0:
+        if member_count > _last_members:
+            Sfx.play("join")
+        elif member_count < _last_members:
+            Sfx.play("leave")
+        if my_ready != _last_ready:
+            Sfx.play("ready_on" if my_ready else "ready_off")
+    _last_members = member_count
+    _last_ready = my_ready
     var host := Net.is_host()
     var module = GameRegistry.get_or_default(String(r.get("game", "")))
     _title.text = String(r.name)
@@ -445,6 +461,8 @@ func _on_chat_submit(text: String) -> void:
 
 func _on_chat(nick: String, text: String, system: bool) -> void:
     _append_chat(nick, text, system)
+    if not system and nick != Net.nickname:
+        Sfx.play("chat")
 
 
 func _append_chat(nick: String, text: String, system: bool) -> void:

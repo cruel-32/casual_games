@@ -39,20 +39,25 @@ static func kind_name(k: int) -> String:
 
 ## 캐릭터에게 효과 적용. 받을 수 없으면 false (헬멧이 이미 최대) → 아이템이 그대로 남는다
 static func apply_to(f: Fighter, k: int) -> bool:
+    var ok := true
     match k:
         Kind.HELMET:
-            return f.add_helmet()
+            ok = f.add_helmet()
         Kind.CHARGE_UP:
-            return f.add_charge_stack()
+            ok = f.add_charge_stack()
         Kind.COOL_DOWN:
-            return f.add_cooldown_stack()
+            ok = f.add_cooldown_stack()
         Kind.BOOTS:
             f.give_heavy()
         Kind.SHIELD5:
-            f.give_invuln(5.0)
+            f.give_invuln(5.0)       # 보호막 소리는 give_invuln 에서
         Kind.SHIELD10:
             f.give_invuln(10.0)
-    return true
+    if ok:
+        var snd := {Kind.HELMET: "pickup_helmet", Kind.CHARGE_UP: "pickup_charge", Kind.COOL_DOWN: "pickup_cooldown",
+            Kind.BOOTS: "pickup_boots"}.get(k, "pickup") as String
+        f._sfx(snd)
+    return ok
 
 
 func setup(game_ref: Node, k: int, pos: Vector3, life: float, age: float = 0.0) -> void:
@@ -107,6 +112,9 @@ func _ready() -> void:
     label.modulate = color.lightened(0.3)
     label.position.y = 1.9
     add_child(label)
+
+    if _age < 0.3:
+        Sfx.play_at("item_spawn", global_position, self)
 
 
 func _build_mesh(color: Color) -> void:

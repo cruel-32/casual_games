@@ -14,6 +14,7 @@ var vel := Vector3.ZERO
 var total_time := 2.0
 var age := 0.0
 var landed := false
+var _whistled := false     # 떨어지는 휘파람 소리를 냈는지
 var net_id := 0                  # 온라인: 서버가 붙인 번호
 var t0 := 0.0                    # 온라인: 생성 시각(서버 시계) — 시각만 알면 위치를 계산할 수 있다
 var blocked := false             # 헬멧에 막혀 부서짐
@@ -106,6 +107,9 @@ func _physics_process(delta: float) -> void:
         return
 
     age += delta
+    if not _whistled and total_time - age <= 1.1:
+        _whistled = true
+        Sfx.play_at("rock_fall", target_point + Vector3.UP * 4.0, self, 0.0, 1.1 - clampf(radius - 1.0, 0.0, 1.5) * 0.15)
     var t := minf(age, total_time)
     var b := _rock.global_transform.basis.rotated(_spin_axis, _spin_speed * delta)
     _rock.global_transform = Transform3D(b, _start + vel * t)
@@ -138,6 +142,7 @@ func _check_hits() -> void:
 func _land() -> void:
     landed = true
     _marker.visible = false
+    Sfx.play_at("rock_land", target_point, self, clampf(radius - 1.0, 0.0, 2.0) * 2.0, 1.15 - clampf(radius - 0.8, 0.0, 1.6) * 0.2)
     _spawn_dust()
     if game and game.has_method(&"on_rock_landed"):
         game.on_rock_landed(self)
@@ -152,6 +157,7 @@ func shatter() -> void:
     _marker.visible = false
     _rock.visible = false
     _spawn_dust(_rock.global_position)
+    Sfx.play_at("rock_break", _rock.global_position, self)
 
 
 func _spawn_dust(at: Vector3 = Vector3.INF) -> void:

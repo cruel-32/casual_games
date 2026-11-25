@@ -120,7 +120,9 @@ var heavy_timer := 0.0
 var shield_timer := 0.0             # 무적 아이템 (헬멧이 막은 직후의 짧은 무적 invuln_timer 와 별개 — 보호막 연출용)
 var charge_stacks := 0              # 차징 가속 아이템 개수 (경기 끝까지 유지, 중첩)
 var cooldown_stacks := 0            # 쿨타임 감소 아이템 개수 (〃)
-var _jump_arc := false              # 스스로 점프해서 떠 있는 중 (중력 배수 적용)
+var _jump_arc := false
+var _air_time := 0.0                # 공중에 있던 시간 (착지음 크기)
+var _full_sfx := false              # 이번 차징에서 '풀차징' 소리를 냈는지              # 스스로 점프해서 떠 있는 중 (중력 배수 적용)
 
 # 밀치기 상호작용
 var kills := 0
@@ -674,6 +676,12 @@ func _physics_process(delta: float) -> void:
 
     var on_floor := is_on_floor()
     var controllable := can_act() and not is_stunned()
+    if on_floor:
+        if _air_time > 0.3:
+            _sfx("land", 0.0, 1.0 - clampf(_air_time - 0.3, 0.0, 0.6) * 0.3)
+        _air_time = 0.0
+    else:
+        _air_time += delta
 
     # 점프 (코요테 타임 + 입력 버퍼)
     _coyote = COYOTE if on_floor else _coyote - delta
@@ -689,6 +697,7 @@ func _physics_process(delta: float) -> void:
         _jump_arc = true
         _jump_buffer = 0.0
         _coyote = 0.0
+        _sfx("jump")
 
     # 봇 회전 (사람은 마우스로 회전)
     if not is_human and controllable and lock_timer <= 0.0:
@@ -756,8 +765,15 @@ func _tick_timers(delta: float) -> void:
     lock_timer = maxf(lock_timer - delta, 0.0)
     bump_cooldown = maxf(bump_cooldown - delta, 0.0)
     shake = maxf(shake - delta * 2.5, 0.0)
+    var had_shield := shield_timer > 0.0
+    var had_cooldown := cooldown_timer > 0.0
     shield_timer = maxf(shield_timer - delta, 0.0)
     heavy_timer = maxf(heavy_timer - delta, 0.0)
+    if not remote and not dead:
+        if had_shield and shield_timer <= 0.0:
+            _sfx("shield_off")
+        if is_human and had_cooldown and cooldown_timer <= 0.0 and cooldown_total > 0.6:
+            Sfx.play("ready_ping")
 
 
 # ================================================================ 밀치기
@@ -768,17 +784,26 @@ func _update_push(delta: float, pressed: bool) -> void:
             _cancel_charge()
         else:
             charge_time += delta
+            if is_human:
+                var r := get_charge_ratio()
+                Sfx.charge(r if charge_time >= tap_threshold else 0.0)
+                if r >= 1.0 and not _full_sfx:
+                    _full_sfx = true
+                    Sfx.play("charge_full")
             if not pressed:
                 _release_push()
     elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0:
         charging = true
         charge_time = 0.0
+        _full_sfx = false
     _charge_was_pressed = pressed
 
 
 ## penalty: 경직 등으로 끊겼을 때 짧은 쿨타임. 점프로 스스로 취소한 경우는 쿨타임 없음
 func _cancel_charge(penalty: bool = true) -> void:
     charging = false
+    if is_human:
+        Sfx.charge_stop()
     if penalty:
         cooldown_total = maxf(cooldown_timer, 0.25)
         cooldown_timer = cooldown_total
@@ -788,6 +813,12 @@ func _release_push() -> void:
     var tap := charge_time < tap_threshold
     var c := 0.0 if tap else get_charge_ratio()
     charging = false
+    if is_human:
+        Sfx.charge_stop()
+    if tap:
+        _sfx("push")
+    else:
+        _sfx("dash", 0.0, 0.9 + c * 0.25)
     push_tap = tap
     push_power = c
     _push_hits.clear()
@@ -845,6 +876,7 @@ func _check_push_hits() -> void:
             push_window = 0.0
             knock += -dir * 5.0
             _popup(o.global_position, "꿈쩍 안 함!", Color(0.8, 0.6, 0.4))
+            Sfx.play_at("bump", o.global_position, self, 2.0, 0.6)
             return
 
         # 밀려나는 거리는 탭이든 차징이든 항상 풀차징과 같다. 차징 정도는 경직 시간에만 반영
@@ -852,6 +884,8 @@ func _check_push_hits() -> void:
         var lift := PUSH_LIFT
         var stun := 0.45 if push_tap else lerpf(0.8, 1.8, push_power)
         if _deliver_push(o, dir * force + Vector3.UP * lift, stun):
+            if o.remote:
+                Sfx.play_at("hit", o.global_position, self)     # 상대 PC에서 맞는 소리를 내 PC에서도
             dash_timer = 0.0
             knock += -dir * 1.5
             shake = maxf(shake, 0.3)
@@ -872,9 +906,13 @@ func _deliver_push(o: Fighter, impulse: Vector3, stun: float) -> bool:
 
 ## 밀치기에 맞음. 무적/무거운 신발이면 무시하고 false
 ## attacker: 킬 크레딧 대상 (연쇄 충돌이면 최초로 민 사람)
-func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null) -> bool:
+## sound: 맞는 소리 ("hit" 밀치기, "swat" 회전 기둥)
+func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null, sound: String = "hit") -> bool:
     if dead or is_invulnerable() or heavy_timer > 0.0:
         return false
+    _sfx(sound, 0.0, 1.0 + randf_range(-0.04, 0.04))
+    if stun >= 1.2:
+        _sfx("dizzy")
     knock = Vector3(impulse.x, 0.0, impulse.z)
     control_vel = Vector3.ZERO
     # 점프·낙하 중에 맞아도 땅에서 맞은 것과 똑같은 궤적: 세로 속도를 넉백 값으로 덮어쓰고 보통 중력
@@ -902,6 +940,8 @@ func bump(impulse: Vector3) -> void:
         return
     knock += impulse
     bump_cooldown = 0.3
+    if impulse.length() > 1.5:
+        _sfx("bump")
 
 
 ## 낙석에 맞음. 반환: 0 = 무시(무적), 1 = 사망, 2 = 헬멧이 막음
@@ -921,6 +961,7 @@ func lose_helmet() -> void:
     helmets = maxi(helmets - 1, 0)
     invuln_timer = maxf(invuln_timer, 0.6)   # 같은 돌에 연속으로 맞지 않게
     shake = maxf(shake, 0.7)
+    _sfx("helmet_break")
 
 
 ## 사망 처리 (헬멧·무적 무시). 온라인에서는 서버가 정한 사망을 그대로 반영할 때도 쓴다
@@ -929,6 +970,11 @@ func die() -> void:
         return
     dead = true
     charging = false
+    _sfx("die")
+    if is_human and not remote:
+        Sfx.charge_stop()
+        Sfx.duck(3.0)
+        Sfx.play("lose")
     dash_timer = 0.0
     stun_timer = 0.0
     collision_layer = 0
@@ -979,6 +1025,7 @@ func give_heavy(seconds: float = BOOTS_TIME) -> void:
 ## 무적 아이템: 보호막 (낙석·밀치기 모두 무시)
 func give_invuln(seconds: float) -> void:
     shield_timer = maxf(shield_timer, seconds)
+    _sfx("shield_on")
 
 
 func _check_wall_slam() -> void:
@@ -1002,7 +1049,16 @@ func _check_wall_slam() -> void:
                 knock = knock.bounce(nrm) * 0.35
                 shake = maxf(shake, 0.8)
                 _popup(global_position, "벽꽝!", Color(1.0, 0.55, 0.2))
+                _sfx("wall")
                 return
+
+
+## 소리: 내 캐릭터는 화면 전체로, 다른 캐릭터는 그 위치에서 (멀면 작게)
+func _sfx(sound: String, db: float = 0.0, pitch: float = 1.0) -> void:
+    if is_human and not remote:
+        Sfx.play(sound, db, pitch)
+    else:
+        Sfx.play_at(sound, global_position, self, db, pitch)
 
 
 func _popup(pos: Vector3, text: String, color: Color) -> void:

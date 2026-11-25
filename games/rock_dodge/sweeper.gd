@@ -170,5 +170,5 @@ func _physics_process(delta: float) -> void:
             continue
         var push := tangent.normalized()
         _hit_cd[f] = hit_cooldown
-        if f.receive_push(push * HIT_FORCE + Vector3.UP * HIT_LIFT, HIT_STUN, null):
+        if f.receive_push(push * HIT_FORCE + Vector3.UP * HIT_LIFT, HIT_STUN, null, "swat"):
             game.popup_text(f.global_position + Vector3(0, 2.4, 0), "쾅!", Color(1.0, 0.4, 0.3), true)

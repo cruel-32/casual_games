@@ -35,6 +35,13 @@ func _ready() -> void:
     offline_btn.pressed.connect(_on_offline_pressed.bind(offline_btn))
     top.add_child(offline_btn)
     _buttons.append(offline_btn)
+    var sound_btn := UI.pill_button("", UI.BLUE)
+    var set_sound_text := func(): sound_btn.text = "소리 켬" if Sfx.enabled else "소리 끔"
+    set_sound_text.call()
+    sound_btn.pressed.connect(func():
+        Sfx.set_enabled(not Sfx.enabled)
+        set_sound_text.call())
+    top.add_child(sound_btn)
     var help_btn := UI.pill_button("조작법", UI.YELLOW, UI.INK)
     help_btn.pressed.connect(_show_help)
     top.add_child(help_btn)

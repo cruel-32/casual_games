@@ -81,6 +81,7 @@ func _ready() -> void:
     Net.left_room.connect(_on_left_room)
     Net.room_updated.connect(_on_room_updated)
 
+    Sfx.bgm("menu")
     if Net.is_logged_in():
         show_screen("room" if Net.in_room() else "lobby")
     else:
@@ -111,6 +112,7 @@ func show_screen(screen: String) -> void:
 
 
 func toast(text: String, color: Color = UI.INK) -> void:
+    Sfx.play("error" if color == UI.DANGER else "notify")
     _toast.text = text
     _toast.add_theme_stylebox_override("normal", UI.box(Color(color, 1.0), 26, 22, UI.INK, 0, 5))
     _toast.size = _toast.get_minimum_size()

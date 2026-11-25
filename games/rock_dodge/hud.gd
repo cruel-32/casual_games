@@ -28,7 +28,7 @@ func _ready() -> void:
     if _touch:
         _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 점프 · 밀치기 (길게 누르면 차징 돌진)"
     else:
-        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제" \
+        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제 · M 소리" \
                 % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
 
@@ -123,6 +123,7 @@ func _process(_delta: float) -> void:
             sub = "내 생존 시간 %s · 킬 %d · %s" % [_fmt_time(t), my_kills, hint]
     _center.text = center
     _sub.text = sub
+    _play_event_sounds(center, human)
     _place_centered(_center, scr.y * 0.30)
     _place_centered(_sub, scr.y * 0.30 + 96)
 
@@ -265,3 +266,41 @@ func _draw_skill_bar() -> void:
         bar.bg_color = col
         bar.set_corner_radius_all(int(BAR_H * 0.5))
         draw_style_box(bar, Rect2(pos, Vector2(maxf(BAR_W * fill, BAR_H), BAR_H)))
+
+
+# ---- 소리: 화면에 뜨는 큰 글자·상태 변화에 맞춰 효과음
+var _last_center := ""
+var _last_state := -1
+var _last_wind := Vector2.ZERO
+
+
+func _play_event_sounds(center: String, human: Fighter) -> void:
+    if _last_state == -1:
+        Sfx.bgm("match")
+    if center != _last_center:
+        if game.state == PartyGame.State.COUNTDOWN and center.is_valid_int():
+            Sfx.play("count_tick")
+        elif center == "시작!":
+            Sfx.play("count_go")
+        elif center == "낙석 증가!":
+            Sfx.play("whistle", -4.0, 1.15)
+    if game.state != _last_state and game.state == PartyGame.State.ENDED:
+        Sfx.duck(3.5)
+        if game.winner != null and game.winner == human:
+            Sfx.play("win")
+        elif human == null or not human.dead:
+            Sfx.play("whistle")
+    var wt: Vector2 = game.get("_wind_target") if game.get("_wind_target") != null else Vector2.ZERO
+    if _last_state != -1 and wt.distance_to(_last_wind) > 1.5 and wt.length() > 2.0:
+        Sfx.play("wind", minf(wt.length() - 4.0, 4.0))
+    _last_wind = wt
+    _last_center = center
+    _last_state = game.state
+
+
+
+## M: 소리 켜기/끄기
+func _unhandled_key_input(event: InputEvent) -> void:
+    var k := event as InputEventKey
+    if k and k.pressed and not k.echo and k.keycode == KEY_M:
+        Sfx.set_enabled(not Sfx.enabled)
