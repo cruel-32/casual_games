@@ -15,8 +15,8 @@ func _initialize() -> void:
 
 func _setup() -> void:
     for i in Fighter.SLOT_COLORS.size():
-        _jobs.append(["res://ui/portraits/slot_%d.png" % i, Fighter.SLOT_COLORS[i]])
-    _jobs.append(["res://ui/portraits/me.png", Color(0.95, 0.95, 0.92)])
+        _jobs.append(["res://ui/portraits/slot_%d.png" % i, Fighter.SLOT_COLORS[i], i])
+    _jobs.append(["res://ui/portraits/me.png", Color(0.95, 0.95, 0.92), 0])
     # 창(루트 뷰포트)에 직접 그린다 — 실행 시 --resolution 256x256
     root.transparent_bg = OS.get_environment("OPAQUE") == ""
     root.msaa_3d = Viewport.MSAA_4X
@@ -50,6 +50,7 @@ func _next() -> void:
         return
     _f = Fighter.new()
     _f.body_color = _jobs[0][1]
+    _f.look = _jobs[0][2]
     _f.display_name = ""
     holder.add_child(_f)
     _f.set_physics_process(false)

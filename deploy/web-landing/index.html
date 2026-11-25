@@ -4,99 +4,110 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Small Party World</title>
-<meta name="description" content="친구들과 즐기는 캐주얼 파티 게임 모음 — 떨어지는 돌을 피하고, 밀쳐내고, 살아남자!">
-<link rel="icon" href="/play/index.icon.png">
+<meta name="description" content="친구들과 즐기는 캐주얼 파티 게임. 떨어지는 돌을 피하고, 밀쳐내고, 끝까지 살아남자!">
+<meta property="og:title" content="Small Party World">
+<meta property="og:image" content="/about/shot_1.jpg">
+<meta name="theme-color" content="#fff7e8">
+<link rel="icon" href="/assets/slot_0.png">
 <style>
-@font-face { font-family: "BHS"; src: url("/assets/BlackHanSans-Regular.ttf") format("truetype"); font-display: swap; }
-:root { --ink: #1c1f33; --cta: #ffd12e; --blue: #3d94ff; --coral: #ff7852; --green: #3dc26b; }
+@font-face { font-family: "Jua"; src: url("/assets/Jua-Regular.ttf") format("truetype"); font-display: swap; }
+:root { --ink: #1d3557; --cream: #fff7e8; --red: #e63946; --blue: #457b9d; --yellow: #ffb703; --teal: #2a9d8f; --green: #6ab04c; --muted: #5e6b80; --soft: #fbedd4; }
 * { box-sizing: border-box; }
-html, body { margin: 0; min-height: 100%; }
+html { scroll-behavior: smooth; }
 body {
+  margin: 0; color: var(--ink); background: var(--cream);
   font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  color: #fff; background: #5aa8f5;
-  min-height: 100vh; display: flex; flex-direction: column; align-items: center;
 }
-body::before {   /* 배경 이미지 (고정) + 글자가 잘 보이게 위·아래를 어둡게 — iOS 는 background-attachment:fixed 미지원이라 고정 레이어로 */
-  content: ""; position: fixed; inset: 0; z-index: -1;
-  background: linear-gradient(rgba(14,20,50,.45), rgba(14,20,50,.15) 40%, rgba(14,20,50,.55)),
-              url("/assets/hero.jpg") center / cover no-repeat;
+a { color: inherit; }
+.disp { font-family: "Jua", system-ui, sans-serif; font-weight: 400; letter-spacing: .3px; }
+.rays {
+  background:
+    radial-gradient(circle at 50% 62%, rgba(255,247,232,.95) 0, rgba(255,247,232,.0) 55%),
+    repeating-conic-gradient(from 0deg at 50% 62%, #ffe8bd 0 10deg, var(--cream) 10deg 20deg);
 }
-.wrap { width: min(980px, 92vw); padding: 7vh 0 40px; display: flex; flex-direction: column; align-items: center; gap: 22px; }
-.disp { font-family: "BHS", system-ui, sans-serif; letter-spacing: .5px; }
-.outline { -webkit-text-stroke: 0; text-shadow:
-  -3px -3px 0 var(--ink), 3px -3px 0 var(--ink), -3px 3px 0 var(--ink), 3px 3px 0 var(--ink),
-  0 -3px 0 var(--ink), 0 3px 0 var(--ink), -3px 0 0 var(--ink), 3px 0 0 var(--ink), 0 7px 0 var(--ink); }
-.logo { font-size: clamp(42px, 7.2vw, 92px); line-height: 1.05; text-align: center; margin: 0; }
-.logo span { white-space: nowrap; }
-.thin { text-shadow: -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink), 2px 2px 0 var(--ink), 0 3px 0 var(--ink); }
-.logo span:nth-child(1) { color: #4dadff; } .logo span:nth-child(2) { color: var(--cta); } .logo span:nth-child(3) { color: var(--coral); }
-.tag { font-size: clamp(15px, 2.2vw, 21px); margin: 0; text-align: center; }
-.faces { display: flex; justify-content: center; margin: -4px 0 -8px; }
-.faces img { width: clamp(64px, 11vw, 112px); margin: 0 -10px; filter: drop-shadow(0 5px 0 rgba(28,31,51,.35)); }
-.card {
-  width: min(560px, 100%); background: #fff; color: var(--ink); border: 3px solid var(--ink); border-radius: 22px;
-  box-shadow: 0 7px 0 var(--ink); padding: 24px 24px 22px; display: flex; flex-direction: column; gap: 14px; text-align: center;
+.checker {
+  height: 64px; border-top: 8px solid var(--ink);
+  background: repeating-conic-gradient(var(--red) 0 25%, var(--cream) 0 50%) 0 0 / 32px 32px;
 }
-.card h2 { margin: 0; font-size: 26px; }
-.card p { margin: 0; color: #5b6075; font-size: 15px; line-height: 1.55; }
+.logo { margin: 0; line-height: .86; text-align: center; }
+.logo .l1 { display: block; font-size: clamp(46px, 8vw, 96px); }
+.logo .l1 b { font-weight: 400; text-shadow: 4px 4px 0 rgba(29,53,87,.22); }
+.logo .l1 b:nth-child(1) { color: var(--red); } .logo .l1 b:nth-child(2) { color: var(--blue); }
+.logo .l2 {
+  display: block; font-size: clamp(56px, 10vw, 118px); color: var(--yellow);
+  -webkit-text-stroke: clamp(4px, .9vw, 9px) var(--ink); paint-order: stroke fill;
+  text-shadow: 6px 6px 0 rgba(29,53,87,.3);
+}
+.ribbon { display: inline-block; background: var(--ink); color: var(--cream); border-radius: 999px; padding: 8px 20px 9px; font-size: clamp(15px, 2.2vw, 20px); }
+.kids { display: flex; justify-content: center; align-items: flex-end; gap: 0; margin: 10px 0 6px; }
+.kids img { width: clamp(64px, 10vw, 112px); margin: 0 -8px; animation: hop 1.6s ease-in-out infinite; transform-origin: 50% 100%; }
+.kids img:nth-child(2) { animation-delay: .18s } .kids img:nth-child(3) { animation-delay: .36s } .kids img:nth-child(4) { animation-delay: .54s }
+.kids img:nth-child(5) { animation-delay: .72s } .kids img:nth-child(6) { animation-delay: .9s } .kids img:nth-child(7) { animation-delay: 1.08s } .kids img:nth-child(8) { animation-delay: 1.26s }
+@keyframes hop { 0%, 60%, 100% { transform: translateY(0) } 30% { transform: translateY(-14px) rotate(-3deg) } }
+@media (prefers-reduced-motion: reduce) { .kids img { animation: none } }
+.card { background: var(--cream); border: 3px solid var(--ink); border-radius: 22px; box-shadow: 8px 8px 0 rgba(29,53,87,.22); padding: 22px; }
 .btn {
-  display: block; text-decoration: none; text-align: center; cursor: pointer;
-  border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 6px 0 var(--ink);
-  padding: 14px 18px 15px; font-size: 24px; color: var(--ink); background: #fff; transition: transform .06s, box-shadow .06s;
+  display: inline-block; text-decoration: none; text-align: center; cursor: pointer; user-select: none;
+  font-family: "Jua", system-ui, sans-serif; font-size: 22px; color: #fff; background: var(--teal);
+  border: 3px solid #1d6a62; border-bottom-width: 8px; border-radius: 999px; padding: 10px 26px 9px;
+  transition: transform .05s, border-bottom-width .05s;
 }
-.btn:active { transform: translateY(4px); box-shadow: 0 2px 0 var(--ink); }
-.btn.cta { background: var(--cta); font-size: 28px; }
-.btn.blue { background: var(--blue); color: #fff; }
-.btn.small { font-size: 18px; padding: 10px 14px 11px; }
-.btn.disabled { background: #d9dce5; color: #8b90a3; pointer-events: none; }
-.sub { font-size: 13px; color: #8b90a3; }
+.btn:active { transform: translateY(4px); border-bottom-width: 4px; }
+.btn.red { background: var(--red); border-color: #9f1f27; }
+.btn.blue { background: var(--blue); border-color: #2c5268; }
+.btn.yellow { background: var(--yellow); border-color: #a87800; color: var(--ink); }
+.btn.navy { background: var(--ink); border-color: #0d1b2e; color: var(--cream); }
+.btn.light { background: #fffdf6; border-color: #b9ad97; color: var(--ink); }
+.btn.small { font-size: 16px; padding: 6px 16px 5px; border-bottom-width: 5px; }
+.btn.off { background: #d8d3c9; border-color: #aaa395; color: #8a857b; pointer-events: none; }
+.badge { display: inline-block; border-radius: 999px; padding: 3px 12px 4px; font-size: 14px; color: #fff; background: var(--blue); }
 .hidden { display: none !important; }
-.foot { font-size: 13px; opacity: .85; text-align: center; }
-.foot a { color: #fff; }
+.muted { color: var(--muted); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1 class="logo disp outline"><span>Small</span> <span>Party</span> <span>World</span></h1>
-  <p class="tag disp thin">친구들과 즐기는 캐주얼 파티 게임 모음 · 떨어지는 돌을 피하고, 밀쳐내고, 살아남자!</p>
-  <div class="faces">
-    <img src="/assets/slot_0.png" alt=""><img src="/assets/slot_1.png" alt=""><img src="/assets/slot_2.png" alt="">
-    <img src="/assets/slot_3.png" alt=""><img src="/assets/slot_4.png" alt="">
+<main class="rays" style="min-height:calc(100vh - 72px);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 16px 36px;gap:16px;text-align:center">
+  <nav style="position:absolute;top:14px;right:16px;display:flex;gap:8px">
+    <a class="btn small yellow" href="/about/">게임 소개</a>
+  </nav>
+  <div class="kids" aria-hidden="true">
+    <img src="/assets/slot_0.png" alt=""><img src="/assets/slot_1.png" alt=""><img src="/assets/slot_4.png" alt="">
+    <img src="/assets/slot_2.png" alt=""><img src="/assets/slot_3.png" alt=""><img src="/assets/slot_6.png" alt="">
   </div>
+  <h1 class="logo disp"><span class="l1"><b>Small</b> <b>Party</b></span><span class="l2">World</span></h1>
+  <p style="margin:0"><span class="ribbon disp">떨어지는 돌을 피하고, 밀쳐내고, 끝까지 살아남자!</span></p>
 
-  <!-- PC (Windows) -->
-  <div class="card hidden" id="pc">
-    <h2 class="disp">PC 버전으로 즐기세요</h2>
-    <p>PC 버전이 훨씬 부드럽고 그래픽도 더 좋아요.<br>압축을 풀고 <b>SmallPartyWorld.exe</b> 를 실행하면 바로 시작!</p>
-    <a class="btn cta disp" id="pc-download" href="#">PC 버전 다운로드</a>
-    <span class="sub">Windows 10/11 · 64비트</span>
+  <div style="width:min(580px,100%);display:flex;flex-direction:column;gap:16px;margin-top:8px">
+    <!-- PC (Windows) -->
+    <section class="card hidden" id="pc">
+      <h2 class="disp" style="margin:0 0 6px;font-size:28px">PC 버전으로 즐기세요</h2>
+      <p class="muted" style="margin:0 0 16px;line-height:1.6">웹보다 훨씬 부드럽고 그래픽도 좋아요.<br>압축을 풀고 <b>SmallPartyWorld.exe</b>를 실행하면 바로 시작!</p>
+      <a class="btn" id="pc-download" href="#" style="width:100%;font-size:26px">PC 버전 다운로드</a>
+      <p class="muted" style="margin:10px 0 0;font-size:13px">Windows 10/11 · 64비트 · zip</p>
+    </section>
+    <!-- PC (Mac/Linux) -->
+    <section class="card hidden" id="pc-other">
+      <h2 class="disp" style="margin:0 0 6px;font-size:26px">PC 버전은 Windows 전용이에요</h2>
+      <p class="muted" style="margin:0 0 14px">이 컴퓨터에서는 웹 체험판으로 즐겨 주세요.</p>
+      <a class="btn small light" id="pc-other-download" href="#">Windows 버전 받기</a>
+    </section>
+    <!-- 모바일 -->
+    <section class="card hidden" id="mobile">
+      <h2 class="disp" style="margin:0 0 6px;font-size:28px">앱으로 즐기세요</h2>
+      <p class="muted" id="mobile-text" style="margin:0 0 16px">앱이 더 부드럽고 조작도 편해요.</p>
+      <a class="btn hidden" id="app-android" href="#" style="width:100%">Google Play에서 설치</a>
+      <a class="btn hidden" id="app-ios" href="#" style="width:100%">App Store에서 설치</a>
+      <a class="btn off hidden" id="app-soon" href="#" style="width:100%">앱 준비 중</a>
+    </section>
+    <section class="card" style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;justify-content:center">
+      <span class="badge disp" style="background:var(--red)">체험판</span>
+      <span class="muted" style="flex:1;min-width:200px;text-align:left">웹 버전은 체험판이에요. 기기에 따라 느릴 수 있어요.</span>
+      <a class="btn blue" id="play" href="/play/">웹에서 해보기</a>
+    </section>
   </div>
-
-  <!-- PC (Mac/Linux): 아직 Windows 전용 -->
-  <div class="card hidden" id="pc-other">
-    <h2 class="disp">PC 버전은 Windows 전용이에요</h2>
-    <p>지금은 Windows 버전만 있어요. 이 컴퓨터에서는 웹 체험판으로 즐겨 주세요.</p>
-    <a class="btn small disp" id="pc-other-download" href="#">Windows 버전 받기</a>
-  </div>
-
-  <!-- 모바일 -->
-  <div class="card hidden" id="mobile">
-    <h2 class="disp">앱으로 즐기세요</h2>
-    <p id="mobile-text">앱이 더 부드럽고 조작감도 좋아요.</p>
-    <a class="btn cta disp hidden" id="app-android" href="#">Google Play 에서 설치</a>
-    <a class="btn cta disp hidden" id="app-ios" href="#">App Store 에서 설치</a>
-    <a class="btn disabled disp hidden" id="app-soon" href="#">앱 준비 중</a>
-  </div>
-
-  <div class="card">
-    <p id="web-note">웹 버전은 <b>체험판</b>이에요. 기기에 따라 느릴 수 있어요.</p>
-    <a class="btn blue disp" id="play" href="/play/">웹에서 체험하기</a>
-  </div>
-
-  <a class="btn small disp" href="/about/" style="width:min(560px,100%)">게임 소개 보기</a>
-
-  <p class="foot">서버 상태: <a href="https://spwsv.cloudish.cloud" target="_blank" rel="noopener">spwsv.cloudish.cloud</a></p>
-</div>
+  <p class="muted" style="margin:6px 0 0;font-size:13px">서버 상태: <a href="https://spwsv.cloudish.cloud" target="_blank" rel="noopener">spwsv.cloudish.cloud</a></p>
+</main>
+<div class="checker" aria-hidden="true"></div>
 <script>
 (function () {
   var ua = navigator.userAgent || "";

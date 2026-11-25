@@ -15,6 +15,7 @@ signal died(fighter: Fighter)
 const Toon := preload("res://scripts/world/toon.gd")
 const Procedural := preload("res://scripts/world/procedural.gd")
 const SHIELD_SHADER := preload("res://shaders/shield.gdshader")
+const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 
 @export_group("Move")
 @export var move_speed := 6.0
@@ -40,13 +41,14 @@ const SHIELD_SHADER := preload("res://shaders/shield.gdshader")
 @export var body_color := Color(0.78, 0.58, 0.44)
 @export var display_name := "Bot"
 @export var is_human := false
+@export var look := -1                 # 외형 번호 (머리 모양·피부색). -1 이면 slot 을 씀
 @export var mouse_sensitivity := 0.0025
 
 ## 슬롯(참가 순서)별 몸 색 — 게임 안 캐릭터와 대기룸 초상화(ui/portraits/slot_N.png)가 같은 색을 쓴다
 const SLOT_COLORS: Array[Color] = [
-    Color(0.85, 0.22, 0.22), Color(0.22, 0.42, 0.90), Color(0.95, 0.68, 0.08),
-    Color(0.25, 0.65, 0.22), Color(0.55, 0.28, 0.85), Color(0.95, 0.45, 0.10),
-    Color(0.10, 0.65, 0.70), Color(0.88, 0.30, 0.60),
+    Color(0.90, 0.22, 0.27), Color(0.27, 0.48, 0.62), Color(1.0, 0.72, 0.01),
+    Color(0.16, 0.62, 0.56), Color(0.48, 0.37, 0.65), Color(0.96, 0.50, 0.12),
+    Color(0.94, 0.44, 0.61), Color(0.42, 0.69, 0.30),
 ]
 const RADIUS := 0.4
 const HEIGHT := 1.65
@@ -140,6 +142,7 @@ var _air_blend := 0.0
 # 노드
 var visual: Node3D
 var head: Node3D
+var tall_hair: Array[Node3D] = []      # 헬멧을 쓰면 숨기는 머리·모자 부분
 var left_arm: Node3D
 var right_arm: Node3D
 var left_leg: Node3D
@@ -259,50 +262,165 @@ func _pivot(parent: Node3D, pos: Vector3) -> Node3D:
     return p
 
 
+## 외형 번호(슬롯)별 머리 모양·머리색·피부색 — 같은 번호면 어디서나(게임·초상화) 같은 아이
+const HAIR_STYLES := ["short", "pigtails", "spiky", "bob", "bun", "cap", "beanie", "headband"]
+const HAIR_COLORS: Array[Color] = [
+    Color(0.30, 0.19, 0.12), Color(0.12, 0.10, 0.10), Color(0.62, 0.36, 0.16), Color(0.85, 0.48, 0.18),
+    Color(0.20, 0.13, 0.09), Color(0.93, 0.76, 0.38), Color(0.42, 0.25, 0.14), Color(0.14, 0.12, 0.16),
+]
+const SKIN_TONES: Array[Color] = [
+    Color(0.98, 0.80, 0.66), Color(0.93, 0.72, 0.56), Color(0.80, 0.57, 0.40), Color(0.99, 0.83, 0.70),
+    Color(0.66, 0.45, 0.31), Color(0.96, 0.77, 0.62), Color(0.86, 0.64, 0.48), Color(0.98, 0.79, 0.65),
+]
+const DENIM := Color(0.20, 0.32, 0.55)
+
+
 func _build_mannequin() -> void:
-    # 2등신: 머리가 몸통만큼 크고 팔다리가 짧다
-    skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 옷 (캐릭터 색)
-    var face := Toon.make(Color(1.0, 0.87, 0.76), {"rim_strength": 0.35, "shade_softness": 0.08})
-    var dark := Toon.make(Color(0.24, 0.25, 0.32), {"rim_strength": 0.3, "shade_softness": 0.05})
-    var eye := Toon.make(Color(0.07, 0.07, 0.1), {"rim_strength": 0.0, "shade_softness": 0.3})
+    # 어린아이 체형 (큰 머리, 짧은 팔다리): 색 티셔츠 + 청 멜빵바지 + 흰 운동화
+    var lk: int = (look if look >= 0 else slot) % HAIR_STYLES.size()
+    skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 티셔츠 (캐릭터 색)
+    var skin := Toon.make(SKIN_TONES[lk], {"rim_strength": 0.3, "shade_softness": 0.08})
+    var hair := Toon.make(HAIR_COLORS[lk], {"rim_strength": 0.5, "shade_softness": 0.06})
+    var denim := Toon.make(DENIM, {"rim_strength": 0.3, "shade_softness": 0.05})
+    var shoe := Toon.make(Color(0.97, 0.96, 0.93), {"rim_strength": 0.3, "shade_softness": 0.05})
+    var sole := Toon.make(Color(0.9, 0.22, 0.27), {"rim_strength": 0.1, "shade_softness": 0.05})
+    var button := Toon.make(Color(1.0, 0.72, 0.01), {"rim_strength": 0.5, "shade_softness": 0.05})
+    var ink := Toon.make(Color(0.11, 0.13, 0.22), {"rim_strength": 0.0, "shade_softness": 0.3})
     var shine := Toon.make(Color(1, 1, 1), {"rim_strength": 0.0, "shade_softness": 0.5, "shadow_strength": 1.0})
-    var cheek := Toon.make(Color(1.0, 0.55, 0.6), {"rim_strength": 0.0, "shade_softness": 0.3})
+    var blush := Toon.make(SKIN_TONES[lk].lerp(Color(1.0, 0.45, 0.45), 0.45), {"rim_strength": 0.0, "shade_softness": 0.3})
 
     visual = Node3D.new()
-    visual.name = "Chibi"
+    visual.name = "Kid"
     add_child(visual)
 
-    # 몸통 (짧고 통통)
-    _part(visual, _capsule(0.27, 0.62), Vector3(0, 0.66, 0), skin_mat)
-
-    # 머리
-    head = _pivot(visual, Vector3(0, 1.22, 0))
-    _part(head, _sphere(0.42), Vector3.ZERO, face)
+    # 몸통: 티셔츠 위 + 멜빵바지 아래
+    _part(visual, _capsule(0.26, 0.6), Vector3(0, 0.68, 0), skin_mat)
+    var pants := _part(visual, _capsule(0.275, 0.42), Vector3(0, 0.52, 0), denim)
+    pants.scale = Vector3(1.0, 1.0, 0.98)
+    var bib := BoxMesh.new()
+    bib.size = Vector3(0.3, 0.2, 0.06)
+    _part(visual, bib, Vector3(0, 0.72, -0.235), denim)
+    var strap := BoxMesh.new()
+    strap.size = Vector3(0.06, 0.34, 0.5)
     for side: float in [-1.0, 1.0]:
-        var e := _part(head, _sphere(0.06), Vector3(side * 0.14, 0.03, -0.395), eye)
-        e.scale = Vector3(1.0, 1.5, 0.6)
-        var sh := _part(head, _sphere(0.018), Vector3(side * 0.14 + 0.02, 0.07, -0.43), shine)
+        var st := _part(visual, strap, Vector3(side * 0.12, 0.84, 0.0), denim)
+        st.scale = Vector3(1.0, 1.0, 1.08)
+        _part(visual, _sphere(0.032), Vector3(side * 0.11, 0.8, -0.27), button)
+
+    # 머리 (얼굴은 -Z 쪽)
+    head = _pivot(visual, Vector3(0, 1.2, 0))
+    var skull := _part(head, _sphere(0.38), Vector3.ZERO, skin)
+    skull.scale = Vector3(1.04, 0.96, 1.0)
+    for side: float in [-1.0, 1.0]:
+        var e := _part(head, _sphere(0.055), Vector3(side * 0.13, 0.0, -0.345), ink)
+        e.scale = Vector3(0.9, 1.35, 0.55)
+        var sh := _part(head, _sphere(0.018), Vector3(side * 0.13 + 0.018, 0.035, -0.38), shine)
         sh.scale = Vector3(1, 1, 0.5)
-        var c := _part(head, _sphere(0.065), Vector3(side * 0.25, -0.1, -0.33), cheek)
-        c.scale = Vector3(1.3, 0.7, 0.4)
-    # 머리 위 방울 (캐릭터 색)
-    _part(head, _sphere(0.09), Vector3(0, 0.5, 0.02), skin_mat)
-    _part(head, _capsule(0.025, 0.12), Vector3(0, 0.43, 0.02), skin_mat)
+        var brow := _part(head, _capsule(0.012, 0.09), Vector3(side * 0.13, 0.11, -0.35), hair)
+        brow.rotation = Vector3(0, 0, PI * 0.5 + side * 0.12)
+        var c := _part(head, _sphere(0.05), Vector3(side * 0.23, -0.1, -0.29), blush)
+        c.scale = Vector3(1.3, 0.6, 0.4)
+        var ear := _part(head, _sphere(0.075), Vector3(side * 0.38, -0.02, 0.0), skin)
+        ear.scale = Vector3(0.6, 1.0, 0.8)
+    var nose := _part(head, _sphere(0.035), Vector3(0, -0.06, -0.375), skin)
+    nose.scale = Vector3(1.2, 0.9, 0.8)
+    var mouth := _part(head, _capsule(0.016, 0.1), Vector3(0, -0.15, -0.345), ink)
+    mouth.rotation = Vector3(0.25, 0, PI * 0.5)
+    _build_hair(HAIR_STYLES[lk], hair)
 
-    # 팔 (어깨 피벗에서 아래로)
-    left_arm = _pivot(visual, Vector3(-0.32, 0.86, 0))
-    right_arm = _pivot(visual, Vector3(0.32, 0.86, 0))
+    # 팔: 반팔(캐릭터 색) + 맨팔 + 손
+    left_arm = _pivot(visual, Vector3(-0.31, 0.88, 0))
+    right_arm = _pivot(visual, Vector3(0.31, 0.88, 0))
     for arm in [left_arm, right_arm]:
-        _part(arm, _capsule(0.085, 0.34), Vector3(0, -0.15, 0), skin_mat)
-        _part(arm, _sphere(0.1), Vector3(0, -0.32, 0), face)
+        _part(arm, _capsule(0.095, 0.2), Vector3(0, -0.07, 0), skin_mat)
+        _part(arm, _capsule(0.07, 0.26), Vector3(0, -0.2, 0), skin)
+        _part(arm, _sphere(0.085), Vector3(0, -0.32, 0), skin)
 
-    # 다리 (엉덩이 피벗에서 아래로) + 발
+    # 다리: 청바지 + 흰 운동화(빨간 밑창)
     left_leg = _pivot(visual, Vector3(-0.13, 0.36, 0))
     right_leg = _pivot(visual, Vector3(0.13, 0.36, 0))
     for leg in [left_leg, right_leg]:
-        _part(leg, _capsule(0.1, 0.34), Vector3(0, -0.16, 0), dark)
-        var foot := _part(leg, _sphere(0.11), Vector3(0, -0.31, -0.04), dark)
-        foot.scale = Vector3(1.0, 0.7, 1.35)
+        _part(leg, _capsule(0.1, 0.32), Vector3(0, -0.14, 0), denim)
+        var foot := _part(leg, _sphere(0.11), Vector3(0, -0.29, -0.04), shoe)
+        foot.scale = Vector3(1.0, 0.68, 1.4)
+        var so := _part(leg, _sphere(0.112), Vector3(0, -0.33, -0.04), sole)
+        so.scale = Vector3(1.02, 0.25, 1.42)
+
+
+## 머리 모양. 헬멧을 쓰면 위로 솟은 부분(tall_hair)은 숨긴다
+func _build_hair(style: String, hair: Material) -> void:
+    # 공통: 뒤통수·정수리를 덮는 머리 + 앞머리
+    var cap := _part(head, _sphere(0.405), Vector3(0, 0.05, 0.035), hair)
+    cap.scale = Vector3(1.04, 0.95, 1.0)
+    if style != "cap" and style != "beanie":
+        var fringe := _part(head, _capsule(0.09, 0.62), Vector3(0, 0.22, -0.27), hair)
+        fringe.rotation = Vector3(0.5, 0, PI * 0.5)
+        fringe.scale = Vector3(1.0, 1.0, 0.75)
+    var cloth := Toon.make(body_color.lerp(Color.WHITE, 0.15), {"rim_strength": 0.5, "shade_softness": 0.05})
+    match style:
+        "pigtails":
+            for side: float in [-1.0, 1.0]:
+                var t := _part(head, _sphere(0.13), Vector3(side * 0.42, 0.06, 0.12), hair)
+                t.scale = Vector3(0.9, 1.2, 0.9)
+                _part(head, _sphere(0.05), Vector3(side * 0.37, 0.12, 0.1), cloth)
+        "spiky":
+            var cone := CylinderMesh.new()
+            cone.top_radius = 0.0
+            cone.bottom_radius = 0.09
+            cone.height = 0.2
+            for i in 5:
+                var a := -0.9 + i * 0.45
+                var sp := _part(head, cone, Vector3(sin(a) * 0.2, 0.38, cos(a) * 0.1 + 0.05), hair)
+                sp.rotation = Vector3(cos(a) * 0.35, 0, -sin(a) * 0.6)
+                tall_hair.append(sp)
+        "bob":
+            for side: float in [-1.0, 1.0]:
+                var sd := _part(head, _capsule(0.12, 0.5), Vector3(side * 0.31, -0.05, 0.06), hair)
+                sd.scale = Vector3(0.9, 1.0, 1.3)
+        "bun":
+            var bun := _part(head, _sphere(0.15), Vector3(0, 0.43, 0.08), hair)
+            tall_hair.append(bun)
+            var tie := TorusMesh.new()
+            tie.inner_radius = 0.07
+            tie.outer_radius = 0.11
+            var ti := _part(head, tie, Vector3(0, 0.33, 0.07), cloth)
+            tall_hair.append(ti)
+        "cap":
+            var dome := SphereMesh.new()
+            dome.radius = 0.45
+            dome.height = 0.44
+            dome.is_hemisphere = true
+            var c := _part(head, dome, Vector3(0, 0.1, 0.03), cloth)
+            tall_hair.append(c)
+            var brim := CylinderMesh.new()
+            brim.top_radius = 0.24
+            brim.bottom_radius = 0.24
+            brim.height = 0.035
+            var b := _part(head, brim, Vector3(0, 0.13, -0.4), Toon.make(body_color.darkened(0.25), {"rim_strength": 0.4}))
+            b.scale = Vector3(1.2, 1.0, 1.0)
+            b.rotation.x = -0.15
+            tall_hair.append(b)
+        "beanie":
+            var dome := SphereMesh.new()
+            dome.radius = 0.455
+            dome.height = 0.52
+            dome.is_hemisphere = true
+            var c := _part(head, dome, Vector3(0, 0.1, 0.03), cloth)
+            tall_hair.append(c)
+            var fold := CylinderMesh.new()
+            fold.top_radius = 0.46
+            fold.bottom_radius = 0.465
+            fold.height = 0.1
+            var f := _part(head, fold, Vector3(0, 0.12, 0.02), Toon.make(Color(0.97, 0.95, 0.9), {"rim_strength": 0.4}))
+            tall_hair.append(f)
+        "headband":
+            var band := TorusMesh.new()
+            band.inner_radius = 0.365
+            band.outer_radius = 0.425
+            var hb := _part(head, band, Vector3(0, 0.19, 0.02), cloth)
+            hb.rotation.x = 0.35
+        _:
+            pass
 
 
 func _build_item_visuals() -> void:
@@ -384,6 +502,8 @@ func _build_item_visuals() -> void:
 
 func _update_item_fx() -> void:
     helmet_mi.visible = helmets > 0
+    for h in tall_hair:
+        h.visible = helmets <= 0
     if helmets >= 2:
         helmet_mat.set_shader_parameter("albedo", Color(0.9, 0.1, 0.08))
         helmet_mi.scale = Vector3.ONE * 1.1
@@ -429,7 +549,9 @@ func _build_name_tag() -> void:
     name_tag.text = display_name
     name_tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
     name_tag.font_size = 40
-    name_tag.outline_size = 10
+    name_tag.outline_size = 12
+    name_tag.font = NAME_FONT
+    name_tag.outline_modulate = Color(0.114, 0.208, 0.341)
     name_tag.pixel_size = 0.006
     name_tag.position.y = 2.05
     name_tag.visible = not is_human

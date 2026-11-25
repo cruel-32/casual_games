@@ -383,6 +383,7 @@ func _start_menu_showcase() -> void:
 	for i in 7:
 		var f := Fighter.new()
 		f.body_color = Fighter.SLOT_COLORS[i % Fighter.SLOT_COLORS.size()]
+		f.look = i
 		f.display_name = ""
 		var a := i * TAU / 7.0
 		var p := Vector3(cos(a), 0.0, sin(a)) * rng.randf_range(3.0, 9.0)

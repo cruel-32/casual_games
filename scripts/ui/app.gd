@@ -9,6 +9,7 @@ const ROOM := preload("res://scripts/ui/room_screen.gd")
 const GAME_SCENE := "res://scenes/match.tscn"
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const SETTINGS_PATH := "user://settings.cfg"
+const RETRO_BG := preload("res://shaders/retro_bg.gdshader")
 
 var current_name := ""
 var _current: Control
@@ -59,14 +60,17 @@ func _ready() -> void:
     set_anchors_preset(Control.PRESET_FULL_RECT)
     theme = UI.make_theme()
 
-    # 배경: 3D 월드가 뜨기 전까지 보이는 하늘색 그라데이션 + 그 위 글자가 잘 보이게 위·아래를 살짝 어둡게
-    _sky = _gradient_rect([Color(0.42, 0.68, 0.98), Color(0.72, 0.93, 0.82)])
+    # 배경: 레트로 장난감 무늬 (크림 바탕 + 햇살 + 아래 체크 띠). 3D 월드는 메뉴 뒤에 띄우지 않는다(가볍게)
+    _sky = ColorRect.new()
+    var mat := ShaderMaterial.new()
+    mat.shader = RETRO_BG
+    _sky.material = mat
+    _sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _sky.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     add_child(_sky)
-    var shade := _gradient_rect([Color(0.05, 0.08, 0.2, 0.35), Color(0, 0, 0, 0), Color(0, 0, 0, 0), Color(0.05, 0.08, 0.2, 0.45)])
-    add_child(shade)
 
-    _toast = UI.heading("", 20, Color.WHITE)
-    _toast.add_theme_stylebox_override("normal", UI.box(Color(0.15, 0.18, 0.28, 0.92), 16, 20, UI.INK, 3, 4))
+    _toast = UI.heading("", 20, UI.CREAM)
+    _toast.add_theme_stylebox_override("normal", UI.box(UI.INK, 26, 22, UI.INK, 0, 5))
     _toast.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     _toast.modulate.a = 0.0
     _toast.z_index = 10
@@ -81,7 +85,6 @@ func _ready() -> void:
         show_screen("room" if Net.in_room() else "lobby")
     else:
         show_screen("title")
-    _spawn_backdrop.call_deferred()
     add_child(_toast)
     if Fighter.touch_device():
         add_child(load("res://scripts/ui/rotate_hint.gd").new())
@@ -107,9 +110,9 @@ func show_screen(screen: String) -> void:
     current_name = screen
 
 
-func toast(text: String, color: Color = Color(0.15, 0.18, 0.28, 0.85)) -> void:
+func toast(text: String, color: Color = UI.INK) -> void:
     _toast.text = text
-    _toast.add_theme_stylebox_override("normal", UI.box(color, 16, 20, UI.INK, 3, 4))
+    _toast.add_theme_stylebox_override("normal", UI.box(Color(color, 1.0), 26, 22, UI.INK, 0, 5))
     _toast.size = _toast.get_minimum_size()
     _toast.position = Vector2((get_viewport_rect().size.x - _toast.size.x) * 0.5, get_viewport_rect().size.y - 90)
     if _toast_tween:

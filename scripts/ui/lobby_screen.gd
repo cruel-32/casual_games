@@ -35,9 +35,10 @@ func _ready() -> void:
     top.add_child(logo)
     top.add_child(UI.spacer())
     var me_text := ("%s  ·  %s" % [Net.server_name, Net.nickname]) if Net.server_name != "" else Net.nickname
-    var me := UI.badge("●  " + me_text, Color(0.16, 0.2, 0.34, 0.9))
+    var me := UI.badge("●  " + me_text, UI.BLUE)
     top.add_child(me)
     var logout := UI.pill_button("나가기")
+    logout.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     logout.pressed.connect(_on_logout)
     top.add_child(logout)
 
@@ -171,7 +172,7 @@ func _make_card(r: Dictionary) -> Control:
 # ---------------------------------------------------------------- 방 만들기 창
 func _build_dialog() -> void:
     _dialog = ColorRect.new()
-    (_dialog as ColorRect).color = Color(0.05, 0.08, 0.15, 0.5)
+    (_dialog as ColorRect).color = Color(UI.INK, 0.55)
     _dialog.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     _dialog.visible = false
     add_child(_dialog)
@@ -188,10 +189,10 @@ func _build_dialog() -> void:
         var b := Button.new()
         b.toggle_mode = true
         b.custom_minimum_size = Vector2(150, 0)
-        b.add_theme_stylebox_override("normal", UI.box(Color.WHITE, 14, 6, UI.INK, 2, 3))
-        b.add_theme_stylebox_override("hover", UI.box(Color(0.95, 0.97, 1.0), 14, 6, UI.INK, 2, 3))
-        b.add_theme_stylebox_override("pressed", UI.box(Color(1.0, 0.94, 0.7), 14, 6, UI.INK, 4, 3))
-        b.add_theme_stylebox_override("hover_pressed", UI.box(Color(1.0, 0.94, 0.7), 14, 6, UI.INK, 4, 3))
+        b.add_theme_stylebox_override("normal", UI.box(Color.WHITE, 14, 6, UI.INK, 2, 4))
+        b.add_theme_stylebox_override("hover", UI.box(Color(1.0, 0.97, 0.9), 14, 6, UI.INK, 2, 4))
+        b.add_theme_stylebox_override("pressed", UI.box(Color(1.0, 0.9, 0.62), 14, 6, UI.TEAL, 4, 4))
+        b.add_theme_stylebox_override("hover_pressed", UI.box(Color(1.0, 0.9, 0.62), 14, 6, UI.TEAL, 4, 4))
         b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
         var bv := UI.vbox(4)
         bv.mouse_filter = Control.MOUSE_FILTER_IGNORE

@@ -132,12 +132,11 @@ func _ready() -> void:
     # 하단 바: 상태 문구 + 큰 버튼
     var bottom := UI.hbox(14)
     root.add_child(bottom)
-    _status = UI.title("", 20)
-    _status.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-    _status.add_theme_constant_override("outline_size", 7)
-    _status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _status = UI.heading("", 19, UI.CREAM)
+    _status.add_theme_stylebox_override("normal", UI.box(UI.INK, 22, 18))
     _status.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     bottom.add_child(_status)
+    bottom.add_child(UI.spacer())
     _ready_btn = UI.good_button("레디!")
     _ready_btn.custom_minimum_size = Vector2(230, 62)
     _ready_btn.add_theme_font_size_override("font_size", 28)
@@ -151,7 +150,7 @@ func _ready() -> void:
 
     # 게임 중 대기 오버레이
     _playing_overlay = ColorRect.new()
-    (_playing_overlay as ColorRect).color = Color(0.05, 0.08, 0.15, 0.5)
+    (_playing_overlay as ColorRect).color = Color(UI.INK, 0.55)
     _playing_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     _playing_overlay.visible = false
     add_child(_playing_overlay)
@@ -237,7 +236,7 @@ func _refresh(r: Dictionary) -> void:
             if m.ready or m.host:
                 ready_count += 1
         _status.text = "준비 %d / %d  ·  방장이 시작하면 게임이 열려요" % [ready_count, members.size()]
-    _status.add_theme_color_override("font_color", UI.CTA if (host and reason == "") else Color.WHITE)
+    _status.add_theme_color_override("font_color", UI.YELLOW if (host and reason == "") else UI.CREAM)
 
 
 func _my_entry(r: Dictionary) -> Dictionary:

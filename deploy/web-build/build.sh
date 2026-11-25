@@ -26,9 +26,7 @@ echo "[web-build] 안내 페이지"
 L=/game/deploy/web-landing
 mkdir -p /tmp/web/assets
 cp "$L/index.html" "$L/links.json" /tmp/web/
-cp "$L/hero.jpg" /game/fonts/BlackHanSans-Regular.ttf /tmp/web/assets/
-cp /game/ui/portraits/slot_0.png /game/ui/portraits/slot_1.png /game/ui/portraits/slot_2.png \
-   /game/ui/portraits/slot_3.png /game/ui/portraits/slot_4.png /tmp/web/assets/
+cp /game/fonts/Jua-Regular.ttf /game/ui/portraits/slot_*.png /tmp/web/assets/
 # 게임 소개 페이지 (/about/)
 mkdir -p /tmp/web/about
 cp "$L/about/index.html" "$L"/about/*.jpg /tmp/web/about/

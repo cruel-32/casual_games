@@ -3,6 +3,8 @@ extends Control
 
 var game: Node
 
+const UI := preload("res://scripts/ui/ui_kit.gd")
+
 var _top: Label
 var _center: Label
 var _sub: Label
@@ -30,9 +32,18 @@ func _ready() -> void:
                 % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
 
-    _top = _make_label(26)
-    _center = _make_label(72)
-    _sub = _make_label(22)
+    _top = _make_label(24, true)
+    _top.add_theme_constant_override("outline_size", 0)
+    _top.add_theme_color_override("font_color", UI.CREAM)
+    _top.add_theme_stylebox_override("normal", UI.box(UI.INK, 22, 20, UI.INK, 0, 4))
+    _center = _make_label(80, true)
+    _center.add_theme_color_override("font_color", UI.YELLOW)
+    _center.add_theme_constant_override("outline_size", 14)
+    _center.add_theme_color_override("font_shadow_color", Color(UI.INK, 0.5))
+    _center.add_theme_constant_override("shadow_offset_x", 5)
+    _center.add_theme_constant_override("shadow_offset_y", 5)
+    _center.add_theme_constant_override("shadow_outline_size", 14)
+    _sub = _make_label(22, true)
     _wind_label = _make_label(16)
     _skill_label = _make_label(18)
     _status_label = _make_label(18)
@@ -42,11 +53,14 @@ func _ready() -> void:
         _feed_labels.append(l)
 
 
-func _make_label(font_size: int) -> Label:
+## display: 제목 글꼴(Jua). 글자는 흰색 + 남색 테두리 (어떤 배경 위에서도 보이게)
+func _make_label(font_size: int, display: bool = false) -> Label:
     var l := Label.new()
+    if display:
+        l.add_theme_font_override("font", UI.DISPLAY_FONT)
     l.add_theme_font_size_override("font_size", font_size)
     l.add_theme_color_override("font_color", Color.WHITE)
-    l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+    l.add_theme_color_override("font_outline_color", Color(UI.INK, 0.85))
     l.add_theme_constant_override("outline_size", maxi(4, font_size / 5))
     l.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(l)
@@ -192,10 +206,13 @@ func _draw_wind_compass() -> void:
     var scr := _screen()
     var c := Vector2(scr.x - 90, 90)
     var r := 46.0
-    draw_circle(c, r, Color(0, 0, 0, 0.35))
-    draw_arc(c, r, 0, TAU, 48, Color(1, 1, 1, 0.55), 2.0, true)
+    draw_circle(c, r + 4, UI.INK)
+    draw_circle(c, r, UI.CREAM)
+    for i in 12:
+        var a := i * TAU / 12.0
+        draw_line(c + Vector2(cos(a), sin(a)) * (r - 6), c + Vector2(cos(a), sin(a)) * (r - 2), Color(UI.INK, 0.35), 2.0)
     # 위쪽 = 카메라 정면
-    draw_line(c + Vector2(0, -r), c + Vector2(0, -r + 8), Color(1, 1, 1, 0.8), 2.0)
+    draw_colored_polygon(PackedVector2Array([c + Vector2(0, -r - 1), c + Vector2(-6, -r + 9), c + Vector2(6, -r + 9)]), UI.RED)
 
     var human: Fighter = game.human
     if human == null:
@@ -206,14 +223,14 @@ func _draw_wind_compass() -> void:
     var w: Vector2 = game.wind
     var spd := w.length()
     if spd < 0.05:
-        draw_circle(c, 4, Color(1, 1, 1, 0.8))
+        draw_circle(c, 5, UI.INK)
         return
     var local := Vector3(w.x, 0, w.y).rotated(Vector3.UP, -yaw)
     var dir := Vector2(local.x, local.z).normalized()
     var len := clampf(spd / 8.0, 0.25, 1.0) * (r - 6)
     var tip := c + dir * len
     var tail := c - dir * len * 0.6
-    var col := Color(0.75, 0.92, 1.0).lerp(Color(1.0, 0.55, 0.3), clampf(spd / 8.0, 0.0, 1.0))
+    var col := UI.BLUE.lerp(UI.RED, clampf(spd / 8.0, 0.0, 1.0))
     draw_line(tail, tip, col, 4.0, true)
     var side := Vector2(-dir.y, dir.x)
     draw_colored_polygon(PackedVector2Array([tip + dir * 6, tip - dir * 10 + side * 8, tip - dir * 10 - side * 8]), col)
@@ -225,17 +242,26 @@ func _draw_skill_bar() -> void:
         return
     var scr := _screen()
     var pos := Vector2((scr.x - BAR_W) * 0.5, scr.y - 70)
-    draw_rect(Rect2(pos - Vector2(3, 3), Vector2(BAR_W + 6, BAR_H + 6)), Color(0, 0, 0, 0.45))
+    var frame := StyleBoxFlat.new()
+    frame.bg_color = UI.CREAM
+    frame.border_color = UI.INK
+    frame.set_border_width_all(3)
+    frame.set_corner_radius_all(int(BAR_H * 0.5 + 4))
+    draw_style_box(frame, Rect2(pos - Vector2(5, 5), Vector2(BAR_W + 10, BAR_H + 10)))
     var fill := 0.0
-    var col := Color(0.5, 0.9, 0.6)
+    var col := UI.TEAL
     if h.charging:
         fill = h.get_charge_ratio()
-        col = Color(1.0, 0.88, 0.25).lerp(Color(1.0, 0.25, 0.1), fill)
+        col = UI.YELLOW.lerp(UI.RED, fill)
         if fill >= 0.999:
             col = col.lerp(Color.WHITE, 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.025))
     elif h.cooldown_timer > 0.0:
         fill = 1.0 - h.cooldown_timer / maxf(h.cooldown_total, 0.01)
-        col = Color(0.45, 0.6, 0.85)
+        col = UI.BLUE
     else:
         fill = 1.0
-    draw_rect(Rect2(pos, Vector2(BAR_W * fill, BAR_H)), col)
+    if fill > 0.02:
+        var bar := StyleBoxFlat.new()
+        bar.bg_color = col
+        bar.set_corner_radius_all(int(BAR_H * 0.5))
+        draw_style_box(bar, Rect2(pos, Vector2(maxf(BAR_W * fill, BAR_H), BAR_H)))

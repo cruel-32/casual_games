@@ -197,9 +197,10 @@ func _draw() -> void:
     var push_col := UI.PRIMARY if cd_ready else Color(0.55, 0.58, 0.65)
     push_col.a = 0.85 if pushing else 0.6
     draw_circle(pc, _push_radius(), push_col)
+    draw_arc(pc, _push_radius(), 0, TAU, 48, Color(UI.INK, 0.8), 4.0, true)
     if fighter.charging:
         var c := fighter.get_charge_ratio()
-        draw_arc(pc, _push_radius() + 7, -PI * 0.5, -PI * 0.5 + TAU * c, 48, Color(1.0, 0.9, 0.3), 7.0, true)
+        draw_arc(pc, _push_radius() + 7, -PI * 0.5, -PI * 0.5 + TAU * c, 48, UI.YELLOW, 7.0, true)
     elif not cd_ready:
         var f := 1.0 - fighter.cooldown_timer / maxf(fighter.cooldown_total, 0.01)
         draw_arc(pc, _push_radius() + 7, -PI * 0.5, -PI * 0.5 + TAU * f, 48, Color(1, 1, 1, 0.6), 5.0, true)
@@ -207,13 +208,14 @@ func _draw() -> void:
 
     # 점프 버튼
     var jc := _jump_center()
-    var jcol := UI.SECONDARY
+    var jcol := UI.TEAL
     jcol.a = 0.85 if _jump_index != -1 else 0.6
     draw_circle(jc, _jump_radius(), jcol)
+    draw_arc(jc, _jump_radius(), 0, TAU, 48, Color(UI.INK, 0.8), 4.0, true)
     _draw_label(jc, "점프", 20)
 
 
 func _draw_label(center: Vector2, text: String, size: int) -> void:
-    var font := get_theme_default_font()
+    var font: Font = UI.DISPLAY_FONT
     var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
     draw_string(font, center + Vector2(-w * 0.5, size * 0.35), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, Color.WHITE)

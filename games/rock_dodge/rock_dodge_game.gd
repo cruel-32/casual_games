@@ -233,6 +233,7 @@ func _spawn_fighters() -> void:
                 if e.peer != 0:
                     _slot_of_peer[e.peer] = i
         f.body_color = Color(0.95, 0.95, 0.92) if f.is_human else BOT_COLORS[i % BOT_COLORS.size()]
+        f.look = i
         var a := PI * 0.5 + i * TAU / total
         var p := Vector3(cos(a), 0, sin(a)) * minf(8.0, arena_half - 2.0)
         f.position = Vector3(p.x, terrain.get_height(p.x, p.z) + 0.2, p.z)
