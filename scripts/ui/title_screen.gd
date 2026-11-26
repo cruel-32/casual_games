@@ -4,6 +4,7 @@ extends Control
 const UI := preload("res://scripts/ui/ui_kit.gd")
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const UpdatePanel := preload("res://scripts/ui/update_panel.gd")
+const NewsUI := preload("res://scripts/ui/news_ui.gd")
 
 var app: Node
 var _nick: LineEdit
@@ -37,6 +38,9 @@ func _ready() -> void:
     offline_btn.pressed.connect(_on_offline_pressed.bind(offline_btn))
     top.add_child(offline_btn)
     _buttons.append(offline_btn)
+    var news := NewsUI.new()
+    news.app = app
+    top.add_child(news.news_button)
     top.add_child(UI.sound_button())
     var help_btn := UI.pill_button("조작법", UI.YELLOW, UI.INK)
     help_btn.pressed.connect(_show_help)
@@ -135,6 +139,7 @@ func _ready() -> void:
     if OS.has_feature("web"):
         _build_web_promo()
     _build_update_ui()
+    add_child(news)                       # 공지 띠·소식 창 (맨 위에 그려지게 마지막에)
 
     Net.connected.connect(_on_connected)
     Net.connection_failed.connect(_on_failed)

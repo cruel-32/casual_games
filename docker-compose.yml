@@ -13,6 +13,8 @@ services:
     environment:
       - GAME_PORT=7777
       - STATUS_PORT=7778
+      # 점검 모드를 읽어 올 관리 서버 (같은 compose 네트워크)
+      - ADMIN_URL=http://small-party-world-admin:7780
     # [A] Caddy를 호스트(Ubuntu)에 직접 설치한 경우: 로컬에서만 열기
     ports:
       - "127.0.0.1:7777:7777"
@@ -21,6 +23,28 @@ services:
     #     (네트워크 이름은 Caddy compose 쪽 이름으로 바꾸세요)
     # networks:
     #   - caddy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 관리 서버: 관리 페이지(https://spw.cloudish.cloud/admin/) + 공지 API(/api/notices) + 점검 모드
+  #   구글 로그인: GOOGLE_CLIENT_ID (GitHub Actions 변수 또는 이 폴더의 .env)
+  #   관리자 계정: ADMIN_EMAILS (쉼표로 구분, 항상 관리자) + 관리 페이지에서 추가한 계정
+  #   데이터: /srv/small_party_world/admin/admin.sqlite
+  small-party-world-admin:
+    build: admin
+    image: small-party-world-admin:latest
+    container_name: small-party-world-admin
+    restart: unless-stopped
+    environment:
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-cshee8508@gmail.com}
+    ports:
+      - "127.0.0.1:7780:7780"
+    volumes:
+      - /srv/small_party_world/admin:/data
     logging:
       driver: json-file
       options:

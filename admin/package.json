@@ -1,0 +1,14 @@
+{
+  "name": "spw-admin",
+  "private": true,
+  "type": "module",
+  "description": "Small Party World 관리 페이지 + 공지 API (https://spw.cloudish.cloud/admin/, /api/)",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test test.mjs"
+  },
+  "dependencies": {
+    "jose": "^5.9.6"
+  }
+}

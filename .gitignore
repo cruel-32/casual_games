@@ -2,4 +2,6 @@
 *.import
 build/
 android/
+admin/node_modules/
+admin/data/
 .secrets/

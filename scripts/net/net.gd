@@ -68,6 +68,10 @@ var _ping_count := 0
 var _players := {}                      # peer_id -> {nick, room}
 var _client_versions := {}              # peer_id -> 게임 버전 (x_hello 로 받음)
 var _min_client_version := "0.0.0"     # release.json 의 min_supported (서버가 시작할 때 읽음)
+## 점검 모드 (관리 서버 /api/status 를 주기적으로 읽음). 켜지면 새 로그인·방 만들기를 막는다
+var maintenance := {"on": false, "message": ""}
+var _admin_http: HTTPRequest
+const ADMIN_POLL_SEC := 15.0
 var _rooms := {}                        # room_id -> {id, name, host, max, bot_fill, state, members[], ready{}, returned{}}
 var _next_room_id := 1
 var _nick_regex := RegEx.new()
@@ -99,6 +103,7 @@ func _ready() -> void:
         print("[server] 최소 클라이언트 버전 %s" % _min_client_version)
         if start_server(port) == OK:
             _start_status_server(status_port)
+            _start_admin_poll()
 
 
 # ================================================================ 공통
@@ -504,6 +509,7 @@ func _status_data() -> Dictionary:
         "godot": Engine.get_version_info().string,
         "protocol": PROTOCOL_VERSION,
         "version": Boot.version(),
+        "maintenance": maintenance,
         "min_client_version": _min_client_version,
         "uptime_sec": int(Time.get_unix_time_from_system() - _started_at),
         "connections": multiplayer.get_peers().size(),
@@ -550,6 +556,9 @@ func c_login(nick: String, protocol: int) -> void:
             "게임이 더 새 버전" if newer else "게임이 예전 버전",
             "서버 업데이트가 필요합니다" if newer else "새로고침하거나 최신 버전을 받아 주세요"])
         return
+    if maintenance.on:
+        s_login_result.rpc_id(id, false, _maintenance_text())
+        return
     var ver := String(_client_versions.get(id, "0.0.0"))
     if Boot.compare(ver, _min_client_version) < 0:
         s_login_result.rpc_id(id, false, "새 버전(%s 이상)이 나왔어요. 첫 화면의 업데이트 버튼으로 업데이트해 주세요" % _min_client_version)
@@ -576,6 +585,9 @@ func c_request_rooms() -> void:
 func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id: String) -> void:
     var id := _sender()
     if not is_server or id == 0:
+        return
+    if maintenance.on:
+        s_error.rpc_id(id, _maintenance_text())
         return
     if int(_players[id].room) != 0:
         s_error.rpc_id(id, "이미 방에 있습니다")
@@ -973,3 +985,36 @@ func x_hello(version: String) -> void:
         return
     var id := multiplayer.get_remote_sender_id()
     _client_versions[id] = version.left(20)
+
+
+# ---- 서버: 점검 모드 읽기 (관리 서버 ADMIN_URL/api/status, 없으면 끔)
+func _start_admin_poll() -> void:
+    var base := OS.get_environment("ADMIN_URL")
+    if base == "":
+        return
+    _admin_http = HTTPRequest.new()
+    _admin_http.timeout = 5.0
+    add_child(_admin_http)
+    _admin_http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray):
+        if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+            var d = JSON.parse_string(body.get_string_from_utf8())
+            if d is Dictionary and d.get("maintenance") is Dictionary:
+                var m: Dictionary = d.maintenance
+                var on := bool(m.get("on", false))
+                if on != bool(maintenance.on):
+                    print("[server] 점검 모드 %s" % ("켬" if on else "끔"))
+                maintenance = {"on": on, "message": String(m.get("message", ""))})
+    var timer := Timer.new()
+    timer.wait_time = ADMIN_POLL_SEC
+    timer.autostart = true
+    add_child(timer)
+    var poll := func():
+        if _admin_http.get_http_client_status() == HTTPClient.STATUS_DISCONNECTED:
+            _admin_http.request(base.trim_suffix("/") + "/api/status")
+    timer.timeout.connect(poll)
+    poll.call()
+
+
+func _maintenance_text() -> String:
+    var msg := String(maintenance.get("message", ""))
+    return "서버 점검 중이에요." + (" " + msg if msg != "" else "") + " (혼자 연습은 할 수 있어요)"

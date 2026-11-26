@@ -101,6 +101,22 @@ const SERVER_LIST := [
   모바일 스토어 심사가 끝나기 전에는 올리지 말 것
 - 서버·클라이언트 통신 형식이 바뀌면 `scripts/net/net.gd` 의 `PROTOCOL_VERSION` 도 올린다
 
+### 관리 페이지·공지 (admin/)
+`https://spw.cloudish.cloud/admin/` — 구글 계정으로 로그인, 등록된 계정만 사용 가능. Node 22 + 내장 SQLite, 의존성은 `jose` 하나.
+
+| 주소 | 쓰는 곳 |
+|---|---|
+| `/admin/` | 관리 페이지: 공지(공지·배너·팝업·패치 노트) 작성, 점검 모드, 관리자 계정, 작업 기록 |
+| `/api/notices?platform=pc&version=0.2.0` | 게임 첫 화면(배너 띠·"소식" 창)과 웹 `/news/` |
+| `/api/status` | 게임 서버가 15초마다 읽는 점검 모드 (켜지면 새 로그인·방 만들기 거절) |
+
+- 컨테이너 `small-party-world-admin` (127.0.0.1:7780), 데이터 `/srv/small_party_world/admin/admin.sqlite`
+- `ADMIN_EMAILS`(docker-compose, 기본 `cshee8508@gmail.com`): 항상 관리자. 그 밖의 관리자는 관리 페이지에서 추가·삭제
+- `GOOGLE_CLIENT_ID`: Google Cloud Console 의 OAuth 웹 클라이언트 ID (승인된 자바스크립트 원본 `https://spw.cloudish.cloud`).
+  GitHub > Settings > Secrets and variables > Actions > **Variables** 에 `GOOGLE_CLIENT_ID` 로 등록하면 배포 때 들어감
+- Caddy: `spw.cloudish.cloud` 블록에 `/admin*`, `/api/*` → 127.0.0.1:7780 (deploy/Caddyfile.example)
+- 테스트: `cd admin && npm ci && npm test`
+
 ### 자동 빌드·배포 (GitHub Actions)
 `main` 에 푸시하면 `.github/workflows/build-deploy.yml` 이 돈다. (GitHub > Actions 에서 수동 실행도 가능)
 

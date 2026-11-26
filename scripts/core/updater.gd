@@ -34,7 +34,7 @@ var latest := ""                ## 최신 버전 (확인 전 "")
 var required := false           ## 지금 버전으로는 온라인 접속 불가 (min_supported 미만)
 var message := ""               ## 실패 등 안내 문구
 var public_key_pem := PUBLIC_KEY        ## 테스트에서 바꿔 끼울 수 있게
-var site := SITE
+var site := OS.get_environment("SPW_SITE") if OS.get_environment("SPW_SITE") != "" else SITE   ## 개발용 SPW_SITE
 
 var _http: HTTPRequest
 var _dl: HTTPRequest

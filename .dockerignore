@@ -6,3 +6,4 @@ build/
 deploy/
 Dockerfile
 docker-compose.yml
+admin/

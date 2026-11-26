@@ -3,6 +3,7 @@
 #   /            안내 페이지 (deploy/web-landing) — PC는 Windows 다운로드, 모바일은 앱 설치로 유도
 #   /play/       웹 체험판 (Godot 웹 빌드)
 #   /download/   Windows zip
+#   /news/       소식 (관리 페이지에서 쓴 공지)
 #   /links.json  다운로드·앱 스토어 주소 (deploy/web-landing/links.json 을 고쳐서 다시 빌드)
 #   /version.json 업데이트 정보 (저장소의 release.json + PC 업데이트 팩 해시·서명) → 게임이 읽음
 #   /download/updates/game-<버전>.pck  PC 업데이트 팩 (서명 키 PATCH_SIGNING_KEY 가 있을 때만)
@@ -33,6 +34,9 @@ cp /game/icons/icon.png /tmp/web/assets/icon.png
 # 게임 소개 페이지 (/about/)
 mkdir -p /tmp/web/about
 cp "$L/about/index.html" "$L"/about/*.jpg /tmp/web/about/
+# 소식 (/news/) — 공지는 관리 서버의 /api/notices 에서 읽음
+mkdir -p /tmp/web/news
+cp "$L/news/index.html" /tmp/web/news/
 
 if [ "${BUILD_WINDOWS:-1}" = "1" ]; then
     # 실행 파일(.exe)과 게임 데이터(.pck)가 따로 나온다 (백신 오탐을 줄이려고 pck를 exe에 합치지 않음)

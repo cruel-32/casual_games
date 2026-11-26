@@ -29,12 +29,19 @@ spwsv.cloudish.cloud {
 #    웹 빌드 전까지는 deploy/web-placeholder/index.html 을 넣어 두세요.
 # ---------------------------------------------------------------
 spw.cloudish.cloud {
-	root * /srv/small_party_world/web
 	encode zstd gzip
-	# 업데이트 직후 옛 파일이 캐시에 남아 버전이 섞이지 않게
-	@nocache path *.html *.js *.pck
-	header @nocache Cache-Control "no-cache"
-	file_server
+	# 관리 페이지·공지 API → 관리 서버 컨테이너 (127.0.0.1:7780)
+	@admin path /admin /admin/* /api/*
+	handle @admin {
+		reverse_proxy 127.0.0.1:7780
+	}
+	handle {
+		root * /srv/small_party_world/web
+		# 업데이트 직후 옛 파일이 캐시에 남아 버전이 섞이지 않게
+		@nocache path *.html *.js *.pck *.json
+		header @nocache Cache-Control "no-cache"
+		file_server
+	}
 	# 웹 빌드에서 '스레드 지원'을 켠 경우에만 필요 (끈 빌드는 불필요):
 	# header {
 	# 	Cross-Origin-Opener-Policy same-origin
@@ -45,4 +52,5 @@ spw.cloudish.cloud {
 # Caddy가 Docker 컨테이너이고 게임 서버와 같은 Docker 네트워크에 있다면
 # 127.0.0.1 대신 컨테이너 이름을 쓰세요:
 #   reverse_proxy small-party-world-server:7777   /   reverse_proxy small-party-world-server:7778
+#   reverse_proxy small-party-world-admin:7780
 # 웹 파일 폴더(/srv/small_party_world/web)도 Caddy 컨테이너에 볼륨으로 마운트해야 합니다.

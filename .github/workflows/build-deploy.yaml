@@ -30,6 +30,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: 관리 서버 다시 빌드·재시작 (관리 페이지·공지 API)
+        env:
+          # 구글 OAuth 웹 클라이언트 ID: GitHub > Settings > Secrets and variables > Actions > Variables
+          GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+        run: docker compose up -d --build small-party-world-admin
+
       - name: 게임 서버 다시 빌드·재시작
         run: docker compose up -d --build small-party-world-server
 
@@ -45,6 +51,7 @@ jobs:
         run: |
           sleep 5
           curl -fsS http://127.0.0.1:7778/status.json
+          curl -fsS http://127.0.0.1:7780/api/status
 
   android:
     name: Android 빌드 (+ Google Play 업로드)
