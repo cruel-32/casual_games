@@ -197,6 +197,7 @@ test("소셜 로그인 → 계정·판수·광고 보상·계정 삭제", async 
         const adm = await req("POST", "/admin/api/login", { credential: "ok:owner@gmail.com" }, { "X-SPW-Admin": "1" });
         const cookie = adm.headers.get("set-cookie").split(";")[0];
         const ah = { "X-SPW-Admin": "1", cookie };
+        assert.equal((await req("GET", "/admin/api/policy", undefined, ah)).data.policy.daily_free, 1);   // 기본: 하루 1판 무료
         assert.equal((await req("PUT", "/admin/api/policy", { phase: "live", daily_free: 3, ad_reward: 1, ad_daily_max: 2 }, ah)).status, 200);
         for (let i = 0; i < 3; i++) assert.equal((await req("POST", "/internal/plays/start", { accounts: [a.account.id, k.account.id] })).data.ok, true);
         let blocked = await req("POST", "/internal/plays/start", { accounts: [a.account.id, k.account.id] });

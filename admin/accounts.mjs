@@ -32,7 +32,7 @@ const KST_MS = 9 * 3600e3;
 // 운영 정책 기본값 — 관리 페이지 "운영 정책" 탭에서 바꾼다
 export const DEFAULT_POLICY = {
     phase: "beta",          // beta = 모든 제한 끔 / live = 정식 출시 (판수 제한·광고 적용)
-    daily_free: 3,          // 하루 무료 판수 (1판 = 한 번 시작한 경기, 최대 5라운드)
+    daily_free: 1,          // 하루 무료 판수 (광고 1번마다 +ad_reward) (1판 = 한 번 시작한 경기, 최대 5라운드)
     ad_reward: 1,           // 보상형 광고 1번에 늘어나는 판수
     ad_daily_max: 5,        // 하루에 광고로 늘릴 수 있는 최대 횟수
 };
