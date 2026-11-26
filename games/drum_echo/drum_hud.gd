@@ -34,8 +34,8 @@ var _spec_box: PanelContainer
 func _ready() -> void:
     set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     mouse_filter = Control.MOUSE_FILTER_IGNORE
-    _banner = _label(40, true)
-    _sub = _label(20)
+    _banner = _label(36, true)
+    _sub = _label(19)
     _judge = _label(46, true)
     _spec_box = PanelContainer.new()
     _spec_box.add_theme_stylebox_override("panel", UI.box(Color(0.11, 0.16, 0.27, 0.88), 16, 10, UI.YELLOW, 4, 0))
@@ -178,10 +178,12 @@ func _process(delta: float) -> void:
     _update_banner(t)
     if Time.get_ticks_msec() / 1000.0 - game.calib_note_time < 2.5:
         _sub.text = game.calib_note
-    _place(_banner, 70.0)
-    _place(_sub, 122.0)
+    # 안내 글은 트랙 바로 위 (시선이 한곳에 모이게)
+    var hr := _highway_rect()
+    _place(_banner, hr.position.y - 62.0)
+    _place(_sub, hr.position.y - 22.0)
     _spec_box.size = _spec_box.get_minimum_size()
-    _spec_box.position = Vector2((sc.x - _spec_box.size.x) * 0.5, 146.0)
+    _spec_box.position = Vector2((sc.x - _spec_box.size.x) * 0.5, hr.position.y - 128.0)
     # 판정 문구 (노트 길 위, 0.6초 동안)
     var age: float = Time.get_ticks_msec() / 1000.0 - game.last_judge_time
     _judge.visible = age < 0.6 and game.last_judge != ""
@@ -192,7 +194,7 @@ func _process(delta: float) -> void:
         _judge.pivot_offset = _judge.size * 0.5
         var r := _highway_rect()
         _judge.size = _judge.get_minimum_size()
-        _judge.position = Vector2(r.position.x + r.size.x * 0.12 - _judge.size.x * 0.5 + 40, r.position.y - _judge.size.y - 6)
+        _judge.position = Vector2(r.position.x + r.size.x * 0.12 + 40, r.get_center().y - _judge.size.y * 0.5)
     # 북 버튼: 노트 길 양옆
     var bs := clampf(sc.y * 0.2, 110.0, 170.0)
     for lane in 2:
@@ -227,6 +229,11 @@ func _update_banner(t: float) -> void:
     if t < 0.0:
         _banner.text = str(ceili(-t))
         _sub.text = ("Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱") + "  ·  피버 = 누르고 있다가 떼기"
+        return
+    if t < Chart.INTRO_BARS * Chart.BAR and game.my_slot >= 0:
+        _banner.add_theme_color_override("font_color", UI.YELLOW)
+        _banner.text = "박자 맞추기!"
+        _sub.text = "반주의 '쿵'에 맞춰 아무 북이나 4번 넘게 쳐요 — 이 기기의 소리 지연을 맞춰요"
         return
     var ph: Array = game.phase_at(t)
     var i := int(ph[0])
@@ -357,6 +364,23 @@ func _highway_rect() -> Rect2:
     return Rect2(Vector2((sc.x - w) * 0.5, sc.y - h - 26.0), Vector2(w, h))
 
 
+## 트랙(노트 길)은 한 번에 한 가지만 보여 준다
+##   공격 차례(쉼 포함): 지금 치는 공격 — 소리가 난 순간 판정선에서 생겨 왼쪽으로 흘러감 (내 공격이면 '내 공격', 남의 공격이면 '잘 들어요')
+##   내가 따라 칠 차례(쉼 포함): 따라 칠 노트가 오른쪽에서 판정선으로 다가옴
+##   남이 따라 치는 차례: 노트 없이 어둡게 ('상대 팀 차례') — 상대가 치는 건 자세히 보여 주지 않음
+func track_mode(t: float) -> Array:
+    var ph: Array = game.phase_at(t)
+    var i := int(ph[0])
+    var kind: String = ph[1]
+    if i < 0:
+        return ["idle", -1]
+    if kind == "ready_attack" or kind == "attack":
+        return ["mine_attack" if int(game.view_attacker.get(i, -2)) == game.my_slot and game.my_slot >= 0 else "listen", i]
+    if game.my_slot >= 0 and game.is_responder(game.my_slot, i):
+        return ["respond", i]
+    return ["others", i]
+
+
 func _draw() -> void:
     if game.state == PartyGame.State.ENDED or game.t0 < 0.0:
         return
@@ -364,123 +388,113 @@ func _draw() -> void:
     var t: float = game.heard_time()
     _draw_chips(t)
     var r := _highway_rect()
-    draw_style_box(UI.box(Color(0.11, 0.16, 0.27, 0.82), 18, 0, UI.INK, 4, 0), r)
+    var mode_i := track_mode(t)
+    var mode: String = mode_i[0]
+    var i: int = mode_i[1]
+    var bg := Color(0.11, 0.16, 0.27, 0.85)
+    match mode:
+        "mine_attack":
+            bg = Color(0.32, 0.14, 0.12, 0.88)
+        "listen":
+            bg = Color(0.12, 0.18, 0.3, 0.88)
+        "respond":
+            bg = Color(0.3, 0.25, 0.08, 0.88)
+        "others", "idle":
+            bg = Color(0.1, 0.11, 0.15, 0.6)
+    draw_style_box(UI.box(bg, 18, 0, UI.INK, 4, 0), r)
     var hit_x := r.position.x + r.size.x * 0.12
     var px := (r.size.x * 0.86) / LOOK_AHEAD
     var lane_y := [r.position.y + r.size.y * 0.32, r.position.y + r.size.y * 0.72]
-    var me: int = game.my_slot
-
-    # 구간 색: 내가 따라 칠 마디 = 노랑, 공격 마디 = 공격팀 색
-    for i in game.turns.size():
-        var tr: Dictionary = game.turns[i]
-        for kind in 2:
-            var b0 := float(tr.attack_t if kind == 0 else tr.response_t)
-            var b1 := b0 + int(tr.bars) * Chart.BAR
-            var x0 := clampf(hit_x + (b0 - t) * px, r.position.x, r.end.x)
-            var x1 := clampf(hit_x + (b1 - t) * px, r.position.x, r.end.x)
-            if x1 - x0 < 1.0:
-                continue
-            var col: Color
-            if kind == 0:
-                col = Teams.color(int(tr.attack_team)) if int(tr.attack_team) >= 0 else Color(0.7, 0.7, 0.75)
-                col.a = 0.16
-            else:
-                col = Color(1.0, 0.85, 0.2, 0.22) if me >= 0 and game.is_responder(me, i) else Color(1, 1, 1, 0.05)
-            draw_rect(Rect2(Vector2(x0, r.position.y + 4), Vector2(x1 - x0, r.size.y - 8)), col)
-
-    # 박·마디 선 + 반 박(8분음표) 눈금: 칠 수 있는 자리는 이 선들뿐
-    var first_half := int(floor((t - LOOK_BACK) / Chart.SLOT))
-    for k in range(first_half, first_half + int((LOOK_AHEAD + LOOK_BACK) / Chart.SLOT) + 2):
-        var bt := k * Chart.SLOT
+    var font := get_theme_default_font()
+    if mode == "others" or mode == "idle":
+        var msg := "상대 팀이 따라 치는 중" if mode == "others" else ""
+        if msg != "":
+            draw_string(font, Vector2(r.position.x, r.get_center().y + 8), msg, HORIZONTAL_ALIGNMENT_CENTER, r.size.x, 22, Color(1, 1, 1, 0.5))
+        return
+    # 박 선 (지금 차례 구간 안에서만, 마디 첫 박은 굵게)
+    var tr: Dictionary = game.turns[i]
+    var response := mode == "respond"
+    var base := float(tr.response_t if response else tr.attack_t)
+    var end_t := base + int(tr.bars) * Chart.BAR
+    var first := int(floor((t - LOOK_BACK - base) / Chart.BEAT))
+    for k in range(first, first + int((LOOK_AHEAD + LOOK_BACK) / Chart.BEAT) + 2):
+        var bt := base + k * Chart.BEAT
+        if bt < base - 0.01 or bt > end_t + 0.01:
+            continue
         var x := hit_x + (bt - t) * px
         if x < r.position.x or x > r.end.x:
             continue
-        if posmod(k, 2) == 1:
-            # 반 박: 위·아래 짧은 눈금
-            draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.position.y + 18), Color(1, 1, 1, 0.22), 1.5)
-            draw_line(Vector2(x, r.end.y - 18), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.22), 1.5)
-            continue
-        var bar := posmod(k, 8) == 0
-        draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.35 if bar else 0.14), 3.0 if bar else 1.5)
-
+        var edge := k == 0 or absf(bt - end_t) < 0.01
+        draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.6 if edge else (0.3 if posmod(k, 4) == 0 else 0.13)), 4.0 if edge else 1.5)
     # 칠 자리 (판정선)
     for lane in 2:
         draw_circle(Vector2(hit_x, lane_y[lane]), 24, Color(1, 1, 1, 0.16))
         draw_arc(Vector2(hit_x, lane_y[lane]), 24, 0, TAU, 32, Color(1, 1, 1, 0.8), 3.0)
-    var font := get_theme_default_font()
     draw_string(font, Vector2(r.position.x + 10, lane_y[0] + 7), "둥", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, DON.lightened(0.3))
     draw_string(font, Vector2(r.position.x + 10, lane_y[1] + 7), "딱", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, KA.lightened(0.3))
-
-    # 노트: 공격(들은 리듬) = 테두리만, 따라 칠 노트 = 꽉 찬 원, 피버 = 금색 테두리 긴 막대
-    #   공격 노트는 실제로 들린 뒤에야 나타난다 (진행자·봇 리듬을 미리 알 수 없게) — 판정선에서 '퐁' 생겨 왼쪽으로 지나감
-    #   따라 칠 노트는 컴퓨터가 개수를 맞춰 확정한 뒤에 나타난다 (그 전엔 들은 리듬 그대로 흐리게)
-    for i in game.view_notes:
-        var tr: Dictionary = game.turns[i]
-        var notes: Array = game.view_notes[i]
-        var taken: Dictionary = game.view_taken.get(i, {})
-        var mine: bool = me >= 0 and game.is_responder(me, i)
-        var final: bool = game.view_final.has(i)
-        for n_i in notes.size():
-            var n: Array = notes[n_i]
+    var notes: Array = game.view_notes.get(i, [])
+    if not response:
+        # 공격: 소리가 난 노트만, 판정선에서 생겨 왼쪽으로
+        for n in notes:
             var lane := int(n[1])
             var col := DON if lane == 0 else KA
             var rad := 17.0 if lane == 0 else 13.0
-            var y: float = lane_y[lane]
-            var fever := Chart.is_fever(n)
-            # 공격 (들은 리듬)
             var ta := Chart.note_time(tr, n, false)
-            if ta <= t:
-                var xa := hit_x + (ta - t) * px
-                var pop := clampf((t - ta) / 0.12, 0.0, 1.0)
-                if fever:
-                    var te := minf(Chart.note_end_time(tr, n, false), t)
-                    _capsule(xa, hit_x + (te - t) * px, y, rad, r, Color(col, 0.0), Color(FEVER, 0.85), 3.0)
-                if xa > r.position.x and xa < r.end.x:
-                    draw_arc(Vector2(xa, y), rad * (1.5 - 0.5 * pop), 0, TAU, 24, Color(col, 0.75 + 0.25 * (1.0 - pop)), 3.0)
-            elif not fever and not final:
+            if ta > t:
                 continue
-            # 따라 칠 노트
-            if ta > t and not final:
+            var xa := hit_x + (ta - t) * px
+            var pop := clampf((t - ta) / 0.12, 0.0, 1.0)
+            if Chart.is_fever(n):
+                var te := minf(Chart.note_end_time(tr, n, false), t)
+                _capsule(xa, hit_x + (te - t) * px, lane_y[lane], rad, r, Color(col, 0.45), Color(FEVER, 0.95), 3.0)
+            if xa > r.position.x and xa < r.end.x:
+                draw_circle(Vector2(xa, lane_y[lane]), rad * (1.5 - 0.5 * pop), Color(col, 0.9))
+                draw_arc(Vector2(xa, lane_y[lane]), rad * (1.5 - 0.5 * pop), 0, TAU, 24, Color(1, 1, 1, 0.8), 2.0)
+        # 내가 공격 중 누르고 있는 북: 피버 길이 미리 보기
+        if mode == "mine_attack":
+            for lane in game._atk_hold:
+                var h: Array = game._atk_hold[lane]
+                if t - float(h[2]) >= Chart.FEVER_HOLD_MIN:
+                    _capsule(hit_x + (float(h[2]) - t) * px, hit_x, lane_y[lane], 15.0, r, Color(FEVER, 0.25), Color(FEVER, 0.9), 3.0)
+                    draw_string(font, Vector2(hit_x + 26, lane_y[lane] + 7), "FEVER!", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, FEVER)
+        return
+    # 따라 치기: 확정된 노트가 오른쪽에서 다가옴 (확정 전엔 아무것도)
+    if not game.view_final.has(i):
+        return
+    var taken: Dictionary = game.view_taken.get(i, {})
+    for n_i in notes.size():
+        var n: Array = notes[n_i]
+        var lane := int(n[1])
+        var col := DON if lane == 0 else KA
+        var rad := 17.0 if lane == 0 else 13.0
+        var y: float = lane_y[lane]
+        var tb := Chart.note_time(tr, n, true)
+        var xb := hit_x + (tb - t) * px
+        var c := col
+        if Chart.is_fever(n):
+            var tbe := Chart.note_end_time(tr, n, true)
+            if taken.has(-(n_i + 1)) or tbe < t - Chart.BAD:
                 continue
-            var tb := Chart.note_time(tr, n, true)
-            var xb := hit_x + (tb - t) * px
-            var c := col if mine else Color(col, 0.35)
-            if not final:
-                c = Color(col, 0.3)
-            if fever:
-                var tbe := Chart.note_end_time(tr, n, true)
-                var end_taken := taken.has(-(n_i + 1))
-                if end_taken or tbe < t - Chart.BAD:
-                    continue
-                var holding := false
-                for lk in game.view_hold:
-                    if int(game.view_hold[lk][0]) == i and int(game.view_hold[lk][1]) == n_i:
-                        holding = true
-                var x0 := hit_x if holding else xb
-                if taken.has(n_i) and not holding:
-                    c = Color(0.5, 0.5, 0.55, 0.6)      # 누름은 맞혔는데 손을 뗌
-                _capsule(x0, hit_x + (tbe - t) * px, y, rad, r, Color(c, c.a * 0.55), Color(FEVER, 0.95 if mine else 0.4), 3.0)
-                if not taken.has(n_i) and xb > r.position.x and xb < r.end.x:
-                    draw_circle(Vector2(xb, y), rad, c)
-                    draw_arc(Vector2(xb, y), rad, 0, TAU, 24, Color(FEVER, 0.95 if mine else 0.4), 3.0)
-                var xe := hit_x + (tbe - t) * px
-                if xe > r.position.x and xe < r.end.x:
-                    draw_circle(Vector2(xe, y), rad * 0.7, Color(FEVER, 0.9 if mine else 0.35))
-                continue
-            if xb < r.position.x or xb > r.end.x or taken.has(n_i):
-                continue
-            if mine and final and tb < t - Chart.BAD:
-                c = Color(0.5, 0.5, 0.55, 0.6)      # 놓침
-            draw_circle(Vector2(xb, y), rad, c)
-            draw_arc(Vector2(xb, y), rad, 0, TAU, 24, Color(1, 1, 1, 0.9 if mine else 0.3), 2.5)
-    # 내가 공격 중 누르고 있는 북: 피버 길이 미리 보기
-    for lane in game._atk_hold:
-        var h: Array = game._atk_hold[lane]
-        if t - float(h[2]) >= Chart.FEVER_HOLD_MIN:
-            var x0 := hit_x + (float(h[2]) - t) * px
-            _capsule(x0, hit_x, lane_y[lane], 15.0, r, Color(FEVER, 0.25), Color(FEVER, 0.9), 3.0)
-            var font2 := get_theme_default_font()
-            draw_string(font2, Vector2(hit_x + 26, lane_y[lane] + 7), "FEVER!", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, FEVER)
+            var holding := false
+            for lk in game.view_hold:
+                if int(game.view_hold[lk][0]) == i and int(game.view_hold[lk][1]) == n_i:
+                    holding = true
+            if taken.has(n_i) and not holding:
+                c = Color(0.5, 0.5, 0.55, 0.6)      # 누름은 맞혔는데 손을 뗌
+            _capsule(hit_x if holding else xb, hit_x + (tbe - t) * px, y, rad, r, Color(c, 0.55), Color(FEVER, 0.95), 3.0)
+            if not taken.has(n_i) and xb > r.position.x and xb < r.end.x:
+                draw_circle(Vector2(xb, y), rad, c)
+                draw_arc(Vector2(xb, y), rad, 0, TAU, 24, Color(FEVER, 0.95), 3.0)
+            var xe := hit_x + (tbe - t) * px
+            if xe > r.position.x and xe < r.end.x:
+                draw_circle(Vector2(xe, y), rad * 0.7, Color(FEVER, 0.9))
+            continue
+        if xb < r.position.x or xb > r.end.x or taken.has(n_i):
+            continue
+        if tb < t - Chart.BAD:
+            c = Color(0.5, 0.5, 0.55, 0.6)      # 놓침
+        draw_circle(Vector2(xb, y), rad, c)
+        draw_arc(Vector2(xb, y), rad, 0, TAU, 24, Color(1, 1, 1, 0.9), 2.5)
 
 
 ## 피버 막대 (x0 → x1, 노트 길 안으로 잘라서)
@@ -502,12 +516,14 @@ var _chip_prev := [-1, -1]
 var _chip_turn := -1
 var _chip_pop := [-10.0, -10.0]
 
-## 남은 개수: 북 버튼 위에 그 북 색 칩이 쌓여 있고, 칠 때마다 맨 위 칩이 빠진다. 넘치면 빨간 '넘침' 칩
+## 남은 개수 (내 공격일 때만): 북 버튼 위에 그 북 색 칩이 쌓여 있고, 칠 때마다 맨 위 칩이 빠진다. 넘치면 빨간 '넘침' 칩
 func _draw_chips(t: float) -> void:
     var ph: Array = game.phase_at(t)
     var i := int(ph[0])
     var kind: String = ph[1]
-    if i < 0 or not (kind == "ready_attack" or kind == "attack") or not game.view_spec.has(i):
+    # 칩은 내가 공격할 때만 (상대 공격의 개수는 알 필요 없음)
+    if i < 0 or not (kind == "ready_attack" or kind == "attack") or not game.view_spec.has(i) \
+            or game.my_slot < 0 or int(game.view_attacker.get(i, -2)) != game.my_slot:
         _chip_turn = -1
         return
     var spec: Dictionary = game.view_spec[i]

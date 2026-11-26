@@ -94,6 +94,8 @@ var _atk_hold := {}                 ## lane -> [turn, 0, press time] 내가 공�
 var _calib: Array = []              ## 따라 치기에서 내가 어긋난 초 (+ = 늦음) — 자동 박자 보정용
 var _calib_turn := -1
 var calib_note := ""                ## HUD 에 잠깐 보여 줄 자동 보정 안내
+var _intro_taps: Array = []         ## 곡 앞 반주 구간에서 친 시각 - 가장 가까운 박 (박자 맞추기)
+var _intro_done := false
 var calib_note_time := -10.0
 var _real_prev := -1
 var _mats := {}                     ## 북 재질 (모두 같이 씀 → 그리기 묶음)
@@ -499,8 +501,13 @@ func heard_time() -> float:
     return mix_time() - lat - _sync_applied
 
 
+## 키를 누른 순간의 곡 시각: 화면 시계는 프레임마다 갱신되므로 마지막 갱신 뒤 흐른 시간을 더한다
+## (안 더하면 늘 최대 한 프레임(약 16ms)만큼 이르게 잡힘)
 func input_time() -> float:
-    return heard_time()
+    var t := heard_time()
+    if _real_prev > 0 and _mix_clock > -900.0:
+        t += minf((Time.get_ticks_usec() - _real_prev) / 1000000.0, 0.05)
+    return t
 
 
 func _load_sync() -> void:
@@ -586,6 +593,12 @@ func press(lane: int) -> void:
     _key_down[lane] = true
     var t := input_time()
     _press_t[lane] = t
+    # 곡 앞 반주 구간: 박자 맞추기 (반주 박에 맞춰 친 시각으로 이 기기의 소리 지연을 잰다)
+    if not _intro_done and t >= 0.2 and t < Chart.INTRO_BARS * Chart.BAR - 0.2:
+        _intro_taps.append(t - round(t / Chart.BEAT) * Chart.BEAT)
+        _strike(my_slot, lane)
+        _snd("don" if lane == 0 else "ka")
+        return
     _strike(my_slot, lane)
     _snd("don" if lane == 0 else "ka")
     _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": ROLL_DB, "mine": true})
@@ -750,6 +763,9 @@ func _process(delta: float) -> void:
 ## 자동 박자 보정: 따라 치기 한 차례가 끝나면, 내가 맞힌 노트들이 한쪽으로 쏠려 있는 만큼(중앙값의 70%) 보정을 옮긴다
 ##   소리가 늦게 나오는 기기·스피커에서도 몇 차례 지나면 판정이 맞아진다. 수동 −/+ 도 그대로 쓸 수 있음
 func _auto_calibrate(ht: float) -> void:
+    if not _intro_done and ht >= Chart.INTRO_BARS * Chart.BAR - 0.15:
+        _intro_done = true
+        _intro_calibrate()
     if _calib_turn < 0 or ht < Chart.response_end(turns[_calib_turn]) + 0.3:
         return
     var samples := _calib.duplicate()
@@ -764,6 +780,27 @@ func _auto_calibrate(ht: float) -> void:
     var d := clampi(int(round(med * 1000.0 * 0.7)), -60, 60)
     change_sync(d)
     calib_note = "박자 자동 보정 %+dms (지금 %+dms)" % [d, sync_offset_ms]
+    calib_note_time = Time.get_ticks_msec() / 1000.0
+
+
+## 곡 앞 반주 구간에서 친 박자로 보정: 4번 이상, 고르게(흩어짐 70ms 이내) 쳤으면 그 중앙값만큼 바로 맞춘다
+func _intro_calibrate() -> void:
+    var taps := _intro_taps.duplicate()
+    _intro_taps.clear()
+    if taps.size() < 4:
+        return
+    taps.sort()
+    var med: float = taps[taps.size() / 2]
+    var spread: float = taps[taps.size() * 3 / 4] - taps[taps.size() / 4]
+    if spread > 0.07:
+        calib_note = "박자 맞추기: 들쭉날쭉해서 보정하지 않았어요"
+        calib_note_time = Time.get_ticks_msec() / 1000.0
+        return
+    var d := clampi(int(round(med * 1000.0)), -150, 150)
+    if absi(d) >= 10:
+        change_sync(d)
+        _sync_applied = sync_offset_ms / 1000.0         # 아직 노트가 없을 때라 바로 적용
+    calib_note = "박자 맞추기 완료 (보정 %+dms)" % sync_offset_ms
     calib_note_time = Time.get_ticks_msec() / 1000.0
 
 
