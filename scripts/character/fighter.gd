@@ -110,6 +110,7 @@ var dead := false
 var control_vel := Vector3.ZERO
 var knock := Vector3.ZERO
 var stun_timer := 0.0
+var _aim_detached := false           # 사람: 차징 돌진 방향으로 몸을 돌려 카메라와 몸 방향이 잠시 다름
 var stun_guard := 0.0                # 경직 면역 남은 시간 (STUN_GUARD)
 var _dash_hit_relief := 0.0          # 차징 돌진이 맞으면 줄여 줄 정지 시간 (헛치면 그대로 오래 정지)
 var invuln_timer := 0.0
@@ -700,18 +701,31 @@ static func touch_device() -> bool:
 func apply_look(delta_rad: Vector2) -> void:
     if pitch_pivot == null:
         return
-    if dead:
-        pitch_pivot.rotation.y -= delta_rad.x
+    if dead or _aim_detached:
+        pitch_pivot.rotation.y -= delta_rad.x      # 돌진 중엔 카메라만 돌리고 몸(돌진 방향)은 그대로
     else:
         rotate_y(-delta_rad.x)
     pitch_pivot.rotation.x = clampf(pitch_pivot.rotation.x - delta_rad.y,
             deg_to_rad(-70.0), deg_to_rad(50.0))
 
 
+## 카메라가 바라보는 수평 방향 (보통은 몸 방향과 같고, 차징 돌진 중엔 다를 수 있음)
+func _camera_basis() -> Basis:
+    var yaw := rotation.y + (pitch_pivot.rotation.y if pitch_pivot and not dead else 0.0)
+    return Basis(Vector3.UP, yaw)
+
+
+## 차징 돌진 방향: 사람이 방향키(조이스틱)를 누르고 있으면 그 방향, 아니면 바라보는 방향. 반환: 월드 yaw (없으면 NAN)
+func _dash_input_yaw() -> float:
+    if not is_human or remote or intent_move.length() < 0.3:
+        return NAN
+    return atan2(-intent_move.x, -intent_move.z)
+
+
 func _read_human_input() -> void:
     if touch_mode:
         var tv := touch_move
-        var td := global_transform.basis * Vector3(tv.x, 0.0, tv.y)
+        var td := _camera_basis() * Vector3(tv.x, 0.0, tv.y)
         td.y = 0.0
         intent_move = td.normalized() * minf(tv.length(), 1.0) if td.length() > 0.001 else Vector3.ZERO
         intent_jump = touch_jump
@@ -720,7 +734,7 @@ func _read_human_input() -> void:
         return
     var captured := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or DisplayServer.get_name() == "headless"
     var v := Input.get_vector(&"move_left", &"move_right", &"move_forward", &"move_back")
-    var d := global_transform.basis * Vector3(v.x, 0.0, v.y)
+    var d := _camera_basis() * Vector3(v.x, 0.0, v.y)
     d.y = 0.0
     intent_move = d.normalized() * minf(v.length(), 1.0) if d.length() > 0.001 else Vector3.ZERO
     intent_jump = Input.is_action_just_pressed(&"jump")
@@ -728,9 +742,28 @@ func _read_human_input() -> void:
 
 
 # ================================================================ 물리
+## 차징 돌진으로 돌렸던 몸을 돌진·정지가 끝나면 다시 카메라 방향으로 (카메라는 움직이지 않음)
+func _realign_to_camera(delta: float) -> void:
+    if not _aim_detached:
+        return
+    if dead or pitch_pivot == null:
+        _aim_detached = false
+        return
+    if dash_timer > 0.0 or lock_timer > 0.0:
+        return
+    var off := wrapf(pitch_pivot.rotation.y, -PI, PI)
+    var step := off if absf(off) < 0.02 else off * clampf(delta * 14.0, 0.0, 1.0)
+    rotation.y += step
+    pitch_pivot.rotation.y = off - step
+    if absf(pitch_pivot.rotation.y) < 0.0001:
+        pitch_pivot.rotation.y = 0.0
+        _aim_detached = false
+
+
 func _physics_process(delta: float) -> void:
     _t += delta
     _tick_timers(delta)
+    _realign_to_camera(delta)
     if remote:
         # 위치·상태는 게임이 네트워크로 받은 값으로 채운다. 여기선 보이기만.
         _animate(delta)
@@ -937,6 +970,14 @@ func _release_push() -> void:
         lock_after = maxf(tap_lock_time - dash_time, 0.0)
         cooldown_total = tap_cooldown * cooldown_mult()
     else:
+        # 차징 돌진은 누르고 있는 방향으로 (뒤·옆으로 빠지는 회피에도 쓸 수 있음). 카메라는 그대로 둔다
+        var yaw := _dash_input_yaw()
+        if not is_nan(yaw):
+            var diff := wrapf(yaw - rotation.y, -PI, PI)
+            rotation.y += diff
+            if pitch_pivot:
+                pitch_pivot.rotation.y -= diff
+            _aim_detached = true
         dash_time = lerpf(0.14, 0.30, c)
         dash_speed = dash_distance_for(c) / dash_time
         cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c) * cooldown_mult()
@@ -1203,6 +1244,8 @@ func _update_arrow() -> void:
     var c := get_charge_ratio()
     var tapping := charge_time < tap_threshold
     var length := 0.6 if tapping else dash_distance_for(c)
+    var yaw := NAN if tapping else _dash_input_yaw()
+    arrow.rotation.y = 0.0 if is_nan(yaw) else wrapf(yaw - rotation.y, -PI, PI)     # 돌진할 방향 미리 보기
     var start := 0.45
     arrow_shaft.position.z = -(start + length * 0.5)
     arrow_shaft.scale = Vector3(1.0, 1.0, length)
