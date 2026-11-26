@@ -273,6 +273,7 @@ footer a { color: var(--cream); }
     <p class="sec-sub">궁금한 점이 있나요?</p>
     <details><summary class="disp">무료인가요?</summary><p>네, 무료로 즐길 수 있어요.</p></details>
     <details><summary class="disp">혼자서도 할 수 있나요?</summary><p>방을 만들고 빈자리를 봇으로 채우면 혼자서도 바로 시작할 수 있어요. 첫 화면의 "혼자 연습"으로 서버 없이 연습할 수도 있어요.</p></details>
+    <details id="faq-apk"><summary class="disp">Android APK는 어떻게 설치하나요?</summary><p>Google Play 출시 전이라 테스트판 APK를 직접 받아 설치할 수 있어요. <b>휴대폰 브라우저</b>로 받은 뒤 <b>내 파일 → 다운로드</b>에서 파일을 눌러 설치하세요. "출처를 알 수 없는 앱" 허용을 물으면 그 브라우저(또는 내 파일 앱)에 허용하고, Play 프로텍트 경고가 뜨면 "무시하고 설치"를 누르세요. PC에서 받은 APK는 PC에서 실행되지 않아요. 나중에 Google Play 버전을 설치하려면 테스트판을 먼저 지워 주세요.</p></details>
     <details><summary class="disp">Mac에서도 되나요?</summary><p>지금은 PC 버전이 Windows 전용이에요. Mac에서는 웹 체험판으로 즐겨 주세요.</p></details>
     <details><summary class="disp">백신이 파일을 막아요.</summary><p>새로 나온 게임이라 일부 백신이 낯선 프로그램으로 판단해 막는 경우가 있어요. 공식 다운로드 주소(spw.cloudish.cloud)에서 받은 파일이라면 안심하고 실행해도 돼요.</p></details>
     <details><summary class="disp">웹 버전이 느려요.</summary><p>웹 버전은 체험판이라 기기에 따라 느릴 수 있어요. 부드러운 플레이는 PC 버전이나 모바일 앱을 이용해 주세요.</p></details>
@@ -311,12 +312,21 @@ footer a { color: var(--cream); }
     $("btn-play").href = play; $("hero-play").href = play;
     if (links.windows) $("btn-win").href = links.windows;
     if (links.android) { enable($("btn-android"), links.android, "Google Play에서 설치"); $("txt-android").textContent = "Google Play에서 설치하세요."; }
+    else if (links.android_apk) {
+      // Google Play 출시 전: APK 직접 설치 (테스트판)
+      enable($("btn-android"), links.android_apk, "APK 받기 (테스트판)");
+      $("txt-android").innerHTML = "출시 전 테스트판이에요. 받은 APK 파일을 눌러 설치하세요. <a href=\"#faq-apk\">설치 방법</a>";
+    }
     if (links.ios) { enable($("btn-ios"), links.ios, "App Store에서 설치"); $("txt-ios").textContent = "App Store에서 설치하세요."; }
 
     // 접속한 기기에 맞는 다운로드를 강조하고, 상단 버튼도 바로 그 링크로
     var hero = $("hero-dl");
     if (isWindows) { mark("dl-win"); hero.href = $("btn-win").href; hero.textContent = "PC 버전 다운로드"; }
-    else if (isAndroid) { mark("dl-android"); if (links.android) { hero.href = links.android; hero.textContent = "앱 설치하기"; } }
+    else if (isAndroid) {
+      mark("dl-android");
+      if (links.android) { hero.href = links.android; hero.textContent = "앱 설치하기"; }
+      else if (links.android_apk) { hero.href = links.android_apk; hero.textContent = "APK 받기 (테스트판)"; }
+    }
     else if (isIOS) { mark("dl-ios"); if (links.ios) { hero.href = links.ios; hero.textContent = "앱 설치하기"; } }
     else { mark("dl-win"); }
   }

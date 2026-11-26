@@ -56,6 +56,7 @@ a { color: inherit; }
 .btn:active { transform: translateY(4px); border-bottom-width: 4px; }
 .btn.red { background: var(--red); border-color: #9f1f27; }
 .btn.blue { background: var(--blue); border-color: #2c5268; }
+.btn.green { background: var(--green); border-color: #3f7a2a; }
 .btn.yellow { background: var(--yellow); border-color: #a87800; color: var(--ink); }
 .btn.navy { background: var(--ink); border-color: #0d1b2e; color: var(--cream); }
 .btn.light { background: #fffdf6; border-color: #b9ad97; color: var(--ink); }
@@ -85,6 +86,7 @@ a { color: inherit; }
       <p class="muted" style="margin:0 0 16px;line-height:1.6">웹보다 훨씬 부드럽고 그래픽도 좋아요.<br>압축을 풀고 <b>SmallPartyWorld.exe</b>를 실행하면 바로 시작!</p>
       <a class="btn" id="pc-download" href="#" style="width:100%;font-size:26px">PC 버전 다운로드</a>
       <p class="muted" style="margin:10px 0 0;font-size:13px">Windows 10/11 · 64비트 · zip</p>
+      <p class="muted hidden" id="pc-apk" style="margin:6px 0 0;font-size:13px">Android 폰이라면 <a id="pc-apk-link" href="#">APK 테스트판</a>을 받아 설치할 수 있어요.</p>
     </section>
     <!-- PC (Mac/Linux) -->
     <section class="card hidden" id="pc-other">
@@ -97,6 +99,12 @@ a { color: inherit; }
       <h2 class="disp" style="margin:0 0 6px;font-size:28px">앱으로 즐기세요</h2>
       <p class="muted" id="mobile-text" style="margin:0 0 16px">앱이 더 부드럽고 조작도 편해요.</p>
       <a class="btn hidden" id="app-android" href="#" style="width:100%">Google Play에서 설치</a>
+      <a class="btn green hidden" id="app-apk" href="#" style="width:100%">Android 앱 받기 (APK)</a>
+      <p class="muted hidden" id="apk-help" style="margin:10px 0 0;font-size:13px;line-height:1.6;text-align:left">
+        출시 전 <b>테스트판</b>이에요. 받은 파일을 <b>내 파일 → 다운로드</b>에서 눌러 설치하세요.<br>
+        "출처를 알 수 없는 앱" 허용을 물으면 허용하고, Play 프로텍트 경고가 뜨면 <b>무시하고 설치</b>를 누르세요.<br>
+        나중에 Google Play 버전을 설치하려면 이 앱을 먼저 지워 주세요.
+      </p>
       <a class="btn hidden" id="app-ios" href="#" style="width:100%">App Store에서 설치</a>
       <a class="btn off hidden" id="app-soon" href="#" style="width:100%">앱 준비 중</a>
     </section>
@@ -128,6 +136,11 @@ a { color: inherit; }
       if (url) {
         var b = $(isIOS ? "app-ios" : "app-android");
         b.href = url; b.classList.remove("hidden");
+      } else if (isAndroid && links.android_apk) {
+        // Google Play 출시 전: APK 직접 설치 (테스트판)
+        $("app-apk").href = links.android_apk;
+        show("app-apk"); show("apk-help");
+        $("mobile-text").textContent = "Google Play 출시 전이라 테스트판(APK)을 바로 받을 수 있어요.";
       } else {
         show("app-soon");
         $("mobile-text").textContent = "모바일 앱은 준비 중이에요. 그동안 웹 체험판으로 즐겨 주세요!";
@@ -135,6 +148,7 @@ a { color: inherit; }
     } else if (isWindows) {
       show("pc");
       $("pc-download").href = links.windows;
+      if (links.android_apk && !links.android) { $("pc-apk-link").href = links.android_apk; show("pc-apk"); }
     } else {
       show("pc-other");
       $("pc-other-download").href = links.windows;

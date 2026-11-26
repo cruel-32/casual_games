@@ -1,6 +1,7 @@
 {
   "windows": "/download/SmallPartyWorld-windows.zip",
   "android": "",
+  "android_apk": "/download/SmallPartyWorld-android.apk",
   "ios": "",
   "play": "/play/"
 }
