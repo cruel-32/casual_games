@@ -29,6 +29,7 @@ const Teams := preload("res://scripts/core/teams.gd")
 const PROTOCOL_VERSION := 8
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
+const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
 
 ## 접속 화면에 보여줄 서버 목록 — 사용자에게는 이름만 보이고 주소는 노출하지 않는다.
@@ -650,8 +651,19 @@ func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id:
         "max": clampi(max_players, 2, mini(MAX_PLAYERS_LIMIT, module.max_players)), "bot_fill": bot_fill,
         "state": "waiting", "members": [id], "ready": {}, "returned": {},
         "rounds": 1, "round_games": [module.id], "series": {},
-        "teams": 0, "team": {},
+        "teams": DEFAULT_TEAMS, "team": {},
     }
+    var r0: Dictionary = _rooms[rid]
+    if r0.teams >= 2:
+        r0.team[id] = 0
+        # 봇 채우기면 최대 인원이 팀 수로 나누어져야 시작할 수 있으므로 맞춰 둔다 (예: 5명 → 6명, 안 되면 4명)
+        if r0.max % r0.teams != 0:
+            var up: int = r0.max + (r0.teams - r0.max % r0.teams)
+            var cap: int = mini(MAX_PLAYERS_LIMIT, module.max_players)
+            r0.max = up if up <= cap else r0.max - r0.max % r0.teams
+        if r0.max < r0.teams:
+            r0.teams = 0
+            r0.team.clear()
     _players[id].room = rid
     print("[server] 방 생성 #%d '%s' [%s] by %s" % [rid, room_name, module.id, _players[id].nick])
     _send_room(rid)
