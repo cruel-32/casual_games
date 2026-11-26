@@ -34,8 +34,10 @@ const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 @export var dash_distance_max := 6.8
 @export var push_reach := 2.5
 @export var tap_lock_time := 0.3            # 탭 밀치기 동안 제자리 정지
-@export var dash_end_lock_min := 0.25       # 차징 돌진 후 제자리 정지 (차징 0%)
-@export var dash_end_lock_max := 0.45       # 〃 (풀차징)
+@export var dash_end_lock_min := 0.4        # 차징 돌진이 빗나갔을 때 제자리 정지 (차징 0%)
+@export var dash_end_lock_max := 0.7        # 〃 (풀차징)
+@export var dash_hit_lock_min := 0.25       # 차징 돌진으로 맞혔을 때 제자리 정지 (차징 0%) — 헛치면 더 오래 서 있음
+@export var dash_hit_lock_max := 0.45       # 〃 (풀차징)
 
 @export_group("Look")
 @export var body_color := Color(0.78, 0.58, 0.44)
@@ -59,7 +61,7 @@ const JUMP_BUFFER := 0.12
 const BUMP_FORCE := 3.5
 const MAX_HELMETS := 2
 const JUMP_GRAVITY_MULT := 2.0      # 스스로 점프한 동안의 중력 배수 (넉백으로 뜬 것은 1배)
-const MAX_STACKS := 8               # 차징 가속·쿨타임 감소·글러브 아이템 최대 중첩
+const MAX_STACKS := 3               # 차징 가속·쿨타임 감소·글러브 아이템 최대 중첩 (많이 주운 사람이 너무 앞서가지 않게)
 const CHARGE_RATE_PER_STACK := 0.25 # 차징 속도 +25% / 개
 const COOLDOWN_PER_STACK := 0.2     # 쿨타임 = 기본 / (1 + 0.2 × 개수)
 const GLOVE_FORCE_PER_STACK := 0.07 # 글러브: 밀치기 넉백 +7% / 개
@@ -67,7 +69,12 @@ const GLOVE_STUN_PER_STACK := 0.15  # 글러브: 상대 경직 시간 +15% / 개
 const WALL_SLAM_STUN_MULT := 1.5
 const CHAIN_MIN_SPEED := 5.0
 const CLASH_FORCE := 11.0
-const PUSH_FORCE := 17.0         # 밀치기 넉백 (탭·차징 공통 = 풀차징 수준)
+const PUSH_FORCE := 20.0         # 밀치기 넉백 최대 (풀차징)
+const CHARGE_PUSH_FORCE_MIN := 12.0  # 차징 밀치기 넉백 최소 (차징 0%) — 차징할수록 20까지
+const TAP_PUSH_FORCE := 9.0      # 탭(제자리) 밀치기 넉백 — 연타보다 차징이 유리하게
+const TAP_STUN := 0.25           # 탭 밀치기 경직
+const STUN_MAX := 1.5            # 경직은 무엇이든(글러브·벽꽝 포함) 이보다 길어지지 않음
+const STUN_GUARD := 0.5          # 경직이 풀린 뒤 이 시간 동안은 다시 경직되지 않음 (넉백은 받음) — 확정 콤보 방지
 const PUSH_LIFT := 5.5
 
 var game: Node
@@ -103,6 +110,8 @@ var dead := false
 var control_vel := Vector3.ZERO
 var knock := Vector3.ZERO
 var stun_timer := 0.0
+var stun_guard := 0.0                # 경직 면역 남은 시간 (STUN_GUARD)
+var _dash_hit_relief := 0.0          # 차징 돌진이 맞으면 줄여 줄 정지 시간 (헛치면 그대로 오래 정지)
 var invuln_timer := 0.0
 var cooldown_timer := 0.0
 var cooldown_total := 1.0
@@ -849,7 +858,12 @@ func set_spectate(target: Fighter) -> void:
 
 
 func _tick_timers(delta: float) -> void:
-    stun_timer = maxf(stun_timer - delta, 0.0)
+    if stun_timer > 0.0:
+        stun_timer = maxf(stun_timer - delta, 0.0)
+        if stun_timer <= 0.0:
+            stun_guard = STUN_GUARD
+    else:
+        stun_guard = maxf(stun_guard - delta, 0.0)
     invuln_timer = maxf(invuln_timer - delta, 0.0)
     cooldown_timer = maxf(cooldown_timer - delta, 0.0)
     push_anim = maxf(push_anim - delta, 0.0)
@@ -927,6 +941,7 @@ func _release_push() -> void:
         dash_speed = dash_distance_for(c) / dash_time
         cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c) * cooldown_mult()
         lock_after = lerpf(dash_end_lock_min, dash_end_lock_max, c)
+        _dash_hit_relief = lock_after - lerpf(dash_hit_lock_min, dash_hit_lock_max, c)
     dash_timer = dash_time
     lock_timer = dash_time + lock_after
     push_window = dash_time + 0.12
@@ -962,13 +977,17 @@ func _check_push_hits() -> void:
             return
 
         # 밀려나는 거리는 탭이든 차징이든 같다 (글러브만 키움). 차징 정도는 경직 시간에 반영
-        var force := PUSH_FORCE * glove_force_mult()
-        var lift := PUSH_LIFT
-        var stun := (0.45 if push_tap else lerpf(0.8, 1.8, push_power)) * glove_stun_mult()
+        # 탭은 약하게, 차징은 많이 모을수록 세게 (글러브가 그 위에 곱해짐)
+        var force := (TAP_PUSH_FORCE if push_tap else lerpf(CHARGE_PUSH_FORCE_MIN, PUSH_FORCE, push_power)) * glove_force_mult()
+        var lift := PUSH_LIFT * (0.6 if push_tap else 1.0)
+        var stun := minf((TAP_STUN if push_tap else lerpf(0.8, STUN_MAX, push_power)) * glove_stun_mult(), STUN_MAX)
         if _deliver_push(o, dir * force + Vector3.UP * lift, stun):
             if o.remote:
                 o._voice("hit", 3)     # 상대 PC에서 맞는 목소리를 내 PC에서도
             dash_timer = 0.0
+            if not push_tap and _dash_hit_relief > 0.0:
+                lock_timer = maxf(lock_timer - _dash_hit_relief, 0.0)     # 맞혔으면 빨리 움직일 수 있음
+                _dash_hit_relief = 0.0
             knock += -dir * 1.5
             shake = maxf(shake, 0.3)
 
@@ -994,6 +1013,8 @@ func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null, sound
         return false
     _sfx(sound, -6.0, 1.0 + randf_range(-0.04, 0.04))     # 맞는 타격음은 작게 깔고
     _voice("hit", 3)                                      # 비명 ("윽!", "으악!", "아얏!")
+    if stun_guard > 0.0:
+        stun = 0.0              # 방금 경직에서 풀림: 넉백만 받고 경직은 안 걸림 (확정 콤보 방지)
     if stun >= 1.2:
         _sfx("dizzy")
     knock = Vector3(impulse.x, 0.0, impulse.z)
@@ -1001,7 +1022,7 @@ func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null, sound
     # 점프·낙하 중에 맞아도 땅에서 맞은 것과 똑같은 궤적: 세로 속도를 넉백 값으로 덮어쓰고 보통 중력
     velocity.y = impulse.y
     _jump_arc = false
-    stun_timer = maxf(stun_timer, stun)
+    stun_timer = clampf(maxf(stun_timer, stun), 0.0, STUN_MAX)
     dash_timer = 0.0
     lock_timer = 0.0
     push_window = 0.0
@@ -1139,7 +1160,7 @@ func _check_wall_slam() -> void:
             nrm = nrm.normalized()
             if knock.dot(nrm) < -2.0:
                 wall_slam_armed = false
-                stun_timer = stun_timer * WALL_SLAM_STUN_MULT + 0.2
+                stun_timer = minf(stun_timer * WALL_SLAM_STUN_MULT + 0.2, STUN_MAX)
                 knock = knock.bounce(nrm) * 0.35
                 shake = maxf(shake, 0.8)
                 _popup(global_position, "벽꽝!", Color(1.0, 0.55, 0.2))

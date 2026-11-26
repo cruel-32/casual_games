@@ -34,6 +34,8 @@ const PUSH_REWIND_MAX := 0.6    # 서버: 이보다 오래된 시점의 밀치�
 @export var max_wind_start := 3.0
 @export var max_wind_end := 8.0
 @export var target_player_ratio := 0.0     # 캐릭터 근처를 노리는 낙석 비율 (0 = 아레나 전체 균등 랜덤)
+@export var start_protect_time := 5.0        # 시작 보호: 경기 시작 후 이 시간(초) 동안은
+@export var start_protect_radius := 3.0      #   캐릭터에서 이 거리(m) + 돌 반지름 안에는 낙석이 떨어지지 않음
 @export var last_two_rate_mult := 3.5       # 2명 남았을 때 낙석 빈도 배수 (전원 생존 시 1배)
 
 @export_group("Items")
@@ -590,6 +592,14 @@ func _spawn_rock() -> void:
         target = Vector2(f.global_position.x, f.global_position.z) + Vector2(randf_range(-2, 2), randf_range(-2, 2))
     var lim := arena_half - 0.3
     target = Vector2(clampf(target.x, -lim, lim), clampf(target.y, -lim, lim))
+    # 시작 보호: 처음 몇 초는 캐릭터 근처에 떨어뜨리지 않는다 (실력을 보여 주기도 전에 탈락하지 않게)
+    if elapsed < start_protect_time:
+        var tries := 0
+        while tries < 16 and _near_any_fighter(target, start_protect_radius + r):
+            target = Vector2(randf_range(-lim, lim), randf_range(-lim, lim))
+            tries += 1
+        if tries >= 16:
+            return              # 빈 곳이 없으면 이번 돌은 건너뜀
 
     var mesh_i := randi() % _rock_meshes.size()
     var mat_i := randi() % _rock_mats.size()
@@ -600,6 +610,13 @@ func _spawn_rock() -> void:
         _next_rock_id += 1
         _rocks_by_id[rock.net_id] = rock
         broadcast(["rock", rock.net_id, rock.t0, mesh_i, mat_i, r, target.x, target.y, wind.x, wind.y, speed])
+
+
+func _near_any_fighter(p: Vector2, dist: float) -> bool:
+    for f in alive_fighters():
+        if Vector2(f.global_position.x, f.global_position.z).distance_to(p) < dist:
+            return true
+    return false
 
 
 func _make_rock(mesh_i: int, mat_i: int, r: float, target: Vector2, w: Vector2, speed: float, t0: float) -> FallingRock:
@@ -794,7 +811,7 @@ func _server_receive_push(a: Fighter, target_slot: int, impulse: Vector3, stun: 
     # 3) 세기 상한 (풀차징 밀치기 × 미는 사람의 글러브 배수)
     var h := Vector3(impulse.x, 0.0, impulse.z).limit_length(Fighter.PUSH_FORCE * a.glove_force_mult() + 1.0)
     var imp := Vector3(h.x, clampf(impulse.y, 0.0, 6.0), h.z)
-    _apply_push(t, imp, clampf(stun, 0.0, 1.9 * a.glove_stun_mult()), a)
+    _apply_push(t, imp, clampf(stun, 0.0, Fighter.STUN_MAX), a)
 
 
 func _near_history(f: Fighter, t: float, pos: Vector3, tol: float) -> bool:

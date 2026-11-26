@@ -2,7 +2,7 @@ class_name Sweeper
 extends Node3D
 ## 아레나 중앙 축을 중심으로 시계침(풍차)처럼 도는 바닥 기둥. 양쪽 팔이 있어 한 바퀴에 두 번 지나간다.
 ## - 물리적으로 막는 벽: 어느 쪽에서도 걸어서 통과할 수 없고 점프로 넘어야 한다
-## - 회전 진행 방향 쪽에서 닿으면 풀차징 밀치기와 같은 효과(넉백 17 · 띄움 5.5 · 경직 1.8초)
+## - 회전 진행 방향 쪽에서 닿으면 강하게 밀림(넉백 17 · 띄움 5.5 · 경직 1.5초)
 ## - 밀려 날아가다 기둥에 부딪히면 아레나 벽과 똑같이 '벽꽝'(경직 1.5배) — arena_wall 그룹
 
 const Toon := preload("res://scripts/world/toon.gd")
@@ -17,7 +17,7 @@ const Toon := preload("res://scripts/world/toon.gd")
 
 const HIT_FORCE := 17.0
 const HIT_LIFT := 5.5
-const HIT_STUN := 1.8
+const HIT_STUN := 1.5
 
 var game: Node
 var arena_length_hint := -1.0          # 설정되면 팔 길이 = 아레나 반폭 - 0.8
