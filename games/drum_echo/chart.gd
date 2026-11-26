@@ -2,9 +2,11 @@ extends RefCounted
 ## 뒷북의 달인 — 곡 진행표·진행자 리듬·박자 판정 (서버·클라이언트·오프라인 공용, 화면 없음)
 ##
 ## 시간 단위: 곡 시작(t0)부터의 초. 120 BPM, 4/4, 한 박 = 0.5초, 한 마디 = 2초
-## 한 차례(turn) = [쉼 2박] 진행자 선창 N마디 [텀] 모두 따라 치기 N마디
-##   텀(선창과 따라 치기 사이): 곡이 진행될수록 짧아진다 (4박 → 0박, 마지막엔 선창이 끝나자마자 바로)
-## 진행자 리듬: 반주에 맞는 리듬 모음(RHYTHMS)에서 고른다. 진행할수록 어려운 리듬(8분 → 16분·당김음·피버)
+## 한 차례(turn) = [쉼] 진행자 선창 N마디 [텀] 모두 따라 치기 N마디
+##   선창은 늘 마디 첫 박에서 시작 (반주와 같은 자리에서 리듬이 시작되게). 쉼은 2박 이상, 다음 마디 첫 박까지
+##   텀(선창과 따라 치기 사이): 4박 → 2박 → 0박으로 점점 짧아짐. 짝수 박만 써서 따라 치기도 반주의 같은 강세 위에 놓인다
+## 진행자 리듬: 반주의 강세 자리(ACCENTS)에 북을 놓는다 — 킥 자리 = 둥, 스네어 자리 = 딱, 베이스 엇박 = 둥, 피아노 엇박 = 딱
+##   진행할수록 강세를 더 촘촘히 (4분 → 8분 엇박 → 16분 꾸밈음·피버)
 ## 노트: [시각 ms, 북, 끝 ms]  시각 = 선창 시작부터 ms, 북 0 = 둥(왼쪽) 1 = 딱(오른쪽), 끝 = -1 이면 한 번 치기, 아니면 피버(누르고 있다가 그 시각에 뗌)
 
 const BPM := 120.0
@@ -14,8 +16,8 @@ const STEP := BEAT / 4.0            ## 16분음표 (리듬 모음의 칸)
 const INTRO_BARS := 2               ## 시작 전 반주만
 const OUTRO_BARS := 1
 
-const CALL_GAP := 2                 ## 선창 앞 쉼 (박)
-const RESP_GAP_START := 4           ## 선창 → 따라 치기 텀 (박): 처음 4박 → 마지막 0박
+const CALL_GAP := 2                 ## 선창 앞 최소 쉼 (박). 실제로는 다음 마디 첫 박까지
+const RESP_GAP_START := 4           ## 선창 → 따라 치기 텀 (박): 처음 4박 → 마지막 0박 (짝수 박만)
 const RESP_GAP_END := 0
 
 ## 판정 (초): 따라 치기
@@ -32,41 +34,44 @@ const JUDGE_NAMES := {"perfect": "PERFECT", "good": "GOOD", "bad": "BAD", "miss"
 ## 차례: [마디 수, 차례 수] — 1마디 6번 → 2마디 6번 (약 1분)
 const STAGES := [[1, 6], [2, 6]]
 
-## 진행자 리듬 모음 (한 마디 = 16칸, 칸 = 16분음표). [칸, 북(0 둥 1 딱), 피버 길이(칸, 0 = 한 번 치기)]
-##   쉬움: 4분·8분음표 위주 / 보통: 8분 당김음·3-3-2 / 어려움: 16분음표·피버 섞기
+## 반주(groove)의 한 마디 강세 (16분음표 칸): 칸 → [세기, 어울리는 북]
+##   0·8 = 킥(1·3박, 베이스 근음) → 둥 / 4·12 = 킥+스네어(2·4박) → 딱 / 6·14 = 베이스 옥타브+피아노 엇박 → 둥 / 2·10 = 피아노 엇박 → 딱
+const ACCENTS := {0: [1.0, 0], 8: [0.9, 0], 4: [0.85, 1], 12: [0.85, 1], 6: [0.6, 0], 14: [0.6, 0], 2: [0.4, 1], 10: [0.4, 1]}
+
+## 리듬 틀 (반주 강세 칸 목록). 북은 ACCENTS 로 정해짐. "f칸:길이" = 그 칸에서 길이(칸)만큼 누르는 피버, "p칸" = 다음 강세로 이어지는 16분 꾸밈음
 const RHYTHMS := [
-    [   # 0 쉬움
-        [[0, 0, 0], [4, 0, 0], [8, 0, 0], [12, 1, 0]],                 # 둥 둥 둥 딱
-        [[0, 0, 0], [4, 1, 0], [8, 0, 0], [12, 1, 0]],                 # 둥 딱 둥 딱
-        [[0, 0, 0], [8, 0, 0], [12, 1, 0], [14, 1, 0]],                # 둥 . 둥 딱딱
-        [[0, 0, 0], [6, 0, 0], [8, 1, 0], [12, 0, 0]],                 # 둥 . 둥딱 . 둥
-        [[0, 0, 4], [8, 0, 0], [12, 1, 0]],                            # 둥~ 둥 딱
-        [[0, 1, 0], [2, 1, 0], [4, 0, 0], [8, 0, 0], [12, 0, 0]],      # 딱딱 둥 둥 둥
+    [   # 0 쉬움: 박(4분음표) 위주
+        [0, 4, 8, 12],
+        [0, 8, 12],
+        [0, 4, 8],
+        [0, 4, 12],
+        [0, 8, 12, 14],
+        ["f0:4", 8, 12],
     ],
-    [   # 1 보통
-        [[0, 0, 0], [4, 0, 0], [6, 1, 0], [8, 0, 0], [12, 1, 0]],
-        [[0, 0, 0], [2, 1, 0], [4, 0, 0], [8, 0, 0], [10, 1, 0], [12, 0, 0]],
-        [[0, 0, 0], [6, 0, 0], [12, 0, 0], [14, 1, 0]],                # 3-3-2 (둥 . . 둥 . . 둥 딱)
-        [[0, 0, 0], [3, 0, 0], [6, 1, 0], [8, 0, 0], [12, 1, 0]],
-        [[0, 0, 8], [8, 1, 0], [10, 1, 0], [12, 0, 0]],                # 둥~~ 딱딱 둥
-        [[0, 1, 0], [4, 0, 0], [6, 0, 0], [8, 1, 0], [12, 0, 0]],
-        [[0, 0, 0], [4, 1, 0], [6, 1, 0], [10, 0, 0], [12, 0, 0]],
+    [   # 1 보통: 베이스·피아노 엇박 섞기
+        [0, 4, 6, 8, 12],
+        [0, 4, 8, 12, 14],
+        [0, 2, 4, 8, 12],
+        [0, 6, 8, 12, 14],
+        [0, 4, 6, 8, 10, 12],
+        ["f0:6", 8, 12, 14],
+        [0, 4, "f8:4", 12, 14],
     ],
-    [   # 2 어려움
-        [[0, 0, 0], [2, 0, 0], [3, 1, 0], [6, 0, 0], [8, 0, 0], [11, 1, 0], [12, 0, 0], [14, 1, 0]],
-        [[0, 0, 0], [3, 0, 0], [6, 0, 0], [8, 1, 0], [10, 1, 0], [11, 1, 0], [12, 0, 0]],
-        [[0, 0, 0], [4, 1, 0], [5, 1, 0], [8, 0, 0], [10, 0, 0], [12, 1, 0], [13, 1, 0], [14, 0, 0]],
-        [[0, 0, 4], [6, 1, 0], [7, 1, 0], [8, 0, 0], [12, 1, 3]],
-        [[0, 0, 0], [1, 0, 0], [4, 1, 0], [8, 0, 0], [9, 0, 0], [12, 1, 0], [14, 0, 0]],
-        [[0, 1, 0], [2, 0, 0], [4, 1, 0], [6, 0, 0], [7, 0, 0], [10, 1, 0], [12, 0, 3]],
+    [   # 2 어려움: 엇박 촘촘히 + 16분 꾸밈음 + 피버
+        [0, 2, 4, 6, 8, 12, 14],
+        [0, "p3", 4, 8, "p11", 12, 14],
+        [0, 4, 6, 8, 10, 12, 14],
+        ["f0:4", 6, 8, "p11", 12, 14],
+        [0, 2, 4, 6, 8, 10, 12, 14],
+        [0, "p5", 6, 8, 12, "p13", 14],
     ],
 ]
-## 2마디 선창의 둘째 마디 끝맺음 (대답처럼): 박 위에서 둥으로 마무리
+## 2마디 선창의 둘째 마디 끝맺음: 3박(8칸)에서 둥으로 끝
 const CADENCES := [
-    [[0, 0, 0], [4, 1, 0], [8, 0, 0]],
-    [[0, 0, 0], [2, 1, 0], [4, 0, 0], [8, 0, 4]],
-    [[0, 1, 0], [2, 1, 0], [4, 0, 0], [6, 0, 0], [8, 0, 0]],
-    [[0, 0, 0], [4, 0, 0], [6, 1, 0], [8, 0, 0], [12, 0, 0]],
+    [0, 4, 8],
+    [0, 4, 6, 8],
+    [0, 2, 4, 8],
+    ["f0:4", 6, "f8:4"],
 ]
 
 
@@ -81,10 +86,11 @@ static func build_turns(_teams: int = 0) -> Array:
     for k in plan.size():
         var n: int = plan[k]
         var u := float(k) / float(maxi(plan.size() - 1, 1))
-        var rgap := int(round(lerpf(RESP_GAP_START, RESP_GAP_END, u)))
-        var a := t + CALL_GAP * BEAT
+        var rgap := 2 * int(round(lerpf(RESP_GAP_START, RESP_GAP_END, u) / 2.0))     # 4 → 2 → 0 (짝수 박)
+        var a := ceilf((t + CALL_GAP * BEAT) / BAR - 0.001) * BAR                    # 다음 마디 첫 박
+        var gap := int(round((a - t) / BEAT))
         var r := a + n * BAR + rgap * BEAT
-        turns.append({"attack_team": -1, "bars": n, "gap": CALL_GAP, "rgap": rgap, "attack_t": a, "response_t": r, "host": true})
+        turns.append({"attack_team": -1, "bars": n, "gap": gap, "rgap": rgap, "attack_t": a, "response_t": r, "host": true})
         t = r + n * BAR
     return turns
 
@@ -130,11 +136,11 @@ static func units(notes: Array) -> int:
     return u
 
 
-## 진행자 리듬: difficulty(0~1)에 맞는 난이도 묶음에서 고른다. 2마디면 둘째 마디는 끝맺음 리듬
+## 진행자 리듬: difficulty(0~1)에 맞는 난이도 묶음에서 리듬 틀을 골라 반주 강세 자리에 북을 놓는다
+##   2마디면 둘째 마디는 자주 끝맺음 리듬
 static func host_pattern(bars: int, difficulty: float, seed_value: int) -> Array:
     var rng := RandomNumberGenerator.new()
     rng.seed = seed_value
-    # 난이도: 앞쪽은 쉬움, 중간은 쉬움·보통, 뒤쪽은 보통·어려움
     var level := 0
     if difficulty >= 0.75:
         level = 2 if rng.randf() < 0.6 else 1
@@ -143,19 +149,47 @@ static func host_pattern(bars: int, difficulty: float, seed_value: int) -> Array
     elif difficulty >= 0.15:
         level = 1 if rng.randf() < 0.3 else 0
     var notes := []
+    var prev := -1
     for b in bars:
-        var bar_rhythm: Array
+        var tmpl: Array
         if bars >= 2 and b == bars - 1 and rng.randf() < 0.6:
-            bar_rhythm = CADENCES[rng.randi_range(0, CADENCES.size() - 1)]
+            tmpl = CADENCES[rng.randi_range(0, CADENCES.size() - 1)]
         else:
             var pool: Array = RHYTHMS[level]
-            bar_rhythm = pool[rng.randi_range(0, pool.size() - 1)]
+            var pick := rng.randi_range(0, pool.size() - 1)
+            if pick == prev and pool.size() > 1:
+                pick = (pick + 1) % pool.size()          # 같은 리듬 연달아 피하기
+            prev = pick
+            tmpl = pool[pick]
         var base_ms := int(b * BAR * 1000.0)
-        for st in bar_rhythm:
-            var ms := base_ms + int(round(int(st[0]) * STEP * 1000.0))
-            var e := -1 if int(st[2]) <= 0 else ms + int(round(int(st[2]) * STEP * 1000.0))
-            notes.append([ms, int(st[1]), e])
+        for st in tmpl:
+            var slot := 0
+            var hold := 0
+            if st is String:
+                var sv: String = st
+                if sv.begins_with("f"):
+                    var parts := sv.substr(1).split(":")
+                    slot = int(parts[0])
+                    hold = int(parts[1])
+                else:                                     # "p칸": 꾸밈음 → 이어지는 강세의 북
+                    slot = int(sv.substr(1))
+            else:
+                slot = int(st)
+            var lane := accent_lane(slot)
+            var ms := base_ms + int(round(slot * STEP * 1000.0))
+            var e := -1 if hold <= 0 else ms + int(round(hold * STEP * 1000.0))
+            notes.append([ms, lane, e])
     return notes
+
+
+## 그 칸에 어울리는 북 (강세 자리는 ACCENTS, 그 밖은 바로 다음 강세 자리의 북)
+static func accent_lane(slot: int) -> int:
+    var s := slot % 16
+    for k in 16:
+        var q := (s + k) % 16
+        if ACCENTS.has(q):
+            return int(ACCENTS[q][1])
+    return 0
 
 
 ## 따라 치기 판정 (누름): 아직 안 맞힌 노트(한 번 치기·피버 시작) 중 같은 북·가장 가까운 것 → [노트 번호, 판정, 어긋난 초(+ = 늦음)]

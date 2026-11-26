@@ -727,11 +727,13 @@ func _cues(mt: float) -> void:
     _cue_beat = beat
     var bt := beat * Chart.BEAT
     for tr in turns:
-        for target: float in [float(tr.attack_t), float(tr.response_t)]:
+        for k in 2:
+            var target: float = float(tr.attack_t) if k == 0 else float(tr.response_t)
+            var room: int = int(tr.gap) if k == 0 else int(tr.get("rgap", tr.gap))
             var d := int(round((target - bt) / Chart.BEAT))
             if absf(target - bt - d * Chart.BEAT) > 0.01:
                 continue
-            if d >= 1 and d <= mini(int(tr.gap), 3):
+            if d >= 1 and d <= mini(room, 3):
                 _snd("cue", -3.0 if d == 1 else -9.0, 1.0 if d == 1 else 0.9)
                 return
 
