@@ -92,6 +92,8 @@ func elimination_pressure() -> float:
 
 
 func _ready() -> void:
+    # 경기 배경음악 (메뉴·로비·대기룸은 menu, 경기 중은 match). 서버에선 Sfx 가 아무것도 안 함
+    Sfx.bgm("match")
     if is_server():
         countdown_time = 3.0
     for i in 4:
