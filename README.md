@@ -87,7 +87,8 @@ const SERVER_LIST := [
 | 작업 | 어디서 | 하는 일 |
 |---|---|---|
 | deploy | 홈서버 (셀프 호스티드 러너, 라벨 `homeserver`) | 게임 서버 재빌드·재시작 → 웹(안내 페이지·체험판·Windows zip) 빌드·배포 → 상태 확인 |
-| android | GitHub 리눅스 러너 (공개 저장소라 무료) | AAB 빌드 → Google Play **내부 테스트** 트랙 업로드 |
+| android | GitHub 리눅스 러너 (공개 저장소라 무료) | AAB 빌드 → Google Play **내부 테스트** 트랙 업로드 + 같은 키로 서명한 APK 빌드 |
+| android-apk | 홈서버 | 그 APK 를 `https://spw.cloudish.cloud/download/SmallPartyWorld-android.apk` 에 게시 (폰에서 받아 바로 설치해 보는 용도, 안내 페이지에는 링크 없음) |
 | iOS | (예정) 이 Mac 을 셀프 호스티드 러너로 | Apple 개발자 계정 재결제 후 TestFlight 업로드까지 |
 
 **1) 홈서버 러너 설치 (한 번)**

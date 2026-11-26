@@ -1,6 +1,8 @@
 # main 브랜치에 푸시하면:
 #   1) deploy  (홈서버의 셀프 호스티드 러너) — 게임 서버 재시작 + 웹(안내 페이지·웹 체험판·Windows zip) 빌드·배포
 #   2) android (GitHub 리눅스 러너, 공개 저장소라 무료) — AAB 빌드 → Google Play 내부 테스트 트랙 업로드
+#                + 폰에 바로 설치해 볼 APK 도 함께 빌드
+#   3) android-apk (홈서버) — 그 APK 를 https://spw.cloudish.cloud/download/SmallPartyWorld-android.apk 에 올림
 # 수동 실행: GitHub > Actions > build-deploy > Run workflow
 #
 # 필요한 설정은 README "자동 빌드·배포(GitHub Actions)" 참고.
@@ -118,8 +120,12 @@ jobs:
           godot --headless --path . --import >/dev/null 2>&1 || true
           mkdir -p build/android
           godot --headless --path . --export-release "Android" build/android/SmallPartyWorld.aab 2>&1 | tail -40
-          rm -f release.keystore
           test -f build/android/SmallPartyWorld.aab
+          # 같은 키로 서명한 APK (폰에 직접 설치해 보는 용도). 프리셋을 잠깐 APK 형식으로 바꿔 한 번 더 내보낸다
+          sed -i 's/^gradle_build\/export_format=.*/gradle_build\/export_format=0/' export_presets.cfg
+          godot --headless --path . --export-release "Android" build/android/SmallPartyWorld-android.apk 2>&1 | tail -20
+          rm -f release.keystore
+          test -f build/android/SmallPartyWorld-android.apk
           ls -la build/android
 
       - uses: actions/upload-artifact@v4
@@ -127,6 +133,13 @@ jobs:
         with:
           name: android-aab
           path: build/android/SmallPartyWorld.aab
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        if: env.HAS_KEYSTORE == 'true'
+        with:
+          name: android-apk
+          path: build/android/SmallPartyWorld-android.apk
           retention-days: 14
 
       - name: Google Play 업로드 (내부 테스트 트랙)
@@ -139,3 +152,26 @@ jobs:
           track: internal
           # 앱을 한 번도 출시(검토 통과)하지 않은 동안은 draft 만 허용된다. 첫 검토 통과 후 completed 로 바꾸면 바로 배포
           status: ${{ vars.PLAY_RELEASE_STATUS || 'draft' }}
+
+  # 폰 테스트용 APK 를 웹 다운로드 폴더에 올린다 (웹 배포가 끝난 뒤. 웹 배포는 폴더를 통째로 바꾸므로)
+  android-apk:
+    name: APK 다운로드 게시 (홈서버)
+    needs: [deploy, android]
+    runs-on: [self-hosted, homeserver]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@v4
+        id: apk
+        continue-on-error: true      # 서명 키가 없어 APK 를 안 만들었으면 건너뜀
+        with:
+          name: android-apk
+          path: apk
+      - name: /download/SmallPartyWorld-android.apk 로 복사
+        if: steps.apk.outcome == 'success'
+        run: |
+          ls -la apk
+          # 웹 폴더는 컨테이너(root)가 만든 것이라 같은 빌더 이미지로 복사한다
+          docker run --rm --entrypoint sh \
+            -v "$PWD/apk:/in:ro" -v /srv/small_party_world/web:/out \
+            small-party-world-web-builder:4.7.1-zip \
+            -c 'mkdir -p /out/download && cp /in/SmallPartyWorld-android.apk /out/download/ && chmod 644 /out/download/SmallPartyWorld-android.apk && ls -la /out/download'
