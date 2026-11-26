@@ -1,0 +1,368 @@
+extends Control
+## 뒷북의 달인 화면: 위 = 지금 상황(공격·따라 치기) · 박자 점 · 점수, 아래 = 노트 길 + 북 버튼 두 개
+
+const UI := preload("res://scripts/ui/ui_kit.gd")
+const Chart := preload("res://games/drum_echo/chart.gd")
+const Teams := preload("res://scripts/core/teams.gd")
+const SeriesPanel := preload("res://scripts/ui/series_panel.gd")
+
+const LOOK_AHEAD := 2.2             ## 노트 길에 보이는 앞쪽 시간(초)
+const LOOK_BACK := 0.6
+const DON := Color(0.90, 0.28, 0.24)
+const KA := Color(0.26, 0.50, 0.90)
+
+var game
+
+var _banner: Label
+var _sub: Label
+var _judge: Label
+var _score_box: VBoxContainer
+var _buttons: Array[Button] = []
+var _leave_btn: Button
+var _leave_armed := 0.0
+var _result: PanelContainer
+var _result_list: VBoxContainer
+var _result_title: Label
+var _score_key := ""
+
+
+func _ready() -> void:
+    set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    mouse_filter = Control.MOUSE_FILTER_IGNORE
+    _banner = _label(40, true)
+    _sub = _label(20)
+    _judge = _label(46, true)
+    _score_box = UI.vbox(4)
+    _score_box.position = Vector2(18, 16)
+    add_child(_score_box)
+    _build_menu_bar()
+    _build_drum_buttons()
+    _build_results()
+
+
+func _label(size: int, display: bool = false) -> Label:
+    var l := Label.new()
+    l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    l.add_theme_font_size_override("font_size", size)
+    l.add_theme_color_override("font_color", UI.CREAM)
+    l.add_theme_color_override("font_outline_color", UI.INK)
+    l.add_theme_constant_override("outline_size", 10 if display else 7)
+    if display:
+        l.add_theme_font_override("font", UI.DISPLAY_FONT)
+    l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    add_child(l)
+    return l
+
+
+func _screen() -> Vector2:
+    return get_viewport_rect().size
+
+
+# ---------------------------------------------------------------- 버튼
+func _build_menu_bar() -> void:
+    var bar := UI.hbox(8)
+    bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 14)
+    bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+    add_child(bar)
+    bar.add_child(UI.sound_button())
+    if not game.is_online_match():
+        var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
+        again.pressed.connect(func(): game.restart_offline())
+        bar.add_child(again)
+    _leave_btn = UI.pill_button("나가기", UI.RED)
+    _leave_btn.pressed.connect(_on_leave)
+    bar.add_child(_leave_btn)
+
+
+func _on_leave() -> void:
+    var risky: bool = game.is_online_match() and game.state != PartyGame.State.ENDED
+    if risky and _leave_armed <= 0.0:
+        _leave_armed = 3.0
+        _leave_btn.text = "정말 나가기? (기권)"
+        return
+    game.leave_to_menu()
+
+
+## 화면 아래 양쪽 큰 북 버튼 (터치·마우스). 키보드: F/← = 둥, J/→ = 딱
+func _build_drum_buttons() -> void:
+    for lane in 2:
+        var b := Button.new()
+        b.text = ("둥\n[F]" if lane == 0 else "딱\n[J]") if not PartyGame.TOUCH_SCRIPT.should_enable() else ("둥" if lane == 0 else "딱")
+        b.focus_mode = Control.FOCUS_NONE
+        b.add_theme_font_size_override("font_size", 30)
+        var col := DON if lane == 0 else KA
+        for st in ["normal", "hover", "pressed", "focus"]:
+            var sb := UI.box(col.lightened(0.15) if st == "pressed" else col, 80, 10, UI.INK, 5, 6 if st != "pressed" else 2)
+            b.add_theme_stylebox_override(st, sb)
+        b.add_theme_color_override("font_color", Color.WHITE)
+        b.add_theme_color_override("font_pressed_color", Color.WHITE)
+        b.add_theme_color_override("font_hover_color", Color.WHITE)
+        b.button_down.connect(func(): game.press(lane))
+        add_child(b)
+        _buttons.append(b)
+
+
+func _build_results() -> void:
+    if game.is_online_match():
+        var panel := SeriesPanel.new()
+        panel.game = game
+        add_child(panel)
+        return
+    _result = PanelContainer.new()
+    _result.add_theme_stylebox_override("panel", UI.box(UI.CREAM, 22, 22, UI.INK, 4, 8))
+    _result.visible = false
+    add_child(_result)
+    var v := UI.vbox(10)
+    _result.add_child(v)
+    _result_title = UI.heading("", 32)
+    _result_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    v.add_child(_result_title)
+    _result_list = UI.vbox(6)
+    v.add_child(_result_list)
+    var row := UI.hbox(12)
+    row.alignment = BoxContainer.ALIGNMENT_CENTER
+    v.add_child(row)
+    var again := UI.cta_button("다시 하기")
+    again.pressed.connect(func(): game.restart_offline())
+    row.add_child(again)
+    var out := UI.secondary_button("메인으로")
+    out.pressed.connect(func(): game.leave_to_menu())
+    row.add_child(out)
+
+
+# ---------------------------------------------------------------- 매 프레임
+func _process(delta: float) -> void:
+    if _leave_armed > 0.0:
+        _leave_armed -= delta
+        if _leave_armed <= 0.0:
+            _leave_btn.text = "나가기"
+    var sc := _screen()
+    var t: float = game.song_time()
+    _update_banner(t)
+    _place(_banner, 70.0)
+    _place(_sub, 122.0)
+    # 판정 문구 (노트 길 위, 0.6초 동안)
+    var age: float = Time.get_ticks_msec() / 1000.0 - game.last_judge_time
+    _judge.visible = age < 0.6 and game.last_judge != ""
+    if _judge.visible:
+        _judge.text = Chart.JUDGE_NAMES.get(game.last_judge, game.last_judge)
+        _judge.add_theme_color_override("font_color", game._judge_color(game.last_judge))
+        _judge.scale = Vector2.ONE * (1.0 + maxf(0.15 - age, 0.0) * 2.0)
+        _judge.pivot_offset = _judge.size * 0.5
+        var r := _highway_rect()
+        _judge.size = _judge.get_minimum_size()
+        _judge.position = Vector2(r.position.x + r.size.x * 0.12 - _judge.size.x * 0.5 + 40, r.position.y - _judge.size.y - 6)
+    # 북 버튼: 노트 길 양옆
+    var bs := clampf(sc.y * 0.2, 110.0, 170.0)
+    for lane in 2:
+        var b := _buttons[lane]
+        b.size = Vector2(bs, bs)
+        b.position = Vector2(24.0 if lane == 0 else sc.x - bs - 24.0, sc.y - bs - 22.0)
+        b.visible = game.state != PartyGame.State.ENDED
+    _update_scores()
+    _update_results()
+    queue_redraw()
+
+
+func _place(l: Label, y: float) -> void:
+    l.size = l.get_minimum_size()
+    l.position = Vector2((_screen().x - l.size.x) * 0.5, y - l.size.y * 0.5)
+
+
+func _team_name_of(team: int) -> String:
+    return Teams.team_name(team) if team >= 0 else "컴퓨터"
+
+
+func _update_banner(t: float) -> void:
+    if game.state == PartyGame.State.ENDED:
+        _banner.text = game.winner_text
+        _sub.text = ""
+        return
+    if game.t0 < 0.0:
+        _banner.text = "곧 시작해요!"
+        _sub.text = "모두 준비되면 반주가 나와요"
+        return
+    if t < 0.0:
+        _banner.text = str(ceili(-t))
+        _sub.text = "F/← = 둥,  J/→ = 딱"
+        return
+    var ph: Array = game.phase_at(t)
+    var i := int(ph[0])
+    var me: int = game.my_slot
+    if ph[1] == "attack":
+        var who := int(game.view_attacker.get(i, -1))
+        var team := int(game.turns[i].attack_team)
+        if who == me:
+            _banner.text = "내가 공격! 북을 쳐요"
+            _sub.text = "%d마디 동안 박자에 맞춰 리듬을 만들어요 (박자에서 벗어나면 감점)" % int(game.turns[i].bars)
+        elif team < 0:
+            _banner.text = "잘 들어요!"
+            _sub.text = "컴퓨터가 치는 리듬을 다음 마디에 똑같이"
+        else:
+            _banner.text = "%s 공격" % _team_name_of(team)
+            _sub.text = ("%s 님이 치는 리듬을 잘 들어요" % game.fighters[who].display_name) if who >= 0 else ""
+            if me >= 0 and not game.is_responder(me, i):
+                _sub.text = "우리 팀 차례 — %s 님 화이팅!" % (game.fighters[who].display_name if who >= 0 else "")
+    elif ph[1] == "response":
+        if me >= 0 and game.is_responder(me, i):
+            _banner.text = "따라 쳐요!"
+            _sub.text = "같은 타이밍, 같은 북으로"
+        else:
+            _banner.text = "상대가 따라 치는 중"
+            _sub.text = ""
+    else:
+        var nx := int(ph[2])
+        if nx < game.turns.size():
+            var who := int(game.view_attacker.get(nx, -2))
+            _banner.text = "다음은 내가 공격!" if who == me and me >= 0 else "준비…"
+            _sub.text = "%s 공격 · %d마디" % [_team_name_of(int(game.turns[nx].attack_team)), int(game.turns[nx].bars)]
+        else:
+            _banner.text = "마무리!"
+            _sub.text = ""
+
+
+func _update_scores() -> void:
+    var rows := []
+    if game.teams >= 2:
+        var totals := {}
+        for f in game.fighters:
+            totals[f.team] = int(totals.get(f.team, 0)) + int(game.scores.get(f.slot, 0))
+        for tm in range(game.teams):
+            rows.append([Teams.team_name(tm), int(totals.get(tm, 0)), Teams.color(tm), game.my_slot >= 0 and game.fighters[game.my_slot].team == tm])
+    else:
+        var order: Array = game.fighters.duplicate()
+        order.sort_custom(func(a, b): return int(game.scores.get(a.slot, 0)) > int(game.scores.get(b.slot, 0)))
+        for f in order.slice(0, 5):
+            rows.append([f.display_name, int(game.scores.get(f.slot, 0)), f.body_color, f.slot == game.my_slot])
+    if game.my_slot >= 0:
+        rows.append(["내 점수", int(game.scores.get(game.my_slot, 0)), UI.YELLOW, true])
+    var key := str(rows)
+    if key == _score_key:
+        return
+    _score_key = key
+    for c in _score_box.get_children():
+        c.queue_free()
+    for r in rows:
+        var h := UI.hbox(8)
+        var dot := ColorRect.new()
+        dot.color = r[2]
+        dot.custom_minimum_size = Vector2(14, 14)
+        dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        h.add_child(dot)
+        var l := UI.label("%s  %d" % [r[0], r[1]], 20 if r[3] else 17, UI.CREAM)
+        l.add_theme_color_override("font_outline_color", UI.INK)
+        l.add_theme_constant_override("outline_size", 6)
+        h.add_child(l)
+        _score_box.add_child(h)
+
+
+func _update_results() -> void:
+    if _result == null:
+        return
+    var ended: bool = game.state == PartyGame.State.ENDED and not game.final_rank.is_empty()
+    _result.visible = ended
+    if not ended:
+        return
+    if _result_list.get_child_count() == 0:
+        _result_title.text = game.winner_text
+        for r in game.final_rank:
+            var l := UI.label("%d위  %s  —  %d점" % [int(r.rank), String(r.name), int(r.score)], 22, UI.INK)
+            _result_list.add_child(l)
+    _result.size = _result.get_minimum_size()
+    _result.position = (_screen() - _result.size) * 0.5
+
+
+# ---------------------------------------------------------------- 노트 길
+func _highway_rect() -> Rect2:
+    var sc := _screen()
+    var bs := clampf(sc.y * 0.2, 110.0, 170.0)
+    var w := sc.x - (bs + 48.0) * 2.0
+    var h := clampf(sc.y * 0.2, 110.0, 150.0)
+    return Rect2(Vector2((sc.x - w) * 0.5, sc.y - h - 26.0), Vector2(w, h))
+
+
+func _draw() -> void:
+    if game.state == PartyGame.State.ENDED or game.t0 < 0.0:
+        _draw_beat_dots(-1.0)
+        return
+    var t: float = game.song_time()
+    _draw_beat_dots(t)
+    var r := _highway_rect()
+    draw_style_box(UI.box(Color(0.11, 0.16, 0.27, 0.82), 18, 0, UI.INK, 4, 0), r)
+    var hit_x := r.position.x + r.size.x * 0.12
+    var px := (r.size.x * 0.86) / LOOK_AHEAD
+    var lane_y := [r.position.y + r.size.y * 0.32, r.position.y + r.size.y * 0.72]
+    var me: int = game.my_slot
+
+    # 구간 색: 내가 따라 칠 마디 = 노랑, 공격 마디 = 공격팀 색
+    for i in game.turns.size():
+        var tr: Dictionary = game.turns[i]
+        for kind in 2:
+            var b0 := Chart.bar_time(int(tr.attack_bar if kind == 0 else tr.response_bar))
+            var b1 := b0 + int(tr.bars) * Chart.BAR
+            var x0 := clampf(hit_x + (b0 - t) * px, r.position.x, r.end.x)
+            var x1 := clampf(hit_x + (b1 - t) * px, r.position.x, r.end.x)
+            if x1 - x0 < 1.0:
+                continue
+            var col: Color
+            if kind == 0:
+                col = Teams.color(int(tr.attack_team)) if int(tr.attack_team) >= 0 else Color(0.7, 0.7, 0.75)
+                col.a = 0.16
+            else:
+                col = Color(1.0, 0.85, 0.2, 0.22) if me >= 0 and game.is_responder(me, i) else Color(1, 1, 1, 0.05)
+            draw_rect(Rect2(Vector2(x0, r.position.y + 4), Vector2(x1 - x0, r.size.y - 8)), col)
+
+    # 박·마디 선
+    var first_beat := int(floor((t - LOOK_BACK) / Chart.BEAT))
+    for k in range(first_beat, first_beat + int((LOOK_AHEAD + LOOK_BACK) / Chart.BEAT) + 2):
+        var bt := k * Chart.BEAT
+        var x := hit_x + (bt - t) * px
+        if x < r.position.x or x > r.end.x:
+            continue
+        var bar := posmod(k, 4) == 0
+        draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.35 if bar else 0.12), 3.0 if bar else 1.5)
+
+    # 칠 자리 (판정선)
+    for lane in 2:
+        draw_circle(Vector2(hit_x, lane_y[lane]), 24, Color(1, 1, 1, 0.16))
+        draw_arc(Vector2(hit_x, lane_y[lane]), 24, 0, TAU, 32, Color(1, 1, 1, 0.8), 3.0)
+    var font := get_theme_default_font()
+    draw_string(font, Vector2(r.position.x + 10, lane_y[0] + 7), "둥", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, DON.lightened(0.3))
+    draw_string(font, Vector2(r.position.x + 10, lane_y[1] + 7), "딱", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, KA.lightened(0.3))
+
+    # 노트: 공격(들은 리듬) = 테두리만, 따라 칠 노트 = 꽉 찬 원
+    for i in game.view_notes:
+        var tr: Dictionary = game.turns[i]
+        var notes: Array = game.view_notes[i]
+        var taken: Dictionary = game.view_taken.get(i, {})
+        var mine: bool = me >= 0 and game.is_responder(me, i)
+        for n_i in notes.size():
+            var n: Array = notes[n_i]
+            var lane := int(n[1])
+            var col := DON if lane == 0 else KA
+            var rad := 17.0 if lane == 0 else 13.0
+            var ta := Chart.slot_time(tr, int(n[0]), false)
+            var xa := hit_x + (ta - t) * px
+            if xa > r.position.x and xa < r.end.x:
+                draw_arc(Vector2(xa, lane_y[lane]), rad, 0, TAU, 24, Color(col, 0.75), 3.0)
+            var tb := Chart.slot_time(tr, int(n[0]), true)
+            var xb := hit_x + (tb - t) * px
+            if xb < r.position.x or xb > r.end.x or taken.has(n_i):
+                continue
+            var c := col if mine else Color(col, 0.35)
+            if mine and tb < t - Chart.BAD:
+                c = Color(0.5, 0.5, 0.55, 0.6)      # 놓침
+            draw_circle(Vector2(xb, lane_y[lane]), rad, c)
+            draw_arc(Vector2(xb, lane_y[lane]), rad, 0, TAU, 24, Color(1, 1, 1, 0.9 if mine else 0.3), 2.5)
+
+
+## 배너 아래 박자 점 4개 (지금 박이 커짐)
+func _draw_beat_dots(t: float) -> void:
+    var sc := _screen()
+    var beat := posmod(int(floor(t / Chart.BEAT)), 4) if t >= 0.0 else -1
+    var frac := fposmod(t, Chart.BEAT) / Chart.BEAT if t >= 0.0 else 1.0
+    for k in 4:
+        var c := Vector2(sc.x * 0.5 + (k - 1.5) * 34.0, 158.0)
+        var on := k == beat
+        var rad := 9.0 + (6.0 * (1.0 - frac) if on else 0.0)
+        draw_circle(c, rad, UI.YELLOW if on else Color(1, 1, 1, 0.35))

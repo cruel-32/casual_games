@@ -110,6 +110,9 @@ var dead := false
 var control_vel := Vector3.ZERO
 var knock := Vector3.ZERO
 var stun_timer := 0.0
+var drum_mode := false                 ## 뒷북의 달인: 북 치는 자세 (drum_l/drum_r = 1 이면 방금 친 손)
+var drum_l := 0.0
+var drum_r := 0.0
 var stun_guard := 0.0                # 경직 면역 남은 시간 (STUN_GUARD)
 var _dash_hit_relief := 0.0          # 차징 돌진이 맞으면 줄여 줄 정지 시간 (헛치면 그대로 오래 정지)
 var invuln_timer := 0.0
@@ -1333,7 +1336,17 @@ func _animate(delta: float) -> void:
     var crouch := absf(sin(_anim_time)) * 0.06 * _anim_amp
     var jitter := 0.0
 
-    if is_stunned():
+    if drum_mode:
+        # 북 치기 (뒷북의 달인): drum_l/drum_r 가 1 이면 막 내리친 순간, 0 이면 들고 있는 자세
+        drum_l = maxf(drum_l - delta * 7.0, 0.0)
+        drum_r = maxf(drum_r - delta * 7.0, 0.0)
+        la = lerpf(1.25, 0.45, drum_l)
+        ra = lerpf(1.25, 0.45, drum_r)
+        arm_spread = -0.1
+        crouch = -0.05 * maxf(drum_l, drum_r)
+        lean = 0.08 + 0.06 * maxf(drum_l, drum_r)
+        k = 1.0 if maxf(drum_l, drum_r) > 0.9 else k
+    elif is_stunned():
         la = 2.6 + sin(_t * 18.0) * 0.5
         ra = 2.6 - sin(_t * 18.0) * 0.5
         arm_spread = 0.5
