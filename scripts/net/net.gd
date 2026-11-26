@@ -27,7 +27,7 @@ const Teams := preload("res://scripts/core/teams.gd")
 const WordFilter := preload("res://scripts/core/word_filter.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 11
+const PROTOCOL_VERSION := 12
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
@@ -699,11 +699,8 @@ func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id:
     var r0: Dictionary = _rooms[rid]
     if r0.teams >= 2:
         r0.team[id] = 0
-        # 봇 채우기면 최대 인원이 팀 수로 나누어져야 시작할 수 있으므로 맞춰 둔다 (예: 5명 → 6명, 안 되면 4명)
-        if r0.max % r0.teams != 0:
-            var up: int = r0.max + (r0.teams - r0.max % r0.teams)
-            var cap: int = mini(MAX_PLAYERS_LIMIT, module.max_players)
-            r0.max = up if up <= cap else r0.max - r0.max % r0.teams
+        # 최대 인원을 팀 수의 배수로 (예: 5명 → 6명, 안 되면 4명)
+        r0.max = Teams.fit_max(r0.max, r0.teams, 1, mini(MAX_PLAYERS_LIMIT, module.max_players))
         if r0.max < r0.teams:
             r0.teams = 0
             r0.team.clear()
@@ -809,18 +806,23 @@ func c_update_settings(settings: Dictionary) -> void:
                 for i in r.members.size():
                     r.team[r.members[i]] = i % t       # 고르게 나눔
             r.ready.clear()
-            _room_system_chat(rid, "%s(으)로 바뀌었습니다" % Teams.mode_name(t))
+            var old_max: int = r.max
+            r.max = Teams.fit_max(r.max, t, r.members.size(), mini(MAX_PLAYERS_LIMIT, Series.max_players_for(r.round_games)))
+            if r.max != old_max:
+                _room_system_chat(rid, "%s(으)로 바뀌었습니다 · 최대 인원 %d명" % [Teams.mode_name(t), r.max])
+            else:
+                _room_system_chat(rid, "%s(으)로 바뀌었습니다" % Teams.mode_name(t))
     if games_changed:
         r.game = r.round_games[0]
         var mx := Series.max_players_for(r.round_games)
         if r.max > mx:
-            r.max = maxi(mx, r.members.size())
+            r.max = Teams.fit_max(maxi(mx, r.members.size()), r.teams, r.members.size(), mini(MAX_PLAYERS_LIMIT, mx), false)
         r.ready.clear()     # 게임이 바뀌면 다시 레디
     var game_max: int = Series.max_players_for(r.round_games)
     if settings.has("max"):
         var want := int(settings.max)
-        r.max = clampi(want, maxi(2, r.members.size()), mini(MAX_PLAYERS_LIMIT, game_max))
-        if r.max != want:
+        r.max = Teams.fit_max(want, r.teams, r.members.size(), mini(MAX_PLAYERS_LIMIT, game_max), want > r.max)
+        if want < r.members.size():
             s_error.rpc_id(id, "현재 인원(%d명)보다 적게 줄일 수 없습니다" % r.members.size())
     if settings.has("bot_fill"):
         r.bot_fill = bool(settings.bot_fill)

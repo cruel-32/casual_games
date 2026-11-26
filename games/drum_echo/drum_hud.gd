@@ -8,8 +8,9 @@ const SeriesPanel := preload("res://scripts/ui/series_panel.gd")
 
 const LOOK_AHEAD := 2.2             ## 노트 길에 보이는 앞쪽 시간(초)
 const LOOK_BACK := 0.6
-const DON := Color(0.90, 0.28, 0.24)
-const KA := Color(0.26, 0.50, 0.90)
+const DrumGame := preload("res://games/drum_echo/drum_game.gd")
+const DON := DrumGame.DON_COLOR
+const KA := DrumGame.KA_COLOR
 
 var game
 
@@ -24,6 +25,7 @@ var _result: PanelContainer
 var _result_list: VBoxContainer
 var _result_title: Label
 var _score_key := ""
+var _sync_label: Label
 
 
 func _ready() -> void:
@@ -65,12 +67,35 @@ func _build_menu_bar() -> void:
     bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     add_child(bar)
     bar.add_child(UI.sound_button())
+    # 박자 보정: 소리가 늦게 들리는 기기(블루투스 이어폰 등)에서 판정을 맞춤
+    var sync := UI.hbox(2)
+    var minus := UI.pill_button("−", UI.CREAM, UI.INK)
+    minus.focus_mode = Control.FOCUS_NONE
+    minus.tooltip_text = "판정이 늦다고(내가 일찍 친다고) 나오면 줄여요"
+    minus.pressed.connect(func(): game.change_sync(-10))
+    sync.add_child(minus)
+    _sync_label = UI.label("", 15, UI.CREAM)
+    _sync_label.add_theme_color_override("font_outline_color", UI.INK)
+    _sync_label.add_theme_constant_override("outline_size", 6)
+    _sync_label.custom_minimum_size.x = 96
+    _sync_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _sync_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    _sync_label.size_flags_vertical = Control.SIZE_FILL
+    sync.add_child(_sync_label)
+    var plus := UI.pill_button("+", UI.CREAM, UI.INK)
+    plus.focus_mode = Control.FOCUS_NONE
+    plus.tooltip_text = "판정이 이르다고(내가 늦게 친다고) 나오면 늘려요"
+    plus.pressed.connect(func(): game.change_sync(10))
+    sync.add_child(plus)
+    bar.add_child(sync)
     if not game.is_online_match():
         var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
         again.pressed.connect(func(): game.restart_offline())
+        again.focus_mode = Control.FOCUS_NONE
         bar.add_child(again)
     _leave_btn = UI.pill_button("나가기", UI.RED)
     _leave_btn.pressed.connect(_on_leave)
+    _leave_btn.focus_mode = Control.FOCUS_NONE
     bar.add_child(_leave_btn)
 
 
@@ -83,11 +108,11 @@ func _on_leave() -> void:
     game.leave_to_menu()
 
 
-## 화면 아래 양쪽 큰 북 버튼 (터치·마우스). 키보드: F/← = 둥, J/→ = 딱
+## 화면 아래 양쪽 큰 북 버튼 (터치·마우스). 키보드: Space = 둥, Enter = 딱
 func _build_drum_buttons() -> void:
     for lane in 2:
         var b := Button.new()
-        b.text = ("둥\n[F]" if lane == 0 else "딱\n[J]") if not PartyGame.TOUCH_SCRIPT.should_enable() else ("둥" if lane == 0 else "딱")
+        b.text = ("둥\n[Space]" if lane == 0 else "딱\n[Enter]") if not PartyGame.TOUCH_SCRIPT.should_enable() else ("둥" if lane == 0 else "딱")
         b.focus_mode = Control.FOCUS_NONE
         b.add_theme_font_size_override("font_size", 30)
         var col := DON if lane == 0 else KA
@@ -137,7 +162,8 @@ func _process(delta: float) -> void:
         if _leave_armed <= 0.0:
             _leave_btn.text = "나가기"
     var sc := _screen()
-    var t: float = game.song_time()
+    var t: float = game.heard_time()
+    _sync_label.text = "박자 보정 %+dms" % game.sync_offset_ms
     _update_banner(t)
     _place(_banner, 70.0)
     _place(_sub, 122.0)
@@ -170,7 +196,7 @@ func _place(l: Label, y: float) -> void:
 
 
 func _team_name_of(team: int) -> String:
-    return Teams.team_name(team) if team >= 0 else "컴퓨터"
+    return Teams.team_name(team) if team >= 0 else "진행자"
 
 
 func _update_banner(t: float) -> void:
@@ -184,7 +210,7 @@ func _update_banner(t: float) -> void:
         return
     if t < 0.0:
         _banner.text = str(ceili(-t))
-        _sub.text = "F/← = 둥,  J/→ = 딱"
+        _sub.text = "Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱"
         return
     var ph: Array = game.phase_at(t)
     var i := int(ph[0])
@@ -192,18 +218,20 @@ func _update_banner(t: float) -> void:
     if ph[1] == "attack":
         var who := int(game.view_attacker.get(i, -1))
         var team := int(game.turns[i].attack_team)
+        _banner.add_theme_color_override("font_color", Teams.color(team).lightened(0.35) if team >= 0 else UI.CREAM)
         if who == me:
             _banner.text = "내가 공격! 북을 쳐요"
-            _sub.text = "%d마디 동안 박자에 맞춰 리듬을 만들어요 (박자에서 벗어나면 감점)" % int(game.turns[i].bars)
+            _sub.text = "%d마디 동안 반주에 맞춰 리듬을 만들어요 — 반 박(8분음표) 칸에 맞춰져요" % int(game.turns[i].bars)
         elif team < 0:
-            _banner.text = "잘 들어요!"
-            _sub.text = "컴퓨터가 치는 리듬을 다음 마디에 똑같이"
+            _banner.text = "진행자 공격!"
+            _sub.text = "진행자가 치는 리듬을 잘 듣고, 다음 마디에 똑같이"
         else:
             _banner.text = "%s 공격" % _team_name_of(team)
             _sub.text = ("%s 님이 치는 리듬을 잘 들어요" % game.fighters[who].display_name) if who >= 0 else ""
             if me >= 0 and not game.is_responder(me, i):
                 _sub.text = "우리 팀 차례 — %s 님 화이팅!" % (game.fighters[who].display_name if who >= 0 else "")
     elif ph[1] == "response":
+        _banner.add_theme_color_override("font_color", UI.YELLOW)
         if me >= 0 and game.is_responder(me, i):
             _banner.text = "따라 쳐요!"
             _sub.text = "같은 타이밍, 같은 북으로"
@@ -211,6 +239,7 @@ func _update_banner(t: float) -> void:
             _banner.text = "상대가 따라 치는 중"
             _sub.text = ""
     else:
+        _banner.add_theme_color_override("font_color", UI.CREAM)
         var nx := int(ph[2])
         if nx < game.turns.size():
             var who := int(game.view_attacker.get(nx, -2))
@@ -285,7 +314,8 @@ func _draw() -> void:
     if game.state == PartyGame.State.ENDED or game.t0 < 0.0:
         _draw_beat_dots(-1.0)
         return
-    var t: float = game.song_time()
+    # 판정과 같은 시계(귀에 들리는 반주 시각)로 그린다 — 화면과 판정이 어긋나지 않게
+    var t: float = game.heard_time()
     _draw_beat_dots(t)
     var r := _highway_rect()
     draw_style_box(UI.box(Color(0.11, 0.16, 0.27, 0.82), 18, 0, UI.INK, 4, 0), r)
@@ -312,15 +342,20 @@ func _draw() -> void:
                 col = Color(1.0, 0.85, 0.2, 0.22) if me >= 0 and game.is_responder(me, i) else Color(1, 1, 1, 0.05)
             draw_rect(Rect2(Vector2(x0, r.position.y + 4), Vector2(x1 - x0, r.size.y - 8)), col)
 
-    # 박·마디 선
-    var first_beat := int(floor((t - LOOK_BACK) / Chart.BEAT))
-    for k in range(first_beat, first_beat + int((LOOK_AHEAD + LOOK_BACK) / Chart.BEAT) + 2):
-        var bt := k * Chart.BEAT
+    # 박·마디 선 + 반 박(8분음표) 눈금: 칠 수 있는 자리는 이 선들뿐
+    var first_half := int(floor((t - LOOK_BACK) / Chart.SLOT))
+    for k in range(first_half, first_half + int((LOOK_AHEAD + LOOK_BACK) / Chart.SLOT) + 2):
+        var bt := k * Chart.SLOT
         var x := hit_x + (bt - t) * px
         if x < r.position.x or x > r.end.x:
             continue
-        var bar := posmod(k, 4) == 0
-        draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.35 if bar else 0.12), 3.0 if bar else 1.5)
+        if posmod(k, 2) == 1:
+            # 반 박: 위·아래 짧은 눈금
+            draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.position.y + 18), Color(1, 1, 1, 0.22), 1.5)
+            draw_line(Vector2(x, r.end.y - 18), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.22), 1.5)
+            continue
+        var bar := posmod(k, 8) == 0
+        draw_line(Vector2(x, r.position.y + 6), Vector2(x, r.end.y - 6), Color(1, 1, 1, 0.35 if bar else 0.14), 3.0 if bar else 1.5)
 
     # 칠 자리 (판정선)
     for lane in 2:
@@ -331,6 +366,7 @@ func _draw() -> void:
     draw_string(font, Vector2(r.position.x + 10, lane_y[1] + 7), "딱", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, KA.lightened(0.3))
 
     # 노트: 공격(들은 리듬) = 테두리만, 따라 칠 노트 = 꽉 찬 원
+    #   공격 노트는 실제로 들린 뒤에야 나타난다 (진행자·봇 리듬을 미리 알 수 없게) — 판정선에서 '퐁' 생겨 왼쪽으로 지나감
     for i in game.view_notes:
         var tr: Dictionary = game.turns[i]
         var notes: Array = game.view_notes[i]
@@ -342,9 +378,12 @@ func _draw() -> void:
             var col := DON if lane == 0 else KA
             var rad := 17.0 if lane == 0 else 13.0
             var ta := Chart.slot_time(tr, int(n[0]), false)
+            if ta > t:
+                continue                            # 아직 안 친 공격 노트
             var xa := hit_x + (ta - t) * px
+            var pop := clampf((t - ta) / 0.12, 0.0, 1.0)
             if xa > r.position.x and xa < r.end.x:
-                draw_arc(Vector2(xa, lane_y[lane]), rad, 0, TAU, 24, Color(col, 0.75), 3.0)
+                draw_arc(Vector2(xa, lane_y[lane]), rad * (1.5 - 0.5 * pop), 0, TAU, 24, Color(col, 0.75 + 0.25 * (1.0 - pop)), 3.0)
             var tb := Chart.slot_time(tr, int(n[0]), true)
             var xb := hit_x + (tb - t) * px
             if xb < r.position.x or xb > r.end.x or taken.has(n_i):

@@ -22,6 +22,24 @@ static func color(i: int) -> Color:
     return COLORS[i] if i >= 0 and i < COLORS.size() else Color.WHITE
 
 
+## 최대 인원을 팀 수의 배수로 맞춤 (2팀 → 2·4·6…, 3팀 → 3·6·9…). up: 배수가 아니면 올림 우선
+## members(지금 인원)보다 적게는 줄이지 않는다. 배수로 못 맞추면 원래 값
+static func fit_max(want: int, teams: int, members: int, cap: int, up: bool = true) -> int:
+    var lo := maxi(2, members)
+    var m := clampi(want, lo, cap)
+    if teams < 2 or m % teams == 0:
+        return m
+    var hi_v := m + (teams - m % teams)
+    var lo_v := m - m % teams
+    if up and hi_v <= cap:
+        return hi_v
+    if lo_v >= lo and lo_v >= teams:
+        return lo_v
+    if hi_v <= cap:
+        return hi_v
+    return m
+
+
 static func mode_name(teams: int) -> String:
     return "개인전" if teams <= 1 else "%d팀전" % teams
 

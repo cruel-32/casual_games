@@ -133,6 +133,95 @@ func _ready() -> void:
     hud.game = self
     layer.add_child(hud)
     add_common_ui(layer)     # 터치 컨트롤·세로 화면 안내 (PartyGame)
+    _spawn_hosts()
+
+
+# ================================================================ 진행자 (링 밖에서 지켜봄, 화면 전용)
+const MaskedHost := preload("res://scripts/world/masked_host.gd")
+var _hosts: Array = []
+var _host_retarget := 0.0
+var _host_dead_seen := {}
+
+
+func _spawn_hosts() -> void:
+    var r := arena_half + 2.6
+    var spots := [Vector2(0, -r), Vector2(r, 0), Vector2(0, r), Vector2(-r, 0)]
+    var podium_mat := Toon.make(Color(0.16, 0.15, 0.2), {"rim_strength": 0.3})
+    var trim_mat := Toon.make(Color(0.95, 0.74, 0.25), {"rim_strength": 0.5})
+    for i in spots.size():
+        var p: Vector2 = spots[i]
+        var h: float = terrain.get_height(p.x, p.y)
+        var podium := MeshInstance3D.new()
+        var cyl := CylinderMesh.new()
+        cyl.top_radius = 0.75
+        cyl.bottom_radius = 0.85
+        cyl.height = 0.5
+        cyl.radial_segments = 16
+        cyl.rings = 1
+        podium.mesh = cyl
+        podium.material_override = podium_mat
+        add_child(podium)
+        podium.global_position = Vector3(p.x, h + 0.2, p.y)
+        var ring := MeshInstance3D.new()
+        var tor := TorusMesh.new()
+        tor.inner_radius = 0.72
+        tor.outer_radius = 0.8
+        tor.rings = 20
+        tor.ring_segments = 6
+        ring.mesh = tor
+        ring.material_override = trim_mat
+        ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        add_child(ring)
+        ring.global_position = Vector3(p.x, h + 0.45, p.y)
+        ring.scale = Vector3(1, 0.4, 1)
+        var host: Node3D = MaskedHost.new()
+        host.variant = i
+        host.scale = Vector3.ONE * 1.4           # 링 밖 멀리서도 보이게 조금 크게
+        host.rotation.y = atan2(p.x, p.y)        # 링 가운데를 바라봄 (얼굴 = -Z)
+        add_child(host)
+        host.global_position = Vector3(p.x, h + 0.45, p.y)
+        _hosts.append(host)
+
+
+func _process(delta: float) -> void:
+    if _hosts.is_empty():
+        return
+    _host_retarget -= delta
+    for f in fighters:
+        if f.dead and not _host_dead_seen.has(f.slot):
+            _host_dead_seen[f.slot] = true
+            # 탈락: 가장 가까운 진행자가 가리키고, 다른 진행자는 고개 끄덕
+            var best: Node3D = null
+            for h: Node3D in _hosts:
+                if best == null or h.global_position.distance_to(f.global_position) < best.global_position.distance_to(f.global_position):
+                    best = h
+            for h: Node3D in _hosts:
+                h.look_at_point(f.global_position)
+                h.gesture("point" if h == best else "nod")
+            _host_retarget = 1.2
+    if state == State.ENDED and _host_retarget <= 0.0:
+        for h: Node3D in _hosts:
+            h.gesture("clap")
+        _host_retarget = 2.0
+        return
+    if _host_retarget > 0.0:
+        return
+    _host_retarget = 0.4
+    # 각 진행자는 가까운 생존자를 지켜본다 (내 캐릭터가 가까우면 나를)
+    for h: Node3D in _hosts:
+        var best: Fighter = null
+        var bd := INF
+        for f in fighters:
+            if f.dead:
+                continue
+            var d := h.global_position.distance_to(f.global_position) - (3.0 if f == human else 0.0)
+            if d < bd:
+                bd = d
+                best = f
+        if best:
+            h.look_at_point(best.global_position)
+        else:
+            h.clear_look()
 
 
 # ================================================================ 구성

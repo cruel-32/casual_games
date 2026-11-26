@@ -499,6 +499,7 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
     var rg: Array = r.get("round_games", [String(r.get("game", ""))])
     if host and _settings_mode == "host":
         _sync_round_widgets(rg)
+        _set_max_step(int(r.get("teams", 0)))
         _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, Series.max_players_for(rg))
         _s_max.set_value_no_signal(int(r.max))
         _s_bots.set_pressed_no_signal(bool(r.bot_fill))
@@ -528,6 +529,7 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
         _s_max = SpinBox.new()
         _s_max.min_value = 2
         _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, Series.max_players_for(rg))
+        _set_max_step(int(r.get("teams", 0)))
         _s_max.value = int(r.max)
         _s_max.suffix = "명"
         _s_max.custom_minimum_size = Vector2(104, 40)
@@ -563,6 +565,13 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
 
 
 ## 상단 '경기 방식' 바: [팀] 개인전 2팀 3팀 4팀  |  [라운드] 1 2 3 4 5
+## 팀전이면 인원은 팀 수 단위로만 (2팀 2·4·6…, 3팀 3·6·9…)
+func _set_max_step(teams: int) -> void:
+    _s_max.min_value = teams if teams >= 2 else 2
+    _s_max.step = teams if teams >= 2 else 1
+    _s_max.tooltip_text = "%d팀전: 인원은 %d명 단위" % [teams, teams] if teams >= 2 else ""
+
+
 func _update_mode_bar(teams: int, rounds: int, editable: bool) -> void:
     var key := "%d/%d/%s" % [teams, rounds, editable]
     if key == _mode_key:

@@ -27,21 +27,34 @@ const POINTS := {"perfect": 100, "good": 60, "bad": 20, "miss": 0, "wild": -50, 
 const ATTACK_POINTS := {"perfect": 50, "good": 30, "bad": 10, "wild": -50}
 const JUDGE_NAMES := {"perfect": "PERFECT", "good": "GOOD", "bad": "BAD", "miss": "MISS", "wild": "엉뚱!", "extra": "헛침"}
 
-## 곡이 진행될수록 공격 길이 1 → 2 → 4마디. 단계마다 모든 팀이 한 번씩 (1마디는 두 바퀴)
-const STAGES := [[1, 2], [2, 1], [4, 1]]       # [마디 수, 바퀴 수]
+## 곡 길이는 팀 수와 상관없이 거의 같다: 단계별 차례 수 [공격 마디 수, 차례 수]
+##   팀마다 똑같이 돌아가며 공격하고, 남는 차례(팀 수로 나누어떨어지지 않는 만큼, 최대 2번)는 진행자가 랜덤 리듬으로 공격
+##   예) 2팀: 1마디 ×4(팀 2바퀴) → 2마디 ×3(팀 1바퀴 + 진행자 1) → 4마디 ×2(팀 1바퀴)
+##   개인전은 모든 차례를 진행자가 공격
+const STAGES := [[1, 4], [2, 3], [4, 2]]
+const HOST_MAX_EXTRA := 2
 
 
-## 진행표: [{attack_team, bars, attack_bar, response_bar}] — attack_team -1 = 컴퓨터 (개인전)
+## 진행표: [{attack_team, bars, attack_bar, response_bar, host}] — attack_team -1 = 진행자 (모두가 따라 침)
 static func build_turns(teams: int) -> Array:
-    var order: Array = range(teams) if teams >= 2 else [-1, -1]
     var turns := []
     var bar := INTRO_BARS
     for st in STAGES:
-        for rep in int(st[1]):
-            for t in order:
-                var n := int(st[0])
-                turns.append({"attack_team": t, "bars": n, "attack_bar": bar, "response_bar": bar + n})
-                bar += n * 2
+        var n := int(st[0])
+        var count := int(st[1])
+        var order := []
+        if teams >= 2:
+            var rounds := maxi(1, count / teams)
+            for r in rounds:
+                order.append_array(range(teams))
+            for k in clampi(count - rounds * teams, 0, HOST_MAX_EXTRA):
+                order.append(-1)
+        else:
+            for k in count:
+                order.append(-1)
+        for t in order:
+            turns.append({"attack_team": t, "bars": n, "attack_bar": bar, "response_bar": bar + n, "host": t < 0})
+            bar += n * 2
     return turns
 
 

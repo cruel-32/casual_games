@@ -49,11 +49,14 @@ for bi, c in enumerate(prog):
     root = G.m(tones[0] + '2'); root = root - 12 if root > G.m('E2') else root
     for o, d, v in [(0, .45, 1.0), (1.5, .2, .8), (2, .45, .95), (3, .2, .7), (3.5, .2, .8)]:
         ev.append((b0 + o, G.bass(root + (12 if o in (1.5, 3.5) else 0), d, v)))
-    ev.append((b0, G.kick(.9))); ev.append((b0 + 2, G.kick(.8)))
+    # 박이 또렷하게: 매 박 킥(1·3박 강하게) + 2·4박 스네어 + 8분 하이햇(정박 강세) = 북을 칠 수 있는 8분음표 격자
+    for k, v in enumerate((1.0, .7, .9, .7)):
+        ev.append((b0 + k, G.kick(v)))
+    ev.append((b0 + 1, G.snare(.55))); ev.append((b0 + 3, G.snare(.55)))
     for k in range(8):
-        ev.append((b0 + k * .5, G.hat(1.0 if k % 2 else .5)))
+        ev.append((b0 + k * .5, G.hat(.9 if k % 2 == 0 else .55)))
     for o in (.5, 1.5, 2.5, 3.5):           # 엇박 피아노 스탭 (박은 플레이어 북이 채움)
         for j, nn in enumerate(tones):
             ev.append((b0 + o + j * .01, G.pluck(G.m(nn + '4'), .55)))
     ev.append((b0 + 1, G.shaker(.9))); ev.append((b0 + 3, G.shaker(.9)))
-G.render(120, 8, ev, os.path.join(OUT, 'groove'), .7)
+G.render(120, 8, ev, os.path.join(OUT, 'groove'), .92)
