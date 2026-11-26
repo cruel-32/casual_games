@@ -3,6 +3,7 @@ extends Control
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
+const UpdatePanel := preload("res://scripts/ui/update_panel.gd")
 
 var app: Node
 var _nick: LineEdit
@@ -17,6 +18,7 @@ var _retry_name := ""
 var _login_try := 0
 var _kids: Array[TextureRect] = []
 var _t := 0.0
+var _card_row: HBoxContainer
 
 
 func _ready() -> void:
@@ -85,6 +87,7 @@ func _ready() -> void:
     var card_row := UI.hbox(0)
     card_row.alignment = BoxContainer.ALIGNMENT_CENTER
     col.add_child(card_row)
+    _card_row = card_row
     var card := PanelContainer.new()
     card.custom_minimum_size.x = 560
     card_row.add_child(card)
@@ -131,6 +134,7 @@ func _ready() -> void:
     _build_help()
     if OS.has_feature("web"):
         _build_web_promo()
+    _build_update_ui()
 
     Net.connected.connect(_on_connected)
     Net.connection_failed.connect(_on_failed)
@@ -285,6 +289,9 @@ func _check_nick() -> bool:
 func _on_connect_pressed() -> void:
     if not _check_nick():
         return
+    if Updater.required:
+        _set_status("새 버전이 나왔어요. 왼쪽 아래 업데이트 버튼을 눌러 주세요 (혼자 연습은 가능)", UI.DANGER)
+        return
     var s := _selected_server()
     _start_connect(String(s.url), String(s.name), 0)
 
@@ -372,3 +379,23 @@ func _process(delta: float) -> void:
         _kids[i].pivot_offset = _kids[i].size * Vector2(0.5, 1.0)
         _kids[i].position.y = -hop * 16.0
         _kids[i].rotation = sin(ph * 0.5) * 0.04
+
+
+# ---- 버전 표시 + 새 버전 안내 (Updater)
+func _build_update_ui() -> void:
+    # 새 버전 카드: 접속 카드 바로 아래 (새 버전이 있을 때만 보임)
+    var panel := UpdatePanel.new()
+    panel.custom_minimum_size.x = 560
+    var row := UI.hbox(0)
+    row.alignment = BoxContainer.ALIGNMENT_CENTER
+    row.add_child(panel)
+    _card_row.get_parent().add_child(row)
+    _card_row.get_parent().move_child(row, _card_row.get_index() + 1)
+    # 오른쪽 아래 작은 버전 표시
+    var ver := UI.label("v" + Boot.version(), 14, UI.MUTED)
+    ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 14)
+    ver.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+    ver.grow_vertical = Control.GROW_DIRECTION_BEGIN
+    ver.position.y -= 108                 # 아래 체크 띠 위
+    ver.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    add_child(ver)

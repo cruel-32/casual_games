@@ -81,6 +81,26 @@ const SERVER_LIST := [
    웹 게임 페이지(`spw.cloudish.cloud`)는 웹 빌드 전까지 `deploy/web-placeholder/index.html`을 `/srv/small_party_world/web/`에 넣어 두기
 6. 업데이트: 코드 변경 후 `docker compose up -d --build`
 
+### 버전 관리·업데이트
+버전은 저장소 맨 위의 `release.json` 한 곳에서 관리한다.
+
+```json
+{ "version": "0.2.0", "min_supported": "0.2.0", "pc_full_required": false, "notes": ["바뀐 점", "..."] }
+```
+
+- **새 버전 내기**: `version` 을 올리고 `notes` 를 쓴 뒤 `main` 에 푸시 → CI 가 `https://spw.cloudish.cloud/version.json` 을 갱신
+  - 게임은 켤 때 이 파일을 읽어 첫 화면에 "새 버전" 카드와 업데이트 버튼을 띄운다
+  - 같은 `version` 으로 다시 푸시하면 이미 받은 사람에게는 다시 내려가지 않는다 → 배포할 때마다 버전을 올릴 것
+- **PC 앱**: 업데이트 버튼 → 업데이트 팩(`/download/updates/game-<버전>.pck`)을 받아 sha256·서명 확인 → 다시 시작하면 적용
+  (`scripts/core/boot.gd` 가 다른 스크립트보다 먼저 팩을 불러옴)
+  - Godot 버전을 바꿨거나 `project.godot`(자동 로드·설정)·내보내기 설정을 바꿨으면 `"pc_full_required": true` → 전체 zip 을 받도록 안내
+  - 서명 키: GitHub Secrets `PATCH_SIGNING_KEY` (RSA 개인 키 PEM). 공개 키는 `scripts/core/updater.gd` 의 `PUBLIC_KEY`. 키가 없으면 팩을 올리지 않고 전체 zip 안내
+- **Android·iOS**: 스토어 정책상 앱이 스스로 코드를 바꾸면 안 되므로 버튼은 스토어(출시 전에는 APK) 페이지를 연다
+- **웹**: 새로고침
+- **최소 버전** `min_supported`: 이보다 낮은 게임은 서버가 로그인을 거절하고, 첫 화면도 업데이트를 안내한다 (혼자 연습은 가능).
+  모바일 스토어 심사가 끝나기 전에는 올리지 말 것
+- 서버·클라이언트 통신 형식이 바뀌면 `scripts/net/net.gd` 의 `PROTOCOL_VERSION` 도 올린다
+
 ### 자동 빌드·배포 (GitHub Actions)
 `main` 에 푸시하면 `.github/workflows/build-deploy.yml` 이 돈다. (GitHub > Actions 에서 수동 실행도 가능)
 

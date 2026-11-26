@@ -33,10 +33,13 @@ jobs:
       - name: 게임 서버 다시 빌드·재시작
         run: docker compose up -d --build small-party-world-server
 
-      - name: 웹 + Windows zip 빌드·배포
+      - name: 웹 + Windows zip + 업데이트 정보(version.json) 빌드·배포
+        env:
+          # PC 업데이트 팩 서명 키 (없으면 PC 앱은 전체 zip 을 받도록 안내됨)
+          PATCH_SIGNING_KEY: ${{ secrets.PATCH_SIGNING_KEY }}
         run: |
           docker compose build web-build
-          docker compose --profile build run --rm web-build
+          docker compose --profile build run --rm -e PATCH_SIGNING_KEY web-build
 
       - name: 서버 상태 확인
         run: |
@@ -98,9 +101,12 @@ jobs:
           TRES
           sed -i 's/^ *//' ~/.config/godot/editor_settings-${V_MAJOR_MINOR}.tres
 
-      - name: 버전 코드 = 실행 번호 (업로드마다 증가해야 함)
+      - name: 버전 코드 = 실행 번호 (업로드마다 증가해야 함), 버전 이름 = release.json
         run: |
           sed -i "s/^version\/code=.*/version\/code=${{ github.run_number }}/" export_presets.cfg
+          # 버전 이름 = 저장소 release.json 의 version
+          VER=$(python3 -c "import json;print(json.load(open('release.json'))['version'])")
+          sed -i "s/^version\/name=.*/version\/name=\"$VER\"/" export_presets.cfg
           grep -n "version/" export_presets.cfg
 
       - name: 리소스 가져오기 (import)

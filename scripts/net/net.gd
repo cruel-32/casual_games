@@ -24,7 +24,7 @@ signal game_message(msg: Array)          # 클라이언트: 서버의 게임 모
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 5
+const PROTOCOL_VERSION := 6
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
@@ -66,6 +66,8 @@ var _ping_count := 0
 
 # ---- 서버 상태
 var _players := {}                      # peer_id -> {nick, room}
+var _client_versions := {}              # peer_id -> 게임 버전 (x_hello 로 받음)
+var _min_client_version := "0.0.0"     # release.json 의 min_supported (서버가 시작할 때 읽음)
 var _rooms := {}                        # room_id -> {id, name, host, max, bot_fill, state, members[], ready{}, returned{}}
 var _next_room_id := 1
 var _nick_regex := RegEx.new()
@@ -93,6 +95,8 @@ func _ready() -> void:
         var j := args.find("--status-port")
         if j >= 0 and j + 1 < args.size():
             status_port = int(args[j + 1])
+        _min_client_version = String(Boot.read_release().get("min_supported", "0.0.0"))
+        print("[server] 최소 클라이언트 버전 %s" % _min_client_version)
         if start_server(port) == OK:
             _start_status_server(status_port)
 
@@ -170,6 +174,7 @@ func _on_peer_connected(id: int) -> void:
 func _on_peer_disconnected(id: int) -> void:
     if not is_server:
         return
+    _client_versions.erase(id)
     if _players.has(id):
         print("[server] 퇴장 %s (%d)" % [_players[id].nick, id])
         _leave_room(id, "")
@@ -498,6 +503,8 @@ func _status_data() -> Dictionary:
         "game": ProjectSettings.get_setting("application/config/name"),
         "godot": Engine.get_version_info().string,
         "protocol": PROTOCOL_VERSION,
+        "version": Boot.version(),
+        "min_client_version": _min_client_version,
         "uptime_sec": int(Time.get_unix_time_from_system() - _started_at),
         "connections": multiplayer.get_peers().size(),
         "players": _players.size(),
@@ -542,6 +549,10 @@ func c_login(nick: String, protocol: int) -> void:
         s_login_result.rpc_id(id, false, "게임 버전이 서버와 다릅니다 (%s). %s" % [
             "게임이 더 새 버전" if newer else "게임이 예전 버전",
             "서버 업데이트가 필요합니다" if newer else "새로고침하거나 최신 버전을 받아 주세요"])
+        return
+    var ver := String(_client_versions.get(id, "0.0.0"))
+    if Boot.compare(ver, _min_client_version) < 0:
+        s_login_result.rpc_id(id, false, "새 버전(%s 이상)이 나왔어요. 첫 화면의 업데이트 버튼으로 업데이트해 주세요" % _min_client_version)
         return
     nick = nick.strip_edges()
     var err := _validate_nick(nick)
@@ -866,6 +877,7 @@ func disconnect_from_server() -> void:
 
 
 func login(nick: String) -> void:
+    x_hello.rpc_id(1, Boot.version())      # 같은 연결에서 순서대로 도착 (reliable)
     c_login.rpc_id(1, nick, PROTOCOL_VERSION)
 
 
@@ -951,3 +963,13 @@ func _on_server_disconnected() -> void:
     multiplayer.multiplayer_peer = null
     _reset_client()
     disconnected.emit()
+
+
+# ---- 클라이언트 → 서버: 게임 버전 알림 (로그인 직전)
+# RPC 번호가 기존 함수들과 섞이지 않도록 이름이 맨 뒤로 정렬되고(x_) 파일 맨 끝에 둔다
+@rpc("any_peer", "call_remote", "reliable")
+func x_hello(version: String) -> void:
+    if not is_server:
+        return
+    var id := multiplayer.get_remote_sender_id()
+    _client_versions[id] = version.left(20)

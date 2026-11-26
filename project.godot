@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Small Party World"
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://scenes/app.tscn"
 config/features=PackedStringArray("4.7")
 config/icon="res://icons/icon.png"
@@ -24,8 +24,10 @@ boot_splash/use_filter=true
 
 [autoload]
 
+Boot="*res://scripts/core/boot.gd"
 Net="*res://scripts/net/net.gd"
 Sfx="*res://scripts/core/sfx.gd"
+Updater="*res://scripts/core/updater.gd"
 
 [display]
 
