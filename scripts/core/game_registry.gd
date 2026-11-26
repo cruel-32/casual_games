@@ -33,5 +33,7 @@ static func default_id() -> String:
 
 
 static func display_name(id: String) -> String:
+    if id == "random":
+        return "랜덤"
     var m = find(id)
     return m.display_name if m != null else id

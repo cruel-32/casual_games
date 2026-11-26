@@ -4,6 +4,7 @@ extends Control
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
+const Series := preload("res://scripts/core/series.gd")
 
 var app: Node
 var _title: Label
@@ -23,7 +24,10 @@ var _playing_overlay: Control
 var _s_name: LineEdit
 var _s_max: SpinBox
 var _s_bots: CheckBox
-var _s_game: OptionButton
+var _s_rounds: SpinBox
+var _s_round_box: GridContainer
+var _s_round_opts: Array[OptionButton] = []
+var _overlay_text: Label
 var _settings_mode := ""
 var _shown_game := ""
 
@@ -109,6 +113,8 @@ func _ready() -> void:
     gt.alignment = BoxContainer.ALIGNMENT_CENTER
     gh.add_child(gt)
     _game_name = UI.heading("", 22)
+    _game_name.clip_text = true
+    _game_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     gt.add_child(_game_name)
     _game_desc = UI.label("", 13, UI.MUTED)
     _game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -165,9 +171,9 @@ func _ready() -> void:
     var oh := UI.heading("게임 진행 중", 30)
     oh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     ov.add_child(oh)
-    var ol := UI.label("다른 플레이어가 돌아오기를 기다리는 중…", 18, UI.MUTED)
-    ol.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    ov.add_child(ol)
+    _overlay_text = UI.label("다른 플레이어가 돌아오기를 기다리는 중…", 18, UI.MUTED)
+    _overlay_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    ov.add_child(_overlay_text)
 
     Net.room_updated.connect(_refresh)
     Net.chat_received.connect(_on_chat)
@@ -204,23 +210,41 @@ func _refresh(r: Dictionary) -> void:
     _last_members = member_count
     _last_ready = my_ready
     var host := Net.is_host()
-    var module = GameRegistry.get_or_default(String(r.get("game", "")))
+    var first_choice := String(r.get("game", ""))
+    var module = GameRegistry.get_or_default(first_choice)
+    var rounds: int = int(r.get("rounds", 1))
     _title.text = String(r.name)
     for c in _state_badge_holder.get_children():
         c.queue_free()
     var playing: bool = r.state == "playing"
-    _state_badge_holder.add_child(UI.badge(module.display_name, module.accent))
+    _state_badge_holder.add_child(UI.badge("%d라운드" % rounds, UI.SECONDARY))
     _state_badge_holder.add_child(UI.badge("게임 중" if playing else "대기 중", UI.DANGER if playing else UI.GOOD))
     _playing_overlay.visible = playing
+    var ser: Dictionary = r.get("series", {})
+    if playing and not ser.is_empty():
+        _overlay_text.text = "라운드 %d/%d 진행 중 · 끝나면 이 방으로 돌아와요" % [int(ser.round), int(ser.total)]
+    else:
+        _overlay_text.text = "다른 플레이어가 돌아오기를 기다리는 중…"
 
     # 게임 카드
-    if _shown_game != module.id:
-        _shown_game = module.id
+    var card_id: String = first_choice if first_choice == Series.RANDOM else String(module.id)
+    if _shown_game != card_id:
+        _shown_game = card_id
         for c in _game_img_holder.get_children():
             c.queue_free()
-        _game_img_holder.add_child(UI.image_card(module.thumbnail(), Vector2(150, 86), module.accent))
-    _game_name.text = module.display_name
-    _game_desc.text = module.description
+        if card_id == Series.RANDOM:
+            _game_img_holder.add_child(UI.image_card(null, Vector2(150, 86), UI.YELLOW))
+        else:
+            _game_img_holder.add_child(UI.image_card(module.thumbnail(), Vector2(150, 86), module.accent))
+    var rg: Array = r.get("round_games", [first_choice])
+    var names := PackedStringArray()
+    for g in rg:
+        names.append(Series.choice_name(String(g)))
+    _game_name.text = Series.choice_name(first_choice) if rounds == 1 else "%d라운드 경기" % rounds
+    if rounds > 1:
+        _game_desc.text = "%s\n라운드마다 1등 3점 · 2등 2점 · 3등 1점, 합계 1위가 우승" % " → ".join(names)
+    else:
+        _game_desc.text = module.description if first_choice != Series.RANDOM else "게임을 무작위로 골라요"
 
     # 슬롯
     for c in _grid.get_children():
@@ -371,12 +395,10 @@ func _small_button(text: String, color: Color) -> Button:
 # ---------------------------------------------------------------- 설정
 func _build_settings(r: Dictionary, host: bool, module) -> void:
     # 방장이 입력 중일 때 덮어쓰지 않도록, 방장 화면은 값만 갱신하고 위젯은 유지
+    var rg: Array = r.get("round_games", [String(r.get("game", ""))])
     if host and _settings_mode == "host":
-        var gi := _module_index(module.id)
-        if _s_game.selected != gi:
-            _s_game.select(gi)
-        _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, module.max_players)
-        _s_bots.disabled = not module.supports_bots
+        _sync_round_widgets(rg)
+        _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, Series.max_players_for(rg))
         _s_max.set_value_no_signal(int(r.max))
         _s_bots.set_pressed_no_signal(bool(r.bot_fill))
         if not _s_name.has_focus():
@@ -386,53 +408,106 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
     for c in _settings_box.get_children():
         c.queue_free()
     if host:
-        var grow := UI.hbox(8)
-        _settings_box.add_child(grow)
-        grow.add_child(_field_label("게임"))
-        _s_game = OptionButton.new()
-        _s_game.custom_minimum_size.y = 42
-        _s_game.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        for m in GameRegistry.all():
-            _s_game.add_item(m.display_name)
-        _s_game.select(_module_index(module.id))
-        _s_game.item_selected.connect(func(i): Net.update_settings({"game": GameRegistry.all()[i].id}))
-        grow.add_child(_s_game)
-
+        # 1줄: 방 이름
         var nrow := UI.hbox(8)
         _settings_box.add_child(nrow)
         nrow.add_child(_field_label("방 이름"))
         _s_name = UI.line_edit("방 이름", String(r.name), Net.ROOM_NAME_MAX)
-        _s_name.custom_minimum_size.y = 42
+        _s_name.custom_minimum_size.y = 40
         _s_name.add_theme_font_size_override("font_size", 17)
         _s_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         _s_name.text_submitted.connect(func(t): Net.update_settings({"name": t}))
         _s_name.focus_exited.connect(func(): Net.update_settings({"name": _s_name.text}))
         nrow.add_child(_s_name)
 
+        # 2줄: 라운드 수(1~5) · 최대 인원 · 봇 채우기
         var mrow := UI.hbox(8)
         _settings_box.add_child(mrow)
-        mrow.add_child(_field_label("최대 인원"))
+        _s_rounds = SpinBox.new()
+        _s_rounds.min_value = Series.MIN_ROUNDS
+        _s_rounds.max_value = Series.MAX_ROUNDS
+        _s_rounds.value = rg.size()
+        _s_rounds.suffix = "라운드"
+        _s_rounds.custom_minimum_size = Vector2(128, 40)
+        _s_rounds.value_changed.connect(func(v): Net.update_settings({"rounds": int(v)}))
+        mrow.add_child(_s_rounds)
         _s_max = SpinBox.new()
         _s_max.min_value = 2
-        _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, module.max_players)
+        _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, Series.max_players_for(rg))
         _s_max.value = int(r.max)
         _s_max.suffix = "명"
-        _s_max.custom_minimum_size = Vector2(110, 42)
+        _s_max.custom_minimum_size = Vector2(104, 40)
         _s_max.value_changed.connect(func(v): Net.update_settings({"max": int(v)}))
         mrow.add_child(_s_max)
         _s_bots = CheckBox.new()
         _s_bots.text = "봇 채우기"
-        _s_bots.add_theme_font_size_override("font_size", 17)
+        _s_bots.add_theme_font_size_override("font_size", 16)
         _s_bots.button_pressed = bool(r.bot_fill)
-        _s_bots.disabled = not module.supports_bots
         _s_bots.toggled.connect(func(on): Net.update_settings({"bot_fill": on}))
         mrow.add_child(_s_bots)
+
+        # 라운드별 게임 (같은 게임 여러 번 / 랜덤) — 두 칸씩
+        var grid := GridContainer.new()
+        grid.columns = 2
+        grid.add_theme_constant_override("h_separation", 8)
+        grid.add_theme_constant_override("v_separation", 6)
+        _settings_box.add_child(grid)
+        _s_round_box = grid
+        _s_round_opts.clear()
+        _sync_round_widgets(rg)
     else:
+        var list := PackedStringArray()
+        for i in rg.size():
+            list.append("%d. %s" % [i + 1, Series.choice_name(String(rg[i]))])
+        var rl := UI.label("\n".join(list), 15, UI.INK)
+        _settings_box.add_child(rl)
         var chips := UI.hbox(6)
         _settings_box.add_child(chips)
         chips.add_child(UI.badge("최대 %d명" % int(r.max), UI.SECONDARY))
         chips.add_child(UI.badge("봇 채우기 %s" % ("ON" if r.bot_fill else "OFF"), UI.GOOD if r.bot_fill else UI.MUTED))
         _settings_box.add_child(UI.label("설정은 방장만 바꿀 수 있어요", 13, UI.MUTED))
+
+
+## 방장 화면: 라운드 수에 맞춰 라운드별 게임 선택 상자를 만들고 값 맞추기
+func _sync_round_widgets(rg: Array) -> void:
+    if not _s_rounds.get_line_edit().has_focus():
+        _s_rounds.set_value_no_signal(rg.size())
+    while _s_round_opts.size() > rg.size():
+        var o: OptionButton = _s_round_opts.pop_back()
+        o.get_parent().queue_free()
+    while _s_round_opts.size() < rg.size():
+        var i := _s_round_opts.size()
+        var row := UI.hbox(6)
+        row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _s_round_box.add_child(row)
+        var l := UI.label("%dR" % (i + 1), 15, UI.MUTED)
+        l.custom_minimum_size.x = 26
+        l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        row.add_child(l)
+        var o := OptionButton.new()
+        o.custom_minimum_size.y = 36
+        o.clip_text = true
+        o.add_theme_font_size_override("font_size", 15)
+        o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        for m in GameRegistry.all():
+            o.add_item(m.display_name)
+        o.add_item("랜덤")
+        o.item_selected.connect(func(idx): Net.update_settings({"round_game": [i, _choice_at(idx)]}))
+        row.add_child(o)
+        _s_round_opts.append(o)
+    for i in rg.size():
+        var idx := _choice_index(String(rg[i]))
+        if _s_round_opts[i].selected != idx:
+            _s_round_opts[i].select(idx)
+
+
+func _choice_at(idx: int) -> String:
+    var mods: Array = GameRegistry.all()
+    return mods[idx].id if idx < mods.size() else Series.RANDOM
+
+
+func _choice_index(id: String) -> int:
+    return GameRegistry.all().size() if id == Series.RANDOM else _module_index(id)
 
 
 func _field_label(text: String) -> Label:

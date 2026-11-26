@@ -370,7 +370,13 @@ func _start_game() -> void:
 		game.net_role = PartyGame.NetRole.SERVER
 	elif not cfg.is_empty():
 		game.net_role = PartyGame.NetRole.CLIENT
+		# 여러 라운드: 다음 라운드가 시작되면 경기 씬을 새로 연다
+		Net.game_started.connect(_on_next_round)
 	add_child(game)
+
+
+func _on_next_round(_room: Dictionary) -> void:
+	get_tree().change_scene_to_file("res://scenes/match.tscn")
 
 
 # ---------------------------------------------------------------- 메뉴 배경

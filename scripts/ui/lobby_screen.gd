@@ -149,7 +149,9 @@ func _make_card(r: Dictionary) -> Control:
     name_l.clip_text = true
     name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     info.add_child(name_l)
-    info.add_child(UI.label("%s  ·  방장 %s" % [module.display_name, r.host_nick], 15, UI.MUTED))
+    var rounds := int(r.get("rounds", 1))
+    var gname := GameRegistry.display_name(String(r.get("game", "")))
+    info.add_child(UI.label("%s%s  ·  방장 %s" % [gname, ("" if rounds <= 1 else " 외 · %d라운드" % rounds), r.host_nick], 15, UI.MUTED))
     var chips := UI.hbox(6)
     info.add_child(chips)
     chips.add_child(UI.badge("게임 중" if playing else ("가득 참" if full else "대기 중"),

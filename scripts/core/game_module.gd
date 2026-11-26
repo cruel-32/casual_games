@@ -6,6 +6,9 @@ extends RefCounted
 ##   2. 게임 스크립트: PartyGame 을 상속 (scripts/core/party_game.gd)
 ##   3. games/<게임id>/module.gd: 이 파일을 상속해 _init() 에서 정보 채우기
 ##   4. scripts/core/game_registry.gd 의 MODULES 에 module.gd 한 줄 추가
+##   5. 경기가 끝나면 서버에서 report_result(placements) 로 순위를 알린다 (PartyGame.report_result)
+##      → 라운드 승점(1등 3·2등 2·3등 1)과 여러 라운드 합계는 scripts/core/series.gd 가 처리
+##      팀 게임은 한 순위 항목에 팀원 전부를 넣는다
 ##
 ## 서버(로비)도 이 정보를 읽으므로, 이 파일과 module.gd 에서는 게임 스크립트를 preload 하지 않는다
 ## (게임 스크립트는 경기를 시작할 때 create_game() 에서 불러온다).

@@ -4,6 +4,7 @@ extends Control
 var game: Node
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
+const SeriesPanel := preload("res://scripts/ui/series_panel.gd")
 
 var _top: Label
 var _center: Label
@@ -92,6 +93,9 @@ func _process(delta: float) -> void:
     var total: int = game.fighters.size()
     var my_kills: int = game.human.kills if game.human else 0
     _top.text = "생존 %d / %d     %s     킬 %d" % [alive, total, _fmt_time(game.elapsed), my_kills]
+    var ser: Dictionary = game.series()
+    if int(ser.get("total", 1)) > 1:
+        _top.text = "라운드 %d/%d     " % [int(ser.round), int(ser.total)] + _top.text
     _place_centered(_top, 14 + 24)
 
     var center := ""
@@ -355,7 +359,10 @@ func _build_result_box() -> void:
     _result_box.add_to_group("touch_block")
     add_child(_result_box)
     if game.is_online_match():
-        _add_result_button("방으로 돌아가기", UI.PRIMARY, func(): game.leave_to_menu())
+        # 온라인: 라운드 결과·합계 점수·다음 라운드 레디 (모든 게임 공통 패널)
+        var panel := SeriesPanel.new()
+        panel.game = game
+        add_child(panel)
     else:
         _add_result_button("다시 하기", UI.PRIMARY, func(): game.restart_offline())
         _add_result_button("메인으로", UI.SECONDARY, func(): game.leave_to_menu())
@@ -371,7 +378,7 @@ func _add_result_button(text: String, color: Color, cb: Callable) -> void:
 
 func _update_result_box() -> void:
     var ended: bool = game.state == PartyGame.State.ENDED
-    _result_box.visible = ended
+    _result_box.visible = ended and not game.is_online_match()
     if ended:
         if not _was_ended:
             Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # 버튼을 누를 수 있게 마우스 풀기

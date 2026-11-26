@@ -131,6 +131,25 @@ func add_common_ui(layer: CanvasLayer) -> void:
         layer.add_child(ROTATE_HINT.new())
 
 
+## 서버: 경기가 끝났을 때 순위를 알린다 → 라운드 승점(1등 3·2등 2·3등 1) 계산 (scripts/core/series.gd)
+##   placements = [{"rank": 1, "members": [participant(f)], "team": ""}, ...]
+##   팀 게임은 한 항목의 members 에 팀원 전부를 넣고 team 에 팀 이름. 동점은 같은 rank
+func report_result(placements: Array) -> void:
+    if is_server():
+        Net.on_match_result(room_id(), placements)
+
+
+## 순위표에 넣을 참가자 정보 (사람은 접속 id, 봇은 이름으로 라운드 사이에도 같은 사람으로 센다)
+static func participant(f: Fighter) -> Dictionary:
+    var bot := f.peer_id == 0
+    return {"key": ("b:" + f.display_name) if bot else ("p:%d" % f.peer_id), "name": f.display_name, "bot": bot}
+
+
+## 시리즈(여러 라운드) 정보 — 온라인 방이면 Net.room.series, 아니면 빈 값
+func series() -> Dictionary:
+    return Net.room.get("series", {}) if is_online_match() else {}
+
+
 ## 결과 화면에서 나가기: 온라인이면 방으로, 오프라인이면 메인 메뉴로
 func leave_to_menu() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -147,7 +166,8 @@ func _unhandled_input(event: InputEvent) -> void:
     # 결과 화면은 HUD 버튼으로 처리. Enter 는 보조 단축키 (Space 는 점프와 겹쳐 제외)
     var key := event as InputEventKey
     if state == State.ENDED and key and key.pressed and not key.echo \
-            and (key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER):
+            and (key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER) \
+            and (not is_online_match() or String(series().get("phase", "final")) == "final"):
         leave_to_menu()
         return
     if not is_online_match() and event.is_action_pressed(&"restart"):

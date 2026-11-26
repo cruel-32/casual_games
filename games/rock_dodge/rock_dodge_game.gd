@@ -51,6 +51,7 @@ var rocks: Array = []
 var elapsed := 0.0
 var winner: Fighter = null
 var human_death_time := -1.0
+var _death_elapsed := {}         # 서버: slot -> 탈락 시각 (순위 계산용)
 var last_intensify_time := -10.0     # 탈락자 발생 → "낙석 증가!" 알림용
 var items: Array = []
 var kill_feed: Array = []            # [{text, color, time}]
@@ -288,11 +289,13 @@ func _check_end() -> void:
         if is_server():
             broadcast(["end", winner.slot if winner else -1, elapsed])
             print("[server] 경기 종료 #%d 우승 %s" % [room_id(), winner.display_name if winner else "-"])
+            report_result(_placements())
 
 
 func _on_fighter_died(f: Fighter) -> void:
     if f == human:
         human_death_time = elapsed
+    _death_elapsed[f.slot] = elapsed
     var now := Time.get_ticks_msec() * 0.001
     var a := f.last_attacker
     var credited := a != null and a != f and now - f.last_attacker_time <= KILL_CREDIT_TIME
@@ -307,6 +310,26 @@ func _on_fighter_died(f: Fighter) -> void:
         _feed("%s 낙석" % f.display_name, Color(1.0, 0.5, 0.45) if f == human else Color(0.85, 0.85, 0.85))
     if state == State.PLAYING:
         last_intensify_time = elapsed
+
+
+## 순위: 살아남은 사람 1등, 나머지는 늦게 탈락할수록 높은 순위 (같은 순간 탈락은 같은 순위)
+func _placements() -> Array:
+    var order := fighters.duplicate()
+    order.sort_custom(func(a: Fighter, b: Fighter):
+        var ta: float = INF if not a.dead else float(_death_elapsed.get(a.slot, 0.0))
+        var tb: float = INF if not b.dead else float(_death_elapsed.get(b.slot, 0.0))
+        return ta > tb)
+    var out := []
+    var rank := 0
+    var prev := -1.0
+    for i in order.size():
+        var f: Fighter = order[i]
+        var t: float = INF if not f.dead else float(_death_elapsed.get(f.slot, 0.0))
+        if i == 0 or absf(t - prev) > 0.05:
+            rank = i + 1
+        prev = t
+        out.append({"rank": rank, "members": [participant(f)], "team": ""})
+    return out
 
 
 func on_rock_landed(rock: FallingRock) -> void:

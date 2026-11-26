@@ -81,6 +81,15 @@ const SERVER_LIST := [
    웹 게임 페이지(`spw.cloudish.cloud`)는 웹 빌드 전까지 `deploy/web-placeholder/index.html`을 `/srv/small_party_world/web/`에 넣어 두기
 6. 업데이트: 코드 변경 후 `docker compose up -d --build`
 
+### 여러 라운드 경기 (시리즈)
+- 방장이 대기룸에서 **라운드 수(1~5)** 와 **라운드별 게임**(같은 게임 여러 번 가능, "랜덤" 가능)을 정한다
+- 게임을 시작하면 1라운드 → 끝나면 결과 화면에서 **다음 라운드 레디** (모두 레디하거나 30초 지나면 다음 라운드 자동 시작)
+- 라운드 승점: **1등 3점 · 2등 2점 · 3등 1점** (모든 게임 동일, 동점은 같은 점수). 팀 게임은 팀 순위로 팀원 모두가 같은 점수
+- 마지막 라운드가 끝나면 합계 1위가 최종 우승(같으면 공동 우승) → "방으로 돌아가기"
+- 결과 화면에서 "방으로 나가기"를 누르면 남은 라운드에서 빠진다
+- 서버 규칙: `scripts/core/series.gd`, 결과 화면: `scripts/ui/series_panel.gd`
+- 새 게임은 경기가 끝날 때 서버에서 `report_result(placements)` 를 부르기만 하면 된다 (`scripts/core/party_game.gd`)
+
 ### 버전 관리·업데이트
 버전은 저장소 맨 위의 `release.json` 한 곳에서 관리한다.
 
