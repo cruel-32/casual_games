@@ -30,9 +30,9 @@ const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 @export var tap_cooldown := 0.3            # 탭은 제자리 밀기 대신 쿨타임이 짧다
 @export var charge_cooldown_min := 0.6
 @export var charge_cooldown_max := 1.8
-@export var dash_distance_min := 1.4
-@export var dash_distance_max := 5.0
-@export var push_reach := 1.9
+@export var dash_distance_min := 1.9
+@export var dash_distance_max := 6.8
+@export var push_reach := 2.5
 @export var tap_lock_time := 0.3            # 탭 밀치기 동안 제자리 정지
 @export var dash_end_lock_min := 0.25       # 차징 돌진 후 제자리 정지 (차징 0%)
 @export var dash_end_lock_max := 0.45       # 〃 (풀차징)
@@ -183,6 +183,7 @@ func _ready() -> void:
     _build_item_visuals()
     _build_arrow()
     _build_name_tag()
+    _build_team_ring()
     if is_human:
         _build_camera()
         if not touch_device():
@@ -286,7 +287,10 @@ func _build_mannequin() -> void:
     var lk: int = (look if look >= 0 else slot) % HAIR_STYLES.size()
     skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 멜빵바지 (캐릭터 색)
     var light := body_color.get_luminance() > 0.8
-    var shirt := Toon.make(Color(0.62, 0.78, 0.92) if light else Color(0.98, 0.96, 0.9), {"rim_strength": 0.4, "shade_softness": 0.05})
+    var shirt_color := Color(0.62, 0.78, 0.92) if light else Color(0.98, 0.96, 0.9)
+    if team >= 0:
+        shirt_color = body_color.lerp(Color.WHITE, 0.3)     # 팀전: 티셔츠도 팀 색 (위아래 모두 팀 색)
+    var shirt := Toon.make(shirt_color, {"rim_strength": 0.4, "shade_softness": 0.05})
     var skin := Toon.make(SKIN_TONES[lk], {"rim_strength": 0.3, "shade_softness": 0.08})
     var hair := Toon.make(HAIR_COLORS[lk], {"rim_strength": 0.5, "shade_softness": 0.06})
     var shoe := Toon.make(Color(0.97, 0.96, 0.93), {"rim_strength": 0.3, "shade_softness": 0.05})
@@ -577,6 +581,34 @@ func _build_name_tag() -> void:
     add_child(name_tag)
 
 
+## 팀전: 발밑에 팀 색 고리 (위에서 내려다봐도 팀이 한눈에 보이게)
+var team_ring: MeshInstance3D
+
+
+func _build_team_ring() -> void:
+    if team < 0:
+        return
+    var col := body_color          # 팀전에서는 게임이 body_color 를 팀 색으로 정한다
+    var torus := TorusMesh.new()
+    torus.inner_radius = 0.5
+    torus.outer_radius = 0.66
+    torus.rings = 32
+    torus.ring_segments = 6
+    var m := StandardMaterial3D.new()
+    m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    m.albedo_color = Color(col.r, col.g, col.b, 0.85)
+    m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    m.no_depth_test = false
+    team_ring = MeshInstance3D.new()
+    team_ring.name = "TeamRing"
+    team_ring.mesh = torus
+    team_ring.material_override = m
+    team_ring.scale = Vector3(1.0, 0.15, 1.0)        # 납작하게
+    team_ring.position.y = 0.04
+    team_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    add_child(team_ring)
+
+
 func _build_camera() -> void:
     pitch_pivot = _pivot(self, Vector3(0, 1.3, 0))
     pitch_pivot.name = "PitchPivot"
@@ -853,9 +885,8 @@ func _release_push() -> void:
     charging = false
     if is_human:
         Sfx.charge_stop()
-    if tap:
-        _sfx("push")
-    else:
+    _voice("push", 3)          # 기합 소리 ("핫!", "얍!", "에잇!")
+    if not tap:
         _sfx("dash", 0.0, 0.9 + c * 0.25)
     push_tap = tap
     push_power = c
@@ -870,7 +901,7 @@ func _release_push() -> void:
         lock_after = maxf(tap_lock_time - dash_time, 0.0)
         cooldown_total = tap_cooldown * cooldown_mult()
     else:
-        dash_time = lerpf(0.12, 0.26, c)
+        dash_time = lerpf(0.14, 0.30, c)
         dash_speed = dash_distance_for(c) / dash_time
         cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c) * cooldown_mult()
         lock_after = lerpf(dash_end_lock_min, dash_end_lock_max, c)
@@ -914,7 +945,7 @@ func _check_push_hits() -> void:
         var stun := (0.45 if push_tap else lerpf(0.8, 1.8, push_power)) * glove_stun_mult()
         if _deliver_push(o, dir * force + Vector3.UP * lift, stun):
             if o.remote:
-                Sfx.play_at("hit", o.global_position, self)     # 상대 PC에서 맞는 소리를 내 PC에서도
+                o._voice("hit", 3)     # 상대 PC에서 맞는 목소리를 내 PC에서도
             dash_timer = 0.0
             knock += -dir * 1.5
             shake = maxf(shake, 0.3)
@@ -939,7 +970,8 @@ func _deliver_push(o: Fighter, impulse: Vector3, stun: float) -> bool:
 func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null, sound: String = "hit") -> bool:
     if dead or is_invulnerable():
         return false
-    _sfx(sound, 0.0, 1.0 + randf_range(-0.04, 0.04))
+    _sfx(sound, -6.0, 1.0 + randf_range(-0.04, 0.04))     # 맞는 타격음은 작게 깔고
+    _voice("hit", 3)                                      # 비명 ("윽!", "으악!", "아얏!")
     if stun >= 1.2:
         _sfx("dizzy")
     knock = Vector3(impulse.x, 0.0, impulse.z)
@@ -999,7 +1031,7 @@ func die() -> void:
         return
     dead = true
     charging = false
-    _sfx("die")
+    _voice("die", 2)          # 떨어지며 지르는 비명
     if is_human and not remote:
         Sfx.charge_stop()
         Sfx.duck(3.0)
@@ -1015,6 +1047,8 @@ func die() -> void:
     shake = 1.0
     helmet_mi.visible = false
     shield_mi.visible = false
+    if team_ring:
+        team_ring.visible = false
     died.emit(self)
 
 
@@ -1089,6 +1123,20 @@ func _check_wall_slam() -> void:
                 _popup(global_position, "벽꽝!", Color(1.0, 0.55, 0.2))
                 _sfx("wall")
                 return
+
+
+## 캐릭터 목소리: 외형 번호마다 음높이가 달라서 누가 소리 냈는지 구분된다
+const VOICE_PITCH: Array[float] = [1.0, 1.14, 0.9, 1.07, 0.86, 1.2, 0.95, 1.1]
+
+
+func voice_pitch() -> float:
+    var lk: int = (look if look >= 0 else maxi(slot, 0)) % VOICE_PITCH.size()
+    return VOICE_PITCH[lk]
+
+
+## kind: "push" / "hit" / "die", n: 변형 개수 (audio/sfx/voice_<kind>_<1..n>.wav)
+func _voice(kind: String, n: int) -> void:
+    _sfx("voice_%s_%d" % [kind, randi() % n + 1], 0.0, voice_pitch())
 
 
 ## 소리: 내 캐릭터는 화면 전체로, 다른 캐릭터는 그 위치에서 (멀면 작게)

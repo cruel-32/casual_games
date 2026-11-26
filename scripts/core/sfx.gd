@@ -23,6 +23,10 @@ const MIX := {
     "pickup": [-4.0, 0.03], "pickup_helmet": [-4.0, 0.0], "pickup_charge": [-4.0, 0.0],
     "pickup_cooldown": [-4.0, 0.0], "pickup_glove": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
     "shield_off": [-6.0, 0.0], "ready_ping": [-12.0, 0.0], "wind": [-10.0, 0.08],
+    # 캐릭터 목소리 (tools/audio/gen_voice.py) — 음높이는 캐릭터마다 다르게 Fighter.voice_pitch()
+    "voice_push_1": [-5.0, 0.04], "voice_push_2": [-5.0, 0.04], "voice_push_3": [-5.0, 0.04],
+    "voice_hit_1": [-3.0, 0.04], "voice_hit_2": [-3.0, 0.04], "voice_hit_3": [-3.0, 0.04],
+    "voice_die_1": [-2.0, 0.03], "voice_die_2": [-2.0, 0.03],
 }
 const BGM_DB := {"menu": -11.0, "match": -13.0}
 
