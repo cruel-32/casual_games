@@ -273,13 +273,10 @@ func _update_banner(t: float) -> void:
         else:
             _banner.text = "따라 쳐요!" if mine else "상대가 따라 치는 중"
         _sub.text = "같은 타이밍, 같은 북으로 · 피버는 끝 박자에 떼요" if mine else ""
-        # 사람 공격의 개수 결과
-        if game.view_cnt.has(i):
+        # 내 공격의 개수 결과 (안내 둘째 줄에 — 다른 글과 겹치지 않게)
+        if game.view_cnt.has(i) and int(game.view_attacker.get(i, -1)) == me and me >= 0:
             var c: Array = game.view_cnt[i]
-            _spec_box.visible = true
-            var who := int(game.view_attacker.get(i, -1))
-            var name: String = "내" if who == me else (game.fighters[who].display_name + " 님" if who >= 0 else "")
-            _spec.text = ("%s 공격 개수 정확!" % name) if int(c[1]) == 0 else ("%s 공격 개수 틀림 −%d · 컴퓨터가 개수를 맞췄어요" % [name, int(c[1])])
+            _sub.text = "내 공격 개수 정확!" if int(c[1]) == 0 else "내 공격 개수가 달라서 −%d · 상대에겐 컴퓨터가 개수를 맞춰 보냈어요" % int(c[1])
     else:
         _banner.add_theme_color_override("font_color", UI.CREAM)
         var nx := int(ph[2])
@@ -484,6 +481,15 @@ func _draw_lane_notes(r: Rect2, i: int, response: bool, small: bool, t: float) -
         draw_line(Vector2(x, r.position.y + 4), Vector2(x, r.end.y - 4), Color(1, 1, 1, (0.6 if edge else 0.15) * (0.6 if small else 1.0)), 3.0 if edge else 1.5)
     if small:
         draw_line(Vector2(hit_x, r.position.y + 4), Vector2(hit_x, r.end.y - 4), Color(1, 1, 1, 0.5), 2.0)
+    # 지금 차례 구간(내가 칠 마디)만 밝게, 그 앞뒤는 어둡게 → 어디부터 어디까지 치는지 한눈에
+    var xs := clampf(hit_x + (base - t) * px, r.position.x, r.end.x)
+    var xe2 := clampf(hit_x + (end_t - t) * px, r.position.x, r.end.x)
+    if xs > r.position.x + 4:
+        draw_rect(Rect2(Vector2(r.position.x + 4, r.position.y + 4), Vector2(xs - r.position.x - 4, r.size.y - 8)), Color(0, 0, 0, 0.45))
+    if xe2 < r.end.x - 4:
+        draw_rect(Rect2(Vector2(xe2, r.position.y + 4), Vector2(r.end.x - 4 - xe2, r.size.y - 8)), Color(0, 0, 0, 0.45))
+    if xe2 - xs > 1.0:
+        draw_rect(Rect2(Vector2(xs, r.position.y + 4), Vector2(xe2 - xs, r.size.y - 8)), Color(1, 1, 1, 0.06 if small else 0.12))
     var notes: Array = game.view_notes.get(i, [])
     if response and not game.view_final.has(i):
         return
@@ -540,12 +546,12 @@ var _chip_prev := [-1, -1]
 var _chip_turn := -1
 var _chip_pop := [-10.0, -10.0]
 
-## 남은 개수 (내 공격일 때만): 북 버튼 위에 그 북 색 칩이 쌓여 있고, 칠 때마다 맨 위 칩이 빠진다. 넘치면 빨간 '넘침' 칩
+## 남은 개수 (내 공격일 때만): 화면 가운데(안내 글 위) 한 줄에 둥 칩·딱 칩. 칠 때마다 칩이 하나씩 튀어 오르며 빠진다
+##   다 치면 '끝!', 더 치면 칩 없이 '넘침!' 글자만
 func _draw_chips(t: float) -> void:
     var ph: Array = game.phase_at(t)
     var i := int(ph[0])
     var kind: String = ph[1]
-    # 칩은 내가 공격할 때만 (상대 공격의 개수는 알 필요 없음)
     if i < 0 or not (kind == "ready_attack" or kind == "attack") or not game.view_spec.has(i) \
             or game.my_slot < 0 or int(game.view_attacker.get(i, -2)) != game.my_slot:
         _chip_turn = -1
@@ -557,8 +563,20 @@ func _draw_chips(t: float) -> void:
         _chip_turn = i
         _chip_prev = [-1, -1]
     var sc := _screen()
-    var bs := clampf(sc.y * 0.2, 110.0, 170.0)
     var font := get_theme_default_font()
+    var cw := 18.0
+    var ch := 30.0
+    var gap := 5.0
+    var y := _mini_rect().position.y - 118.0
+    # 두 묶음의 너비를 재서 가운데 정렬
+    var widths := []
+    for lane in 2:
+        var need := int(spec["l" if lane == 0 else "r"])
+        widths.append(44.0 + maxf(need, 1) * (cw + gap) + 70.0)
+    var total: float = widths[0] + widths[1] + 30.0
+    var panel := Rect2(Vector2(sc.x * 0.5 - total * 0.5 - 12, y - 10), Vector2(total + 24, ch + 20))
+    draw_style_box(UI.box(Color(0.08, 0.1, 0.18, 0.78), 14, 0, Color(1, 1, 1, 0.3), 2, 0), panel)
+    var x := sc.x * 0.5 - total * 0.5
     for lane in 2:
         var key := "l" if lane == 0 else "r"
         var need := int(spec[key])
@@ -569,38 +587,27 @@ func _draw_chips(t: float) -> void:
             _chip_pop[lane] = now
         _chip_prev[lane] = left
         var col := DON if lane == 0 else KA
-        var bx := 24.0 if lane == 0 else sc.x - bs - 24.0
-        var w := bs * 0.78
-        var h := 24.0
-        var x := bx + (bs - w) * 0.5
-        var y0 := sc.y - bs - 22.0 - 12.0           # 버튼 바로 위부터 위로 쌓음
-        var per_col := 8
+        var nm := "둥" if lane == 0 else "딱"
+        draw_string_outline(font, Vector2(x, y + ch - 6), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, 6, UI.INK)
+        draw_string(font, Vector2(x, y + ch - 6), nm, HORIZONTAL_ALIGNMENT_LEFT, -1, 24, col.lightened(0.25))
+        var cx := x + 40.0
         for k in left:
-            var col_i := k / per_col
-            var row := k % per_col
-            var cw := w if left <= per_col else w * 0.5 - 2.0
-            var r := Rect2(Vector2(x + col_i * (w * 0.5 + 2.0), y0 - (row + 1) * (h + 4)), Vector2(cw, h))
-            _chip(r, col)
-        # 방금 빠진 칩: 위로 튀며 사라짐
+            _chip(Rect2(Vector2(cx + k * (cw + gap), y), Vector2(cw, ch)), col)
         var age: float = now - float(_chip_pop[lane])
         if age < 0.3:
-            var r := Rect2(Vector2(x, y0 - (left + 1) * (h + 4) - age * 160.0), Vector2(w, h))
-            _chip(r, Color(col, 1.0 - age / 0.3))
-        # 넘친 만큼 빨간 칩
-        for k in over:
-            var r := Rect2(Vector2(x, y0 - (k + 1) * (h + 4)), Vector2(w, h))
-            _chip(r, Color(0.9, 0.2, 0.2))
-        # 맨 위 숫자 (남은 개수)
-        var top_y := y0 - maxi(mini(left, per_col), over) * (h + 4) - 10.0
-        var label := ("+%d 넘침!" % over) if over > 0 else ("%d" % left if left > 0 else "끝!")
-        var lc := Color(1, 0.4, 0.4) if over > 0 else (Color.WHITE if left > 0 else UI.YELLOW)
-        draw_string_outline(font, Vector2(bx, top_y), label, HORIZONTAL_ALIGNMENT_CENTER, bs, 26, 8, UI.INK)
-        draw_string(font, Vector2(bx, top_y), label, HORIZONTAL_ALIGNMENT_CENTER, bs, 26, lc)
+            _chip(Rect2(Vector2(cx + left * (cw + gap), y - age * 120.0), Vector2(cw, ch)), Color(col, 1.0 - age / 0.3))
+        var label := "넘침!" if over > 0 else ("끝!" if left == 0 else "")
+        if label != "":
+            var lc := Color(1, 0.4, 0.4) if over > 0 else UI.YELLOW
+            var lx := cx + left * (cw + gap) + 4.0
+            draw_string_outline(font, Vector2(lx, y + ch - 6), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, 6, UI.INK)
+            draw_string(font, Vector2(lx, y + ch - 6), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, lc)
+        x += float(widths[lane]) + 30.0
 
 
 ## 칩 하나: 두툼한 블록 + 윗면 광택
 func _chip(r: Rect2, col: Color) -> void:
-    draw_rect(Rect2(r.position + Vector2(0, 4), r.size), Color(0, 0, 0, 0.3 * col.a))
+    draw_rect(Rect2(r.position + Vector2(0, 3), r.size), Color(0, 0, 0, 0.3 * col.a))
     draw_rect(r, col)
-    draw_rect(Rect2(r.position + Vector2(3, 3), Vector2(r.size.x - 6, 6)), Color(1, 1, 1, 0.35 * col.a))
-    draw_rect(r, Color(UI.INK, col.a), false, 3.0)
+    draw_rect(Rect2(r.position + Vector2(3, 3), Vector2(r.size.x - 6, 5)), Color(1, 1, 1, 0.35 * col.a))
+    draw_rect(r, Color(UI.INK, col.a), false, 2.5)

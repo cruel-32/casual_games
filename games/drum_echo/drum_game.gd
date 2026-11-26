@@ -860,66 +860,121 @@ func _check_hold_miss(ht: float) -> void:
             _show_judge("miss")
 
 
-## 카메라: 공격(쉼 포함) 중이면 공격팀 쪽, 따라 치기(쉼 포함) 중이면 따라 치는 팀들 쪽으로 부드럽게 옮긴다
+## 카메라 연출 (음악방송처럼): 상황에 맞는 샷을 골라 2.5~4.5초마다 컷을 바꾸고, 샷 안에서는 천천히 돌거나 다가간다
+##   공격: 공격자 클로즈업 · 팀 미디엄 · 아래에서 올려다보기 · 옆에서 / 따라 치기: 팀 미디엄 · 한 명 클로즈업 · 위에서 내려다보기 · 전체
+##   쉼·끝: 전체 · 진행자 클로즈업 · 이긴 팀
+##   보는 점을 몸 아래쪽에 둬서 인물이 화면 위쪽(아래 UI에 안 가리게)에 오도록
+const SHOTS := {
+    "close": {"yaw": 0.3, "pitch": 0.14, "dist": 4.0, "spread": 0.0, "look": 0.75, "orbit": 0.05, "dolly": 0.025, "fov": 46.0},
+    "medium": {"yaw": 0.22, "pitch": 0.26, "dist": 5.4, "spread": 1.5, "look": 0.55, "orbit": 0.03, "dolly": 0.02, "fov": 50.0},
+    "low": {"yaw": 0.3, "pitch": 0.06, "dist": 4.8, "spread": 1.2, "look": 1.05, "orbit": 0.04, "dolly": 0.0, "fov": 52.0},
+    "high": {"yaw": 0.15, "pitch": 0.8, "dist": 7.0, "spread": 1.3, "look": 0.3, "orbit": 0.06, "dolly": 0.02, "fov": 48.0},
+    "side": {"yaw": 0.95, "pitch": 0.2, "dist": 4.6, "spread": 1.0, "look": 0.6, "orbit": -0.06, "dolly": 0.0, "fov": 48.0},
+}
+var _shot := {}
+var _shot_t := 0.0
+var _shot_len := 3.0
+var _shot_rng := RandomNumberGenerator.new()
+
+
 func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
     if _camera == null:
         return
-    var want_pos := _overview_pos
-    var want_look := _overview_look
-    var h: float = terrain.get_height(0, 0) if terrain else 0.0
-    var focus := []
     var i := int(cur[0])
+    var kind: String = cur[1]
+    # 지금 비출 무리와 고를 샷
+    var group: Array = []
+    var picks: Array = []               # [샷 이름, 무게]
     if state == State.ENDED:
         if teams >= 2 and not final_rank.is_empty():
-            focus = fighters.filter(func(f): return f.team == int(final_rank[0].get("team", -1)))
-    elif t0 >= 0.0 and ht >= 0.0 and i >= 0:
-        if cur[1] == "attack" or cur[1] == "ready_attack":
-            if who >= 0:
-                var tm := fighters[who].team
-                focus = fighters.filter(func(f): return f.team == tm) if tm >= 0 else [fighters[who]]
-            else:
-                focus = [_hosts[0]]
+            group = fighters.filter(func(f): return f.team == int(final_rank[0].get("team", -1)))
+        picks = [["medium", 2], ["low", 1]]
+    elif t0 >= 0.0 and ht >= 0.0 and i >= 0 and (kind == "attack" or kind == "ready_attack"):
+        if who >= 0:
+            var tm := fighters[who].team
+            group = fighters.filter(func(f): return f.team == tm) if tm >= 0 else [fighters[who]]
+            picks = [["close", 3], ["medium", 2], ["low", 1], ["side", 1]] if kind == "attack" else [["medium", 2], ["close", 1]]
         else:
-            focus = fighters.filter(func(f): return is_responder(f.slot, i))
-    var key := str(focus.map(func(f): return f.get_instance_id()))
-    if key != _focus_key:
-        _focus_key = key
-        _focus_since = Time.get_ticks_msec() / 1000.0
-    if not focus.is_empty() and focus.size() < fighters.size():
-        var c := Vector3.ZERO
-        for f: Node3D in focus:
-            c += f.global_position
-        c /= float(focus.size())
-        var spread := 0.0
-        for f: Node3D in focus:
-            spread = maxf(spread, Vector2(f.global_position.x - c.x, f.global_position.z - c.z).length())
-        var dir := (_overview_pos - c)
-        dir.y = 0.0
-        dir = dir.normalized()
-        var dist := 4.8 + spread * 1.3
-        want_look = Vector3(c.x, h + 0.55, c.z)        # 보는 점을 낮춰 캐릭터가 화면 위쪽(아래 UI에 안 가리게)
-        want_pos = want_look + dir * dist + Vector3(0, 1.4 + dist * 0.22, 0)
-        # 너무 옆으로 돌지 않게 전체 시점과 섞음
-        want_pos = want_pos.lerp(_overview_pos, 0.25)
-        want_look = want_look.lerp(_overview_look, 0.15)
-    # 음악방송 카메라: 잡은 뒤에도 천천히 돌고(좌우), 다가가고(줌인), 오르내린다
+            group = [_hosts[0]]
+            picks = [["close", 2], ["low", 1], ["medium", 1]]
+    elif t0 >= 0.0 and ht >= 0.0 and i >= 0:
+        group = fighters.filter(func(f): return is_responder(f.slot, i))
+        picks = [["medium", 3], ["close", 2], ["high", 1], ["wide", 1]] if kind == "response" else [["medium", 2], ["high", 1]]
+    else:
+        picks = [["wide", 3], ["host", 1]]
+    var key := str(group.map(func(f): return f.get_instance_id())) + kind.substr(0, 5)
     var now := Time.get_ticks_msec() / 1000.0
-    var shot := now - _focus_since
-    var arm := want_pos - want_look
-    var yaw := sin(now * 0.21) * 0.2 + sin(now * 0.083 + 1.3) * 0.1
-    arm = arm.rotated(Vector3.UP, yaw * (1.0 if not focus.is_empty() else 0.5))
-    arm *= 1.0 - 0.1 * clampf(shot / 7.0, 0.0, 1.0) + 0.04 * sin(now * 0.37)
-    arm.y += sin(now * 0.17 + 0.6) * 0.35
-    want_pos = want_look + arm
-    want_look += Vector3(sin(now * 0.13) * 0.25, sin(now * 0.19) * 0.08, 0)
-    var k := 1.0 - exp(-delta * 2.2)
-    _cam_pos = _cam_pos.lerp(want_pos, k)
-    _cam_look = _cam_look.lerp(want_look, k)
+    var fast := false
+    if key != _focus_key or now - _shot_t > _shot_len or _shot.is_empty():
+        fast = key != _focus_key
+        _focus_key = key
+        _pick_shot(picks, group)
+    var age := now - _shot_t
+    var want := _shot_pose(age)
+    # 같은 무리 안에서 바뀐 샷은 컷(바로), 무리가 바뀌면 빠르게 따라감, 샷 안에서는 부드럽게
+    var k := 1.0 - exp(-delta * (6.0 if fast or age < 0.25 else 3.0))
+    if bool(_shot.get("cut", false)) and age < 0.05:
+        k = 1.0
+    _cam_pos = _cam_pos.lerp(want[0], k)
+    _cam_look = _cam_look.lerp(want[1], k)
+    _camera.fov = lerpf(_camera.fov, float(want[2]), k)
     _camera.global_position = _cam_pos
     _camera.look_at(_cam_look, Vector3.UP)
-    # 진행자들은 카메라가 보는 곳을 본다
     if not _hosts.is_empty():
         _host_look(_cam_look)
+
+
+func _pick_shot(picks: Array, group: Array) -> void:
+    var total := 0
+    for p in picks:
+        total += int(p[1])
+    var r := _shot_rng.randi_range(1, maxi(total, 1))
+    var name: String = picks[0][0]
+    for p in picks:
+        r -= int(p[1])
+        if r <= 0:
+            name = p[0]
+            break
+    var prev: String = _shot.get("name", "")
+    if name == prev and picks.size() > 1 and _shot_rng.randf() < 0.6:
+        name = picks[(picks.find(picks.filter(func(p): return p[0] == name)[0]) + 1) % picks.size()][0]
+    var targets: Array = group
+    if name == "close" and group.size() > 1:
+        targets = [group[_shot_rng.randi_range(0, group.size() - 1)]]
+    if name == "host" and not _hosts.is_empty():
+        targets = [_hosts[0]]
+        name = "close"
+    _shot = {"name": name, "targets": targets, "side": -1.0 if _shot_rng.randf() < 0.5 else 1.0,
+            "cut": prev != "" and _shot_rng.randf() < 0.6}
+    _shot_t = Time.get_ticks_msec() / 1000.0
+    _shot_len = _shot_rng.randf_range(2.5, 4.5)
+
+
+## 샷의 지금 카메라 위치·보는 점·화각
+func _shot_pose(age: float) -> Array:
+    var name: String = _shot.get("name", "wide")
+    var targets: Array = _shot.get("targets", [])
+    if name == "wide" or targets.is_empty() or not SHOTS.has(name):
+        var arm := (_overview_pos - _overview_look).rotated(Vector3.UP, sin(age * 0.15 + _shot_t) * 0.25)
+        return [_overview_look + arm * (1.0 - 0.015 * age), _overview_look, 50.0]
+    var sp: Dictionary = SHOTS[name]
+    var c := Vector3.ZERO
+    for f: Node3D in targets:
+        c += f.global_position
+    c /= float(targets.size())
+    var spread := 0.0
+    for f: Node3D in targets:
+        spread = maxf(spread, Vector2(f.global_position.x - c.x, f.global_position.z - c.z).length())
+    var front := _overview_pos - c
+    front.y = 0.0
+    var base_yaw := atan2(front.x, front.z)
+    var side: float = _shot.get("side", 1.0)
+    var yaw := base_yaw + float(sp.yaw) * side + float(sp.orbit) * age * side
+    var pitch := float(sp.pitch)
+    var dist := (float(sp.dist) + spread * float(sp.spread)) * maxf(1.0 - float(sp.dolly) * age, 0.8)
+    var look := c + Vector3(0, float(sp.look), 0)
+    var dir := Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch))
+    return [look + dir * dist, look, float(sp.fov)]
 
 
 ## 반주를 서버 시계에 맞추고, 반주 재생 위치를 화면·판정용 시계로 쓴다

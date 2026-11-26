@@ -1,14 +1,14 @@
 extends RefCounted
 ## 뒷북의 달인 — 곡 진행표·박자 판정 (서버·클라이언트·오프라인 공용, 화면 없음)
 ##
-## 시간 단위: 곡 시작(t0)부터의 초. 100 BPM, 4/4, 한 박 = 0.6초, 한 마디 = 2.4초
+## 시간 단위: 곡 시작(t0)부터의 초. 120 BPM, 4/4, 한 박 = 0.5초, 한 마디 = 2초
 ## 한 차례(turn) = [쉼] 공격 N마디 [쉼] 따라 치기 N마디
 ##   쉼(텀): 컴퓨터가 정해 준 둥·딱 개수를 보고 준비하는 시간. 곡이 진행될수록 짧아진다 (8박 → 4박)
 ## 박자는 공격자 마음대로 (칸에 맞추지 않음). 반주 박에 맞으면 공격 점수 전부, 엇박(반 박)이면 절반, 그 밖은 0
 ## 노트: [시각 ms, 북, 끝 ms]  시각 = 공격 시작부터 ms, 북 0 = 둥(왼쪽) 1 = 딱(오른쪽), 끝 = -1 이면 한 번 치기, 아니면 피버(누르고 있다가 그 시각에 뗌)
 ## 개수 지정(spec): {"l": 둥 개수, "r": 딱 개수} — 피버 하나는 그 북 2개(누름·뗌)로 센다
 
-const BPM := 100.0
+const BPM := 120.0
 const BEAT := 60.0 / BPM
 const BAR := BEAT * 4.0
 const SLOTS_PER_BAR := 8
@@ -153,8 +153,8 @@ static func spec_text(spec: Dictionary) -> String:
 static func make_spec(bars: int, difficulty: float, seed_value: int) -> Dictionary:
     var rng := RandomNumberGenerator.new()
     rng.seed = seed_value
-    # 처음엔 한 마디에 2개 정도로 쉽게 → 끝에는 4개 남짓
-    var per_bar := 2.0 + difficulty * 2.2
+    # 처음엔 한 마디에 3개 정도 → 끝에는 5개 남짓
+    var per_bar := 3.0 + difficulty * 2.2
     var total := clampi(int(round(per_bar * bars + rng.randf_range(-0.4, 0.4))), 2, bars * 6)
     var l := clampi(int(round(total * rng.randf_range(0.35, 0.65))), 1, total - 1)
     return {"l": l, "r": total - l}
