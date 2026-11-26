@@ -237,7 +237,7 @@ func _update_banner(t: float) -> void:
         var team := int(game.turns[i].attack_team)
         var bars := int(game.turns[i].bars)
         _banner.add_theme_color_override("font_color", Teams.color(team).lightened(0.35) if team >= 0 else UI.CREAM)
-        # 칠 개수는 북 버튼 위 칩 더미, 길이는 박 램프로 보여 준다 (글자 대신)
+        # 칠 개수는 북 버튼 위 칩 더미로 보여 준다 (글자 대신)
         if kind == "ready_attack":
             if who == me and me >= 0:
                 _banner.text = "준비! 내가 공격해요"
@@ -359,12 +359,9 @@ func _highway_rect() -> Rect2:
 
 func _draw() -> void:
     if game.state == PartyGame.State.ENDED or game.t0 < 0.0:
-        _draw_beat_dots(-1.0)
         return
     # 판정과 같은 시계(귀에 들리는 반주 시각)로 그린다 — 화면과 판정이 어긋나지 않게
     var t: float = game.heard_time()
-    if not _draw_lamps(t):
-        _draw_beat_dots(t)
     _draw_chips(t)
     var r := _highway_rect()
     draw_style_box(UI.box(Color(0.11, 0.16, 0.27, 0.82), 18, 0, UI.INK, 4, 0), r)
@@ -500,59 +497,7 @@ func _capsule(x0: float, x1: float, y: float, rad: float, r: Rect2, fill: Color,
     draw_line(Vector2(a, y + h), Vector2(b, y + h), line, w)
 
 
-## 배너 아래 박자 점 4개 (지금 박이 커짐)
-func _draw_beat_dots(t: float) -> void:
-    var sc := _screen()
-    var beat := posmod(int(floor(t / Chart.BEAT)), 4) if t >= 0.0 else -1
-    var frac := fposmod(t, Chart.BEAT) / Chart.BEAT if t >= 0.0 else 1.0
-    for k in 4:
-        var c := Vector2(sc.x * 0.5 + (k - 1.5) * 34.0, 214.0)
-        var on := k == beat
-        var rad := 9.0 + (6.0 * (1.0 - frac) if on else 0.0)
-        draw_circle(c, rad, UI.YELLOW if on else Color(1, 1, 1, 0.35))
-
-
-# ---------------------------------------------------------------- 길이(박 램프)·남은 개수(칩)
-## 공격·따라 치기 길이: 박마다 램프 하나 (지나간 박은 켜짐, 지금 박은 깜빡). 쉼 동안은 꺼진 램프로 길이만 미리 보여 줌
-## 반환: 그렸으면 true
-func _draw_lamps(t: float) -> bool:
-    var ph: Array = game.phase_at(t)
-    var i := int(ph[0])
-    var kind: String = ph[1]
-    if i < 0 or kind == "":
-        return false
-    var tr: Dictionary = game.turns[i]
-    var n := int(tr.bars) * 4
-    var base: float = float(tr.attack_t) if kind == "ready_attack" or kind == "attack" else float(tr.response_t)
-    var playing := kind == "attack" or kind == "response"
-    var cur := int(floor((t - base) / Chart.BEAT)) if playing else -1
-    var frac := fposmod(t - base, Chart.BEAT) / Chart.BEAT
-    var sc := _screen()
-    var gap := clampf(620.0 / n, 22.0, 44.0)
-    var rad := minf(gap * 0.38, 15.0)
-    var y := 218.0
-    var span := (n - 1) * gap + rad * 2.0 + 28.0
-    draw_style_box(UI.box(Color(0.08, 0.1, 0.18, 0.72), 22, 0, Color(1, 1, 1, 0.35), 2, 0),
-            Rect2(Vector2(sc.x * 0.5 - span * 0.5, y - rad - 9.0), Vector2(span, rad * 2.0 + 18.0)))
-    var col: Color = Teams.color(int(tr.attack_team)).lightened(0.3) if (kind == "ready_attack" or kind == "attack") and int(tr.attack_team) >= 0 else UI.YELLOW
-    # 남은 쉼: 램프 앞에 작은 점 (곧 시작)
-    if not playing:
-        var left := ceili((base - t) / Chart.BEAT)
-        for k in mini(left, 8):
-            draw_circle(Vector2(sc.x * 0.5 - span * 0.5 - (k + 1) * 14.0, y), 4.0, Color(1, 1, 1, 0.75))
-    for k in n:
-        var c := Vector2(sc.x * 0.5 + (k - (n - 1) * 0.5) * gap, y)
-        var bar_start := k % 4 == 0
-        if k < cur:
-            draw_circle(c, rad, Color(col, 0.85))
-        elif k == cur:
-            draw_circle(c, rad + 5.0 * (1.0 - frac), col)
-        else:
-            draw_circle(c, rad, Color(0.1, 0.12, 0.2, 0.55))
-        draw_arc(c, rad, 0, TAU, 20, Color(1, 1, 1, 0.9 if bar_start else 0.55), 2.5 if bar_start else 1.5)
-    return true
-
-
+# ---------------------------------------------------------------- 남은 개수(칩)
 var _chip_prev := [-1, -1]
 var _chip_turn := -1
 var _chip_pop := [-10.0, -10.0]

@@ -377,68 +377,37 @@ func _make_drum_pair(parent: Node3D, size: float) -> Array:
     return pair
 
 
-## 팀 구역: 발밑 팀 색 발판 + 뒤에 팀 깃발(이름). 개인전은 발판만 (각자 색)
+## 팀 구역: 바닥 색으로 구분 — 팀원들이 선 자리를 팀 색 큰 원판들로 이어 칠해 한 덩어리 구역으로 보이게
+##   개인전은 각자 발밑만 자기 색
 func _build_team_areas(h: float) -> void:
+    # 이웃한 자리 사이 거리 (같은 팀 원판이 서로 겹쳐 이어지도록)
+    var step := 1.2
+    if fighters.size() > 1:
+        step = 99.0
+        for a in fighters:
+            for b in fighters:
+                if a != b and a.team == b.team:
+                    step = minf(step, Vector2(a.position.x - b.position.x, a.position.z - b.position.z).length())
+        if step > 90.0:
+            step = 1.2
+    var rad := 0.8 if teams < 2 else maxf(1.05, step * 0.62)
     for f in fighters:
         var mat := MeshInstance3D.new()
         var d := CylinderMesh.new()
-        d.top_radius = 0.72
-        d.bottom_radius = 0.72
+        d.top_radius = rad
+        d.bottom_radius = rad
         d.height = 0.04
-        d.radial_segments = 24
+        d.radial_segments = 32
         d.rings = 1
         mat.mesh = d
         var c: Color = Teams.color(f.team) if f.team >= 0 else f.body_color
         var mk := "pad%s" % c.to_html()
         if not _mats.has(mk):
-            _mats[mk] = Toon.make(_vivid(c), {"rim_strength": 0.2})
+            _mats[mk] = Toon.make(_vivid(c), {"rim_strength": 0.15})
         mat.material_override = _mats[mk]
         mat.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         add_child(mat)
-        mat.global_position = Vector3(f.position.x, h + 0.47, f.position.z - 0.15)
-    if teams < 2:
-        return
-    for tm in _group_center:
-        var center: Vector3 = _group_center[tm]
-        var col := Teams.color(int(tm))
-        var members := fighters.filter(func(x): return x.team == int(tm))
-        var width := 1.4
-        for m in members:
-            width = maxf(width, Vector2(m.position.x - center.x, m.position.z - center.z).length() * 2.0 + 1.4)
-        # 깃발: 무리 뒤(무대 바깥쪽)에 팀 색 천 + 팀 이름
-        var out := Vector3(center.x, 0, center.z - 2.0).normalized()
-        var pos := center + out * 1.35
-        var flag := MeshInstance3D.new()
-        var box := BoxMesh.new()
-        box.size = Vector3(width, 1.0, 0.06)
-        flag.mesh = box
-        flag.material_override = Toon.make(_vivid(col), {"rim_strength": 0.35})
-        add_child(flag)
-        flag.global_position = Vector3(pos.x, h + 2.45, pos.z)
-        flag.rotation.y = atan2(-out.x, -out.z) + PI
-        for side: float in [-1.0, 1.0]:
-            var pole := MeshInstance3D.new()
-            var pc := CylinderMesh.new()
-            pc.top_radius = 0.05
-            pc.bottom_radius = 0.06
-            pc.height = 2.5
-            pc.radial_segments = 8
-            pc.rings = 1
-            pole.mesh = pc
-            pole.material_override = Toon.make(Color(0.95, 0.74, 0.25), {"rim_strength": 0.4})
-            add_child(pole)
-            var right := Vector3(out.z, 0, -out.x)
-            pole.global_position = Vector3(pos.x, h + 1.7, pos.z) + right * side * (width * 0.5 + 0.06)
-        var lbl := Label3D.new()
-        lbl.text = Teams.team_name(int(tm))
-        lbl.font_size = 96
-        lbl.outline_size = 22
-        lbl.pixel_size = 0.0055
-        lbl.modulate = Color.WHITE
-        lbl.outline_modulate = col.darkened(0.55)
-        lbl.billboard = BaseMaterial3D.BILLBOARD_FIXED_Y
-        add_child(lbl)
-        lbl.global_position = Vector3(pos.x, h + 2.45, pos.z) - out * 0.4     # 천보다 앞 (빌보드가 돌아도 안 가려짐)
+        mat.global_position = Vector3(f.position.x, h + 0.47, f.position.z - 0.2)
 
 
 ## 가면 쓴 진행자: 가운데 뒤 단상에 북 치는 진행자 1명, 무대 양옆에 지켜보는 진행자 2명
