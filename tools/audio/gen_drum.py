@@ -21,15 +21,19 @@ def save(name, y, peak=.9):
     wavfile.write(os.path.join(OUT, name), SR, (y * 32767).astype(np.int16))
 
 
-t = t_(.55)
-don = np.sin(2 * np.pi * np.cumsum(95 + 70 * np.exp(-t * 30)) / SR) * np.exp(-t * 7)
-don += .5 * np.sin(2 * np.pi * np.cumsum(190 + 60 * np.exp(-t * 30)) / SR) * np.exp(-t * 12)
-don += lp(noise(.55), 900) * np.exp(-t * 45) * .5
+# 둥: 경쾌한 태고 — 음을 조금 올리고(150Hz대) 울림은 짧게, 채가 닿는 순간의 '톡' 소리를 더함
+t = t_(.38)
+don = np.sin(2 * np.pi * np.cumsum(150 + 90 * np.exp(-t * 40)) / SR) * np.exp(-t * 11)
+don += .45 * np.sin(2 * np.pi * np.cumsum(330 + 80 * np.exp(-t * 40)) / SR) * np.exp(-t * 20)
+don += .25 * np.sin(2 * np.pi * 520 * t) * np.exp(-t * 35)
+don += bp(noise(.38), 1500, 5000) * np.exp(-t * 120) * .55       # 채 소리
 save('don.wav', don)
 
-t = t_(.18)
-ka = bp(noise(.18), 1800, 6000) * np.exp(-t * 45) * .8
-ka += np.sin(2 * np.pi * 1250 * t) * np.exp(-t * 55) * .7 + np.sin(2 * np.pi * 2300 * t) * np.exp(-t * 70) * .4
+# 딱: 테두리를 치는 맑은 소리 (나무 블록처럼 짧고 높게)
+t = t_(.12)
+ka = np.sin(2 * np.pi * 1900 * t) * np.exp(-t * 60) * .8 + np.sin(2 * np.pi * 3100 * t) * np.exp(-t * 80) * .45
+ka += np.sin(2 * np.pi * 950 * t) * np.exp(-t * 45) * .35
+ka += bp(noise(.12), 3000, 9000) * np.exp(-t * 150) * .5
 save('ka.wav', ka, .8)
 
 t = t_(.12)

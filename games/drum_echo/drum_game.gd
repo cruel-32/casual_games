@@ -2,9 +2,9 @@ extends PartyGame
 ## 뒷북의 달인 — 공격팀 한 명이 북으로 리듬을 치면, 나머지 팀이 똑같이 따라 친다
 ##
 ## 진행 (chart.gd): 반주가 흐르는 동안 팀이 돌아가며 공격 (1 → 2 → 4마디). 남는 차례·개인전은 가면 쓴 진행자가 공격
-##   차례마다 컴퓨터가 마디 수와 노트 수(정박·엇박·피버)를 정해 준다 → 쉼(4박 → 1박으로 점점 짧아짐) → 공격 → 쉼 → 따라 치기
-##   공격: 그 팀 사람 중 한 명(봇만 있는 팀이면 봇)이 두 북(둥·딱)을 친다
-##     박자에서 벗어난 노트는 감점 후 보정, 정해진 개수보다 많거나 적으면 개수만큼 감점 후 컴퓨터가 개수를 맞춰 상대에게 보냄
+##   차례마다 컴퓨터가 둥·딱 개수를 정해 준다 → 쉼(8박 → 4박으로 점점 짧아짐) → 공격 → 쉼 → 따라 치기
+##   공격: 그 팀 사람 중 한 명(봇만 있는 팀이면 봇)이 두 북(둥·딱)을 마음대로의 박자로 친다
+##     반주 박에 맞으면 공격 점수 전부, 엇박이면 절반. 정해진 개수보다 많거나 적으면 개수만큼 감점 후 컴퓨터가 개수를 맞춰 상대에게 보냄
 ##     피버 = 누르고 있다가 정확한 박자에 뗀다 (노트 2개로 셈)
 ##   따라 치기: 공격팀 밖의 모두가 같은 노트를 같은 타이밍에 친다 → PERFECT·GOOD·BAD·MISS (피버는 누름·뗌 각각)
 ##   곡이 끝나면 팀원 점수 합계(개인전은 개인 점수)로 순위
@@ -15,9 +15,9 @@ extends PartyGame
 ## 메시지 (서버 → 모두)
 ##   ["start", t0, teams]                 곡 시작 시각(서버 시계)
 ##   ["turn", i, attacker_slot, notes, spec]  i번째 차례 공격자·노트 수 발표 (쉼 전). notes 가 있으면 컴퓨터·봇 공격
-##   ["note", i, slot, lane, judge]       사람 공격자가 친 노트 (보정된 칸)
-##   ["fev", i, note_index, end, judge]   그 노트가 피버가 됨 (뗀 칸)
-##   ["cnt", i, attacker, made, penalty]  공격 끝: 만든 개수 {on, off, fever}·개수 감점
+##   ["note", i, ms, lane, judge]         사람 공격자가 친 노트 (공격 시작부터 ms)
+##   ["fev", i, note_index, end_ms, judge]  그 노트가 피버가 됨 (뗀 시각)
+##   ["cnt", i, attacker, made, penalty]  공격 끝: 만든 개수 {l, r}·개수 감점
 ##   ["notes", i, notes]                  따라 칠 최종 노트 (개수 보정 후)
 ##   ["j", fighter_slot, judge, lane]     따라 치기 판정 (머리 위 문구 + 그 사람 북소리). lane +2 = 피버 뗌
 ##   ["tres", i, {slot: [점수, p, g, b, m]}]  차례 결과 (봇·놓친 노트 포함)
@@ -59,8 +59,8 @@ var end_time := 0.0
 ## 화면용 (모든 PC)
 var view_notes := {}                ## turn -> [[slot, lane, end], ...]
 var view_attacker := {}             ## turn -> fighter slot (-1 = 진행자)
-var view_spec := {}                 ## turn -> {on, off, fever}
-var view_cnt := {}                  ## turn -> [made {on, off, fever}, penalty] (사람 공격만)
+var view_spec := {}                 ## turn -> {l, r} 둥·딱 개수
+var view_cnt := {}                  ## turn -> [made {l, r}, penalty] (사람 공격만)
 var view_final := {}                ## turn -> true (따라 칠 노트 확정)
 var view_taken := {}                ## turn -> {note index: judge, -(index+1): 피버 뗌 판정} 내가 맞힌 노트
 var view_hold := {}                 ## lane -> [turn, note index] 내가 피버를 누르고 있는 중
@@ -90,7 +90,12 @@ var _cue_beat := -999
 var _attack_mark: Label3D
 var _key_down := [false, false]
 var _press_t := [0.0, 0.0]
-var _atk_hold := {}                 ## lane -> [turn, slot, press time] 내가 공격 중 누르고 있는 북 (화면용)
+var _atk_hold := {}                 ## lane -> [turn, 0, press time] 내가 공격 중 누르고 있는 북 (화면용)
+var _calib: Array = []              ## 따라 치기에서 내가 어긋난 초 (+ = 늦음) — 자동 박자 보정용
+var _calib_turn := -1
+var calib_note := ""                ## HUD 에 잠깐 보여 줄 자동 보정 안내
+var calib_note_time := -10.0
+var _real_prev := -1
 var _mats := {}                     ## 북 재질 (모두 같이 씀 → 그리기 묶음)
 var _vsync_before := -1
 # 진행자
@@ -104,7 +109,10 @@ var _overview_pos := Vector3.ZERO
 var _overview_look := Vector3.ZERO
 # 시간 (화면)
 var _mix_clock := -999.0            ## 반주 재생 위치로 맞춘 곡 시간 (지금 섞이는 소리)
-var sync_offset_ms := 0             ## 사용자 보정 (+ = 내가 늦게 친다고 느낄 때 → 판정을 늦춤)
+var sync_offset_ms := 0             ## 박자 보정 (+ = 소리가 늦게 들리는 기기 → 판정을 늦춤). 수동 −/+ 와 자동 보정
+var _sync_applied := 0.0            ## 실제로 쓰는 보정(초): sync_offset_ms 쪽으로 천천히 따라감 (노트가 튀지 않게)
+var _focus_key := ""
+var _focus_since := 0.0
 
 
 func _ready() -> void:
@@ -519,7 +527,7 @@ func heard_time() -> float:
     if t0 < 0.0:
         return -999.0
     var lat := AudioServer.get_output_latency() if not is_server() else 0.0
-    return mix_time() - lat - sync_offset_ms / 1000.0
+    return mix_time() - lat - _sync_applied
 
 
 func input_time() -> float:
@@ -529,11 +537,12 @@ func input_time() -> float:
 func _load_sync() -> void:
     var cf := ConfigFile.new()
     if cf.load(SYNC_CFG) == OK:
-        sync_offset_ms = clampi(int(cf.get_value("sync", "offset_ms", 0)), -200, 200)
+        sync_offset_ms = clampi(int(cf.get_value("sync", "offset_ms", 0)), -250, 250)
+    _sync_applied = sync_offset_ms / 1000.0
 
 
 func change_sync(delta_ms: int) -> void:
-    sync_offset_ms = clampi(sync_offset_ms + delta_ms, -200, 200)
+    sync_offset_ms = clampi(sync_offset_ms + delta_ms, -250, 250)
     var cf := ConfigFile.new()
     cf.set_value("sync", "offset_ms", sync_offset_ms)
     cf.save(SYNC_CFG)
@@ -577,7 +586,7 @@ func audible_team(turn: int) -> int:
 
 
 func _attack_window(tr: Dictionary, t: float) -> bool:
-    return t >= float(tr.attack_t) - Chart.ATTACK_BAD and t < Chart.attack_end(tr) - Chart.SLOT * 0.5
+    return t >= float(tr.attack_t) - Chart.ATTACK_BAD and t < Chart.attack_end(tr) - 0.05
 
 
 # ================================================================ 입력
@@ -615,10 +624,9 @@ func press(lane: int) -> void:
     var ph := phase_at(t + 0.12)
     var i := int(ph[0])
     if i >= 0 and int(view_attacker.get(i, -2)) == my_slot and _attack_window(turns[i], t):
-        var q := Chart.quantize_attack(turns[i], t)
-        if int(q[0]) >= 0:
-            _show_judge(String(q[1]))
-            _atk_hold[lane] = [i, int(q[0]), t]
+        var q := Chart.attack_score(maxf(t - float(turns[i].attack_t), 0.0))
+        _show_judge(String(q[0]))
+        _atk_hold[lane] = [i, 0, t]
     else:
         var rt := _response_turn_at(t)
         if rt >= 0 and is_responder(my_slot, rt):
@@ -629,6 +637,8 @@ func press(lane: int) -> void:
             if n_i >= 0:
                 taken[n_i] = r[1]
                 view_taken[rt] = taken
+                _calib.append(float(r[2]))
+                _calib_turn = rt
                 if Chart.is_fever(notes[n_i]):
                     view_hold[lane] = [rt, n_i]
             _show_judge(String(r[1]))
@@ -650,9 +660,8 @@ func release(lane: int) -> void:
     if _atk_hold.has(lane):
         var h: Array = _atk_hold[lane]
         _atk_hold.erase(lane)
-        var q := Chart.quantize_release(turns[int(h[0])], int(h[1]), float(h[2]), t)
-        if int(q[0]) >= 0:
-            _show_judge(String(q[1]))
+        if t - float(h[2]) >= Chart.FEVER_HOLD_MIN:
+            _show_judge(String(Chart.attack_score(t - float(turns[int(h[0])].attack_t))[0]))
     if view_hold.has(lane):
         var vh: Array = view_hold[lane]
         view_hold.erase(lane)
@@ -690,7 +699,7 @@ func _response_turn_at(t: float) -> int:
 func _show_judge(j: String) -> void:
     last_judge = j
     last_judge_time = Time.get_ticks_msec() / 1000.0
-    if j == "miss" or j == "extra" or j == "wild":
+    if j == "miss" or j == "extra":
         _snd("miss", -8.0)
 
 
@@ -733,10 +742,12 @@ func _process(delta: float) -> void:
     var t := song_time()
     if t0 >= 0.0 and state == State.COUNTDOWN and t >= 0.0:
         state = State.PLAYING
+    _sync_applied = move_toward(_sync_applied, sync_offset_ms / 1000.0, delta * 0.05)     # 초당 50ms 씩
     var mt := mix_time()
     var ht := heard_time()
     if t0 >= 0.0 and state != State.ENDED and mt > -900.0:
         _cues(mt)
+    _auto_calibrate(ht)
     # 예약된 북: 소리는 섞이는 시각에, 인형 움직임은 들리는 시각에
     var keep: Array = []
     for hit in _bot_hits:
@@ -759,12 +770,32 @@ func _process(delta: float) -> void:
     var who := int(view_attacker.get(show_i, -2)) if show_i >= 0 else -2
     _attack_mark.visible = who >= -1 and state == State.PLAYING
     if _attack_mark.visible:
-        var top: Vector3 = fighters[who].global_position + Vector3(0, 3.3, 0) if who >= 0 else _hosts[0].global_position + Vector3(0, 3.0, 0)
+        var top: Vector3 = fighters[who].global_position + Vector3(0, 2.75, 0) if who >= 0 else _hosts[0].global_position + Vector3(0, 3.0, 0)
         _attack_mark.global_position = top + Vector3(0, sin(t * 8.0) * 0.08, 0)
         var at := int(turns[show_i].attack_team)
         _attack_mark.text = ("진행자 공격!" if at < 0 else "공격!") if cur[1] == "attack" else "다음 공격!"
         _attack_mark.modulate = Teams.color(at).lightened(0.25) if at >= 0 else Color(1.0, 0.85, 0.2)
     _update_camera(delta, ht, cur, who)
+
+
+## 자동 박자 보정: 따라 치기 한 차례가 끝나면, 내가 맞힌 노트들이 한쪽으로 쏠려 있는 만큼(중앙값의 70%) 보정을 옮긴다
+##   소리가 늦게 나오는 기기·스피커에서도 몇 차례 지나면 판정이 맞아진다. 수동 −/+ 도 그대로 쓸 수 있음
+func _auto_calibrate(ht: float) -> void:
+    if _calib_turn < 0 or ht < Chart.response_end(turns[_calib_turn]) + 0.3:
+        return
+    var samples := _calib.duplicate()
+    _calib.clear()
+    _calib_turn = -1
+    if samples.size() < 3:
+        return
+    samples.sort()
+    var med: float = samples[samples.size() / 2]
+    if absf(med) < 0.015:
+        return
+    var d := clampi(int(round(med * 1000.0 * 0.7)), -60, 60)
+    change_sync(d)
+    calib_note = "박자 자동 보정 %+dms (지금 %+dms)" % [d, sync_offset_ms]
+    calib_note_time = Time.get_ticks_msec() / 1000.0
 
 
 ## 박자 신호: 공격·따라 치기 시작 직전 쉼의 박마다 '띵' (마지막 박이 가장 큼), 쉼 시작에 작게
@@ -814,7 +845,7 @@ func _check_hold_miss(ht: float) -> void:
         if int(vh[1]) >= notes.size():
             view_hold.erase(lane)
             continue
-        var end_t := Chart.slot_time(turns[int(vh[0])], int(notes[int(vh[1])][2]), true)
+        var end_t := Chart.note_end_time(turns[int(vh[0])], notes[int(vh[1])], true)
         if ht > end_t + Chart.BAD:
             view_hold.erase(lane)
             var taken: Dictionary = view_taken.get(int(vh[0]), {})
@@ -844,6 +875,10 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
                 focus = [_hosts[0]]
         else:
             focus = fighters.filter(func(f): return is_responder(f.slot, i))
+    var key := str(focus.map(func(f): return f.get_instance_id()))
+    if key != _focus_key:
+        _focus_key = key
+        _focus_since = Time.get_ticks_msec() / 1000.0
     if not focus.is_empty() and focus.size() < fighters.size():
         var c := Vector3.ZERO
         for f: Node3D in focus:
@@ -855,12 +890,22 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
         var dir := (_overview_pos - c)
         dir.y = 0.0
         dir = dir.normalized()
-        var dist := 4.2 + spread * 1.25
+        var dist := 4.8 + spread * 1.3
         want_look = Vector3(c.x, h + 1.15, c.z)
         want_pos = want_look + dir * dist + Vector3(0, 1.4 + dist * 0.22, 0)
         # 너무 옆으로 돌지 않게 전체 시점과 섞음
         want_pos = want_pos.lerp(_overview_pos, 0.25)
         want_look = want_look.lerp(_overview_look, 0.15)
+    # 음악방송 카메라: 잡은 뒤에도 천천히 돌고(좌우), 다가가고(줌인), 오르내린다
+    var now := Time.get_ticks_msec() / 1000.0
+    var shot := now - _focus_since
+    var arm := want_pos - want_look
+    var yaw := sin(now * 0.21) * 0.2 + sin(now * 0.083 + 1.3) * 0.1
+    arm = arm.rotated(Vector3.UP, yaw * (1.0 if not focus.is_empty() else 0.5))
+    arm *= 1.0 - 0.1 * clampf(shot / 7.0, 0.0, 1.0) + 0.04 * sin(now * 0.37)
+    arm.y += sin(now * 0.17 + 0.6) * 0.35
+    want_pos = want_look + arm
+    want_look += Vector3(sin(now * 0.13) * 0.25, sin(now * 0.19) * 0.08, 0)
     var k := 1.0 - exp(-delta * 2.2)
     _cam_pos = _cam_pos.lerp(want_pos, k)
     _cam_look = _cam_look.lerp(want_look, k)
@@ -871,17 +916,25 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
         _host_look(_cam_look)
 
 
-## 반주를 서버 시계에 맞추고, 반주 재생 위치를 화면·판정용 시계로 쓴다 (서버 시계 보정으로 시간이 튀어도 화면은 매끄럽게)
-## 반주 위치를 다시 맞추는(seek) 것은 끊김이 들리므로 크게 어긋날 때만 (0.25초)
-func _sync_music(delta: float) -> void:
+## 반주를 서버 시계에 맞추고, 반주 재생 위치를 화면·판정용 시계로 쓴다
+##   화면 시계는 실제로 흐른 시간만큼 매끄럽게 가고, 반주 재생 위치와의 차이는 천천히(약 1초에 걸쳐) 줄인다
+##   (재생 위치는 오디오 버퍼 단위로 들쭉날쭉 보고되므로 바로 따라가면 노트가 순간이동한다)
+##   반주 위치를 다시 맞추는(seek) 것은 끊김이 들리므로 크게 어긋날 때만 (0.3초)
+func _sync_music(_delta: float) -> void:
     if _music == null or t0 < 0.0:
         return
+    var now_us := Time.get_ticks_usec()
+    var real_dt := 0.0 if _real_prev < 0 else (now_us - _real_prev) / 1000000.0
+    _real_prev = now_us
     var t := song_time()
     if t < 0.0 or state == State.ENDED or t >= end_time:
         if _music.playing and (state == State.ENDED or t >= end_time):
             if state != State.ENDED:
                 _music.stop()
-        _mix_clock = t if t >= 0.0 and _mix_clock > -900.0 else -999.0
+        if t >= 0.0 and _mix_clock > -900.0:
+            _mix_clock += real_dt
+        else:
+            _mix_clock = -999.0
         return
     var loop_len := 8.0 * Chart.BAR
     var want := fposmod(t, loop_len)
@@ -895,15 +948,16 @@ func _sync_music(delta: float) -> void:
         at -= loop_len
     elif t - at > loop_len * 0.5:
         at += loop_len
-    if absf(at - t) > 0.25:                  # 많이 어긋남 → 다시 맞춤
+    if absf(at - t) > 0.3:                   # 많이 어긋남 → 다시 맞춤
         _music.seek(want)
         _mix_clock = t
         return
-    _mix_clock += delta
-    if absf(_mix_clock - at) > 0.05:
-        _mix_clock = at
+    _mix_clock += real_dt
+    var err := at - _mix_clock
+    if absf(err) > 0.2:
+        _mix_clock = at                      # 멈칫(창 끌기 등) 뒤에만 바로 맞춤
     else:
-        _mix_clock = lerpf(_mix_clock, at, minf(delta * 6.0, 1.0))
+        _mix_clock += err * minf(real_dt * 1.2, 1.0)
 
 
 # ================================================================ 메시지 (화면)
@@ -932,10 +986,8 @@ func on_server_message(msg: Array) -> void:
             var who := int(view_attacker.get(i, -1))
             if who >= 0 and who != my_slot:
                 # 남의 공격: 박자 칸보다 일찍 도착하면 그 칸에 맞춰 울리고, 늦게 오면 바로
-                var at := Chart.slot_time(turns[i], int(msg[2]), false)
+                var at := float(turns[i].attack_t) + int(msg[2]) / 1000.0
                 _bot_hits.append([maxf(at, mix_time()), who, int(msg[3]), -3.0, false, -1.0])
-            if who == my_slot and String(msg[4]) == "wild":
-                _show_judge("wild")
         "fev":
             var i := int(msg[1])
             var list: Array = view_notes.get(i, [])
@@ -944,7 +996,7 @@ func on_server_message(msg: Array) -> void:
                 list[idx][2] = int(msg[3])
                 var who := int(view_attacker.get(i, -1))
                 if who >= 0 and who != my_slot:
-                    var t1 := Chart.slot_time(turns[i], int(msg[3]), false)
+                    var t1 := float(turns[i].attack_t) + int(msg[3]) / 1000.0
                     var now := mix_time()
                     if t1 > now:
                         _rolls.append({"who": who, "lane": int(list[idx][1]), "until": t1, "next": now, "db": -3.0 + ROLL_DB})
@@ -998,9 +1050,9 @@ func _set_notes(i: int, notes: Array, who: int, attack: bool) -> void:
     if attack:
         var now := mix_time()
         for n in list:
-            var at := Chart.slot_time(turns[i], int(n[0]), false)
+            var at := Chart.note_time(turns[i], n, false)
             if at > now - 0.05:
-                var until := Chart.slot_time(turns[i], int(n[2]), false) if Chart.is_fever(n) else -1.0
+                var until := Chart.note_end_time(turns[i], n, false) if Chart.is_fever(n) else -1.0
                 _bot_hits.append([at, who, int(n[1]), -2.0, false, until])
     _schedule_responders(i, list)
 
@@ -1020,12 +1072,14 @@ func _schedule_responders(i: int, notes: Array) -> void:
             voiced = true
         for n in notes:
             var jit := randf_range(-0.03, 0.04)
-            var at := Chart.slot_time(turns[i], int(n[0]), true) + jit
-            var until := Chart.slot_time(turns[i], int(n[2]), true) + jit if Chart.is_fever(n) else -1.0
+            var at := Chart.note_time(turns[i], n, true) + jit
+            var until := Chart.note_end_time(turns[i], n, true) + jit if Chart.is_fever(n) else -1.0
             _bot_hits.append([at, f.slot, int(n[1]), OTHERS_DB if loud else -99.0, false, until])
 
 
 static func _judge_color(j: String) -> Color:
+    if j.begins_with("off_"):
+        return Color(1.0, 0.65, 0.35)       # 엇박 (점수 절반)
     match j:
         "perfect":
             return Color(1.0, 0.85, 0.2)
@@ -1115,7 +1169,7 @@ func _announce(i: int) -> void:
         else:
             attacker = members.pick_random() if not members.is_empty() else -1
     if computer:
-        notes = Chart.computer_pattern(int(tr.bars), spec, i * 131 + 7)
+        notes = Chart.computer_pattern(int(tr.bars), spec, i * 131 + 7, _difficulty(i))
     _auth[i] = {"attacker": attacker, "spec": spec, "notes": notes, "computer": computer, "hold": {}, "rhold": {},
             "taken": {}, "fixed": computer}
     _emit(["turn", i, attacker, notes, spec])
@@ -1172,22 +1226,19 @@ func _auth_hit(slot: int, lane: int, t: float) -> void:
         var tr: Dictionary = turns[i]
         # 공격
         if int(a.attacker) == slot and not a.fixed and _attack_window(tr, t):
-            var q := Chart.quantize_attack(tr, t)
-            var s := int(q[0])
-            if s < 0:
-                return
-            for n in a.notes:
-                if int(n[0]) == s:
-                    return          # 한 칸에는 한 노트
-            var bar := s / Chart.SLOTS_PER_BAR
-            var in_bar: int = a.notes.filter(func(n): return int(n[0]) / Chart.SLOTS_PER_BAR == bar).size()
+            var rel := maxf(t - float(tr.attack_t), 0.0)
+            var ms := int(round(rel * 1000.0))
+            if Chart.lane_busy(a.notes, ms, lane):
+                return          # 같은 북을 너무 빨리 연달아 → 한 번으로
+            var bar := int(rel / Chart.BAR)
+            var in_bar: int = a.notes.filter(func(n): return int(int(n[0]) / 1000.0 / Chart.BAR) == bar).size()
             if in_bar >= Chart.MAX_NOTES_PER_BAR:
                 return
-            a.notes.append([s, lane, -1])
+            a.notes.append([ms, lane, -1])
             a.hold[lane] = [a.notes.size() - 1, t]
-            var j := String(q[1])
-            _add_score(slot, int(Chart.ATTACK_POINTS[j]))
-            _emit(["note", i, s, lane, j])
+            var q := Chart.attack_score(rel)
+            _add_score(slot, int(q[1]))
+            _emit(["note", i, ms, lane, q[0]])
             return
         # 따라 치기
         if is_responder(slot, i) and a.fixed and t >= float(tr.response_t) - Chart.BAD and t < Chart.response_end(tr) + Chart.BAD:
@@ -1221,18 +1272,17 @@ func _auth_release(slot: int, lane: int, t: float) -> void:
             a.hold.erase(lane)
             var idx := int(h[0])
             var n: Array = a.notes[idx]
-            var q := Chart.quantize_release(tr, int(n[0]), float(h[1]), t)
-            var e := int(q[0])
-            if e < 0:
+            if t - float(h[1]) < Chart.FEVER_HOLD_MIN:
                 return
+            var rel := t - float(tr.attack_t)
+            var e := clampi(int(round(rel * 1000.0)), int(n[0]) + int(Chart.FEVER_HOLD_MIN * 1000.0), int(tr.bars) * int(Chart.BAR * 1000.0))
             # 그 사이 같은 북에 다른 노트가 있으면 피버가 될 수 없음
-            var others: Array = a.notes.duplicate()
-            others.remove_at(idx)
-            if not Chart._free(others, int(n[0]), lane, e):
+            if Chart.lane_busy(a.notes, int(n[0]), lane, e, idx):
                 return
             n[2] = e
-            var j := String(q[1])
-            _add_score(slot, int(Chart.ATTACK_POINTS[j]))
+            var q := Chart.attack_score(rel)
+            var j := String(q[0])
+            _add_score(slot, int(q[1]))
             _emit(["fev", i, idx, e, j])
             return
         var rh: Dictionary = a.rhold.get(slot, {})

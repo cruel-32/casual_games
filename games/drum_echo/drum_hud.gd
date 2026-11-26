@@ -176,6 +176,8 @@ func _process(delta: float) -> void:
     var t: float = game.heard_time()
     _sync_label.text = "박자 보정 %+dms" % game.sync_offset_ms
     _update_banner(t)
+    if Time.get_ticks_msec() / 1000.0 - game.calib_note_time < 2.5:
+        _sub.text = game.calib_note
     _place(_banner, 70.0)
     _place(_sub, 122.0)
     _spec_box.size = _spec_box.get_minimum_size()
@@ -245,7 +247,7 @@ func _update_banner(t: float) -> void:
         if kind == "ready_attack":
             if who == me and me >= 0:
                 _banner.text = "준비! 내가 공격해요"
-                _sub.text = "정해진 개수만큼만 — 많거나 적으면 감점"
+                _sub.text = "박자는 마음대로! 반주 박에 맞으면 점수 전부, 엇박이면 절반 · 개수가 다르면 감점"
             else:
                 _banner.text = "준비! %s 공격" % _team_name_of(team)
                 _sub.text = ("%s 님이 칠 리듬을 잘 들어요" % game.fighters[who].display_name) if who >= 0 else "진행자가 칠 리듬을 잘 들어요"
@@ -253,7 +255,7 @@ func _update_banner(t: float) -> void:
                     _sub.text = "우리 팀 차례 — %s 님 화이팅!" % game.fighters[who].display_name
         elif who == me and me >= 0:
             _banner.text = "내가 공격! 북을 쳐요"
-            _sub.text = "반 박(8분음표) 칸에 맞춰져요 · 피버는 누르고 있다가 박자에 떼요"
+            _sub.text = "박자는 마음대로 · 반주 박에 맞으면 점수 전부 · 길게 누르면 피버(2개로 셈)"
         elif team < 0:
             _banner.text = "진행자 공격!"
             _sub.text = "진행자가 치는 리듬을 잘 듣고, 똑같이"
@@ -289,15 +291,13 @@ func _update_banner(t: float) -> void:
             _sub.text = ""
 
 
-## 공격자용: 정해진 개수 대비 지금까지 만든 개수 (예: 정박 2/3 · 엇박 1/1 · 피버 0/1)
+## 공격자용: 정해진 개수 대비 지금까지 친 개수 (예: 둥 2/3 · 딱 2/2 완료)
 func _progress_text(spec: Dictionary, notes: Array) -> String:
     var c := Chart.count_of(notes)
     var parts := []
-    for k: String in ["on", "off", "fever"]:
+    for k: String in ["l", "r"]:
         var need := int(spec.get(k, 0))
-        if need == 0 and int(c[k]) == 0:
-            continue
-        var nm: String = {"on": "정박", "off": "엇박", "fever": "피버"}[k]
+        var nm := "둥" if k == "l" else "딱"
         var mark := " 완료" if int(c[k]) == need else (" 넘침!" if int(c[k]) > need else "")
         parts.append("%s %d/%d%s" % [nm, int(c[k]), need, mark])
     return " · ".join(parts)
@@ -435,12 +435,12 @@ func _draw() -> void:
             var y: float = lane_y[lane]
             var fever := Chart.is_fever(n)
             # 공격 (들은 리듬)
-            var ta := Chart.slot_time(tr, int(n[0]), false)
+            var ta := Chart.note_time(tr, n, false)
             if ta <= t:
                 var xa := hit_x + (ta - t) * px
                 var pop := clampf((t - ta) / 0.12, 0.0, 1.0)
                 if fever:
-                    var te := minf(Chart.slot_time(tr, int(n[2]), false), t)
+                    var te := minf(Chart.note_end_time(tr, n, false), t)
                     _capsule(xa, hit_x + (te - t) * px, y, rad, r, Color(col, 0.0), Color(FEVER, 0.85), 3.0)
                 if xa > r.position.x and xa < r.end.x:
                     draw_arc(Vector2(xa, y), rad * (1.5 - 0.5 * pop), 0, TAU, 24, Color(col, 0.75 + 0.25 * (1.0 - pop)), 3.0)
@@ -449,13 +449,13 @@ func _draw() -> void:
             # 따라 칠 노트
             if ta > t and not final:
                 continue
-            var tb := Chart.slot_time(tr, int(n[0]), true)
+            var tb := Chart.note_time(tr, n, true)
             var xb := hit_x + (tb - t) * px
             var c := col if mine else Color(col, 0.35)
             if not final:
                 c = Color(col, 0.3)
             if fever:
-                var tbe := Chart.slot_time(tr, int(n[2]), true)
+                var tbe := Chart.note_end_time(tr, n, true)
                 var end_taken := taken.has(-(n_i + 1))
                 if end_taken or tbe < t - Chart.BAD:
                     continue
