@@ -37,6 +37,11 @@ cp "$L/about/index.html" "$L"/about/*.jpg /tmp/web/about/
 # 소식 (/news/) — 공지는 관리 서버의 /api/notices 에서 읽음
 mkdir -p /tmp/web/news
 cp "$L/news/index.html" /tmp/web/news/
+# 개인정보처리방침·이용약관·문의 (/privacy/ /terms/ /support/) — 스토어 등록·게임 안 '정보'에서 링크
+for d in privacy terms support; do
+    mkdir -p "/tmp/web/$d"
+    cp "$L/$d/index.html" "/tmp/web/$d/"
+done
 
 if [ "${BUILD_WINDOWS:-1}" = "1" ]; then
     # 실행 파일(.exe)과 게임 데이터(.pck)가 따로 나온다 (백신 오탐을 줄이려고 pck를 exe에 합치지 않음)

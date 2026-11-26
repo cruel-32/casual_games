@@ -45,6 +45,9 @@ func _ready() -> void:
     var help_btn := UI.pill_button("조작법", UI.YELLOW, UI.INK)
     help_btn.pressed.connect(_show_help)
     top.add_child(help_btn)
+    var info_btn := UI.pill_button("정보")
+    info_btn.pressed.connect(func(): _info.visible = true)
+    top.add_child(info_btn)
     # PC 앱: 게임 끄기 (웹·모바일은 브라우저/OS 가 닫으므로 없음)
     if not OS.has_feature("web") and not OS.has_feature("mobile"):
         var quit_btn := UI.pill_button("게임 종료", UI.RED)
@@ -136,6 +139,7 @@ func _ready() -> void:
     cv.add_child(_status)
 
     _build_help()
+    _build_info()
     if OS.has_feature("web"):
         _build_web_promo()
     _build_update_ui()
@@ -232,10 +236,10 @@ func _build_help() -> void:
     var v := UI.centered_panel(_help, 560)
     v.add_child(UI.heading("조작법", 30))
     var rows := [
-        ["이동", "WASD  ·  모바일: 왼쪽 화면 스틱"],
-        ["시점", "마우스  ·  모바일: 오른쪽 화면 드래그 (버튼을 누른 채 끌어도 됨)"],
+        ["이동", "WASD  ·  모바일: 왼쪽 화면 스틱. 캐릭터는 움직이는 방향을 바라봐요"],
+        ["카메라", "마우스  ·  모바일: 오른쪽 화면 드래그 (버튼을 누른 채 끌어도 됨)"],
         ["점프", "Space  ·  모바일: 점프 버튼"],
-        ["밀치기", "좌클릭/E 짧게 = 제자리 밀기, 길게 = 차징 돌진 (공중에서도 가능)"],
+        ["밀치기", "좌클릭/E 짧게 = 제자리 밀기, 길게 = 차징 돌진. 바라보는 방향으로 나가요"],
     ]
     for r in rows:
         var h := UI.hbox(14)
@@ -249,6 +253,46 @@ func _build_help() -> void:
         v.add_child(h)
     var close := UI.cta_button("확인")
     close.pressed.connect(func(): _help.visible = false)
+    v.add_child(close)
+
+
+## 정보: 버전, 문의처, 개인정보처리방침·이용약관 (스토어 심사·법적 고지용)
+const CONTACT_EMAIL := "cshee8508@gmail.com"
+var _info: Control
+
+
+func _build_info() -> void:
+    _info = ColorRect.new()
+    (_info as ColorRect).color = Color(UI.INK, 0.55)
+    _info.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    _info.visible = false
+    add_child(_info)
+    var v := UI.centered_panel(_info, 520)
+    v.add_child(UI.heading("정보", 30))
+    v.add_child(UI.label("Small Party World  v%s" % Boot.version(), 18))
+    var mail := UI.label("문의·신고·데이터 삭제 요청: %s" % CONTACT_EMAIL, 16, UI.MUTED)
+    mail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    v.add_child(mail)
+    var site: String = Updater.site
+    var links := [
+        ["개인정보처리방침", site + "/privacy/"],
+        ["이용약관", site + "/terms/"],
+        ["문의·지원", site + "/support/"],
+        ["이메일 보내기", "mailto:" + CONTACT_EMAIL + "?subject=%5BSmall%20Party%20World%5D%20"],
+    ]
+    var grid := GridContainer.new()
+    grid.columns = 2
+    grid.add_theme_constant_override("h_separation", 10)
+    grid.add_theme_constant_override("v_separation", 10)
+    for l in links:
+        var b := UI.secondary_button(l[0])
+        b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        var url: String = l[1]
+        b.pressed.connect(func(): OS.shell_open(url))
+        grid.add_child(b)
+    v.add_child(grid)
+    var close := UI.cta_button("닫기")
+    close.pressed.connect(func(): _info.visible = false)
     v.add_child(close)
 
 
