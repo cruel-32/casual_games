@@ -44,12 +44,11 @@ const MaskedHost := preload("res://scripts/world/masked_host.gd")
 const DON_COLOR := Color(0.96, 0.56, 0.16)
 const KA_COLOR := Color(0.60, 0.36, 0.86)
 const FEVER_COLOR := Color(1.0, 0.82, 0.2)
-const SYNC_CFG := "user://drum_echo.cfg"
 const MUSIC_DB := 2.0
 const OTHERS_DB := -5.0             ## 남이 치는 북소리 (내 소리보다 조금 작게)
 const ROLL_STEP := 0.125            ## 피버를 누르고 있는 동안 '드르륵' 간격 (16분음표)
 const ROLL_DB := -9.0
-const FIX_DELAY := 0.25             ## 공격이 끝나고 이만큼 뒤에 개수 보정 (마지막 뗌이 도착하도록)
+const FIX_DELAY := 0.6              ## 공격이 끝나고 이만큼 뒤에 개수 보정 (마지막 결과가 도착하도록, 기기 반주 시계와 서버 시계 차이 여유)
 
 @export var bot_count := 3          ## 혼자 연습: 나 + 봇 3 (2팀)
 
@@ -93,12 +92,6 @@ var _attack_mark: Label3D
 var _key_down := [false, false]
 var _press_t := [0.0, 0.0]
 var _atk_hold := {}                 ## lane -> [turn, 0, press time] 내가 공격 중 누르고 있는 북 (화면용)
-var _calib: Array = []              ## 따라 치기에서 내가 어긋난 초 (+ = 늦음) — 자동 박자 보정용
-var _calib_turn := -1
-var calib_note := ""                ## HUD 에 잠깐 보여 줄 자동 보정 안내
-var _intro_taps: Array = []         ## 곡 앞 반주 구간에서 친 시각 - 가장 가까운 박 (박자 맞추기)
-var _intro_done := false
-var calib_note_time := -10.0
 var _real_prev := -1
 var _mats := {}                     ## 북 재질 (모두 같이 씀 → 그리기 묶음)
 var _vsync_before := -1
@@ -113,8 +106,9 @@ var _overview_pos := Vector3.ZERO
 var _overview_look := Vector3.ZERO
 # 시간 (화면)
 var _mix_clock := -999.0            ## 반주 재생 위치로 맞춘 곡 시간 (지금 섞이는 소리)
-var sync_offset_ms := 0             ## 박자 보정 (+ = 소리가 늦게 들리는 기기 → 판정을 늦춤). 수동 −/+ 와 자동 보정
-var _sync_applied := 0.0            ## 실제로 쓰는 보정(초): sync_offset_ms 쪽으로 천천히 따라감 (노트가 튀지 않게)
+var _loop_base := 0                 ## 반주를 튼 회차 (반주 시계: 몇 바퀴째인지 직접 센다)
+var _loops := 0
+var _last_pos := 0.0
 var _focus_key := ""
 var _focus_since := 0.0
 
@@ -127,7 +121,6 @@ func _ready() -> void:
     _spawn_fighters()
     if is_server():
         return
-    _load_sync()
     _build_stage()
     _build_audio()
     _lighten_scene()
@@ -500,7 +493,7 @@ func heard_time() -> float:
     if t0 < 0.0:
         return -999.0
     var lat := AudioServer.get_output_latency() if not is_server() else 0.0
-    return mix_time() - lat - _sync_applied
+    return mix_time() - lat
 
 
 ## 키를 누른 순간의 곡 시각: 화면 시계는 프레임마다 갱신되므로 마지막 갱신 뒤 흐른 시간을 더한다
@@ -510,20 +503,6 @@ func input_time() -> float:
     if _real_prev > 0 and _mix_clock > -900.0:
         t += minf((Time.get_ticks_usec() - _real_prev) / 1000000.0, 0.05)
     return t
-
-
-func _load_sync() -> void:
-    var cf := ConfigFile.new()
-    if cf.load(SYNC_CFG) == OK:
-        sync_offset_ms = clampi(int(cf.get_value("sync", "offset_ms", 0)), -250, 250)
-    _sync_applied = sync_offset_ms / 1000.0
-
-
-func change_sync(delta_ms: int) -> void:
-    sync_offset_ms = clampi(sync_offset_ms + delta_ms, -250, 250)
-    var cf := ConfigFile.new()
-    cf.set_value("sync", "offset_ms", sync_offset_ms)
-    cf.save(SYNC_CFG)
 
 
 ## 지금 차례: [turn 번호, "ready_attack" | "attack" | "ready_response" | "response" | "", 다음 차례 번호]
@@ -598,12 +577,6 @@ func press(lane: int) -> void:
     _set_hold(my_slot, lane, true)
     if is_client():
         send_to_server(["key", lane, 1])        # 다른 사람 화면에서 내 캐릭터가 치도록 (판정과 별개)
-    # 곡 앞 반주 구간: 박자 맞추기 (반주 박에 맞춰 친 시각으로 이 기기의 소리 지연을 잰다)
-    if not _intro_done and t >= 0.2 and t < Chart.INTRO_BARS * Chart.BAR - 0.2:
-        _intro_taps.append(t - round(t / Chart.BEAT) * Chart.BEAT)
-        _strike(my_slot, lane)
-        _snd("don" if lane == 0 else "ka")
-        return
     _strike(my_slot, lane)
     _snd("don" if lane == 0 else "ka")
     _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": ROLL_DB, "mine": true})
@@ -632,8 +605,6 @@ func press(lane: int) -> void:
         if n_i >= 0:
             taken[n_i] = r[1]
             view_taken[rt] = taken
-            _calib.append(float(r[2]))
-            _calib_turn = rt
             if Chart.is_fever(notes[n_i]):
                 view_hold[lane] = [rt, n_i]
         _show_judge(String(r[1]))
@@ -763,12 +734,10 @@ func _process(delta: float) -> void:
     var t := song_time()
     if t0 >= 0.0 and state == State.COUNTDOWN and t >= 0.0:
         state = State.PLAYING
-    _sync_applied = move_toward(_sync_applied, sync_offset_ms / 1000.0, delta * 0.05)     # 초당 50ms 씩
     var mt := mix_time()
     var ht := heard_time()
     if t0 >= 0.0 and state != State.ENDED and mt > -900.0:
         _cues(mt)
-    _auto_calibrate(ht)
     # 예약된 북: 소리는 섞이는 시각에, 인형 움직임은 들리는 시각에
     var keep: Array = []
     for hit in _bot_hits:
@@ -797,50 +766,6 @@ func _process(delta: float) -> void:
         _attack_mark.text = ("진행자 공격!" if at < 0 else "공격!") if cur[1] == "attack" else "다음 공격!"
         _attack_mark.modulate = Teams.color(at).lightened(0.25) if at >= 0 else Color(1.0, 0.85, 0.2)
     _update_camera(delta, ht, cur, who)
-
-
-## 자동 박자 보정: 따라 치기 한 차례가 끝나면, 내가 맞힌 노트들이 한쪽으로 쏠려 있는 만큼(중앙값의 70%) 보정을 옮긴다
-##   소리가 늦게 나오는 기기·스피커에서도 몇 차례 지나면 판정이 맞아진다. 수동 −/+ 도 그대로 쓸 수 있음
-func _auto_calibrate(ht: float) -> void:
-    if not _intro_done and ht >= Chart.INTRO_BARS * Chart.BAR - 0.15:
-        _intro_done = true
-        _intro_calibrate()
-    if _calib_turn < 0 or ht < Chart.response_end(turns[_calib_turn]) + 0.3:
-        return
-    var samples := _calib.duplicate()
-    _calib.clear()
-    _calib_turn = -1
-    if samples.size() < 3:
-        return
-    samples.sort()
-    var med: float = samples[samples.size() / 2]
-    if absf(med) < 0.015:
-        return
-    var d := clampi(int(round(med * 1000.0 * 0.7)), -60, 60)
-    change_sync(d)
-    calib_note = "박자 자동 보정 %+dms (지금 %+dms)" % [d, sync_offset_ms]
-    calib_note_time = Time.get_ticks_msec() / 1000.0
-
-
-## 곡 앞 반주 구간에서 친 박자로 보정: 4번 이상, 고르게(흩어짐 70ms 이내) 쳤으면 그 중앙값만큼 바로 맞춘다
-func _intro_calibrate() -> void:
-    var taps := _intro_taps.duplicate()
-    _intro_taps.clear()
-    if taps.size() < 4:
-        return
-    taps.sort()
-    var med: float = taps[taps.size() / 2]
-    var spread: float = taps[taps.size() * 3 / 4] - taps[taps.size() / 4]
-    if spread > 0.07:
-        calib_note = "박자 맞추기: 들쭉날쭉해서 보정하지 않았어요"
-        calib_note_time = Time.get_ticks_msec() / 1000.0
-        return
-    var d := clampi(int(round(med * 1000.0)), -150, 150)
-    if absi(d) >= 10:
-        change_sync(d)
-        _sync_applied = sync_offset_ms / 1000.0         # 아직 노트가 없을 때라 바로 적용
-    calib_note = "박자 맞추기 완료 (보정 %+dms)" % sync_offset_ms
-    calib_note_time = Time.get_ticks_msec() / 1000.0
 
 
 ## 박자 신호: 공격·따라 치기 시작 직전 쉼의 박마다 '띵' (마지막 박이 가장 큼), 쉼 시작에 작게
@@ -1016,10 +941,11 @@ func _shot_pose(age: float) -> Array:
     return [look + dir * dist, look, float(sp.fov)]
 
 
-## 반주를 서버 시계에 맞추고, 반주 재생 위치를 화면·판정용 시계로 쓴다
-##   화면 시계는 실제로 흐른 시간만큼 매끄럽게 가고, 반주 재생 위치와의 차이는 천천히(약 1초에 걸쳐) 줄인다
-##   (재생 위치는 오디오 버퍼 단위로 들쭉날쭉 보고되므로 바로 따라가면 노트가 순간이동한다)
-##   반주 위치를 다시 맞추는(seek) 것은 끊김이 들리므로 크게 어긋날 때만 (0.3초)
+## 반주가 기준 시계: 반주가 몇 바퀴째인지 직접 세서 곡 시간을 낸다 (화면·판정 모두 이것)
+##   사운드카드 시계와 컴퓨터 시계는 조금씩 다르게 가서(0.1% 안팎) 곡 후반엔 차이가 쌓인다.
+##   예전엔 그 차이가 0.3초를 넘으면 반주를 컴퓨터 시계로 다시 맞춰서 노트가 순간이동했다 → 이제는 반주를 따라간다
+##   화면 시계는 실제 흐른 시간만큼 매끄럽게 가고, 반주 위치와의 작은 들쭉날쭉(오디오 버퍼 단위)은 천천히 흡수
+##   반주가 멈췄다 나오는 등 1초 넘게 어긋날 때만 다시 맞춘다
 func _sync_music(_delta: float) -> void:
     if _music == null or t0 < 0.0:
         return
@@ -1027,37 +953,42 @@ func _sync_music(_delta: float) -> void:
     var real_dt := 0.0 if _real_prev < 0 else (now_us - _real_prev) / 1000000.0
     _real_prev = now_us
     var t := song_time()
-    if t < 0.0 or state == State.ENDED or t >= end_time:
-        if _music.playing and (state == State.ENDED or t >= end_time):
-            if state != State.ENDED:
-                _music.stop()
-        if t >= 0.0 and _mix_clock > -900.0:
+    var loop_len := 8.0 * Chart.BAR
+    if t < 0.0 or state == State.ENDED or _mix_clock >= end_time:
+        if _music.playing and (state == State.ENDED or _mix_clock >= end_time) and state != State.ENDED:
+            _music.stop()
+        if _mix_clock > -900.0 and (t >= 0.0 or state == State.ENDED):
             _mix_clock += real_dt
         else:
             _mix_clock = -999.0
         return
-    var loop_len := 8.0 * Chart.BAR
-    var want := fposmod(t, loop_len)
     if not _music.playing:
-        _music.play(want)
-        _mix_clock = t
+        _start_music(t, loop_len)
         return
-    var pos := _music.get_playback_position() + AudioServer.get_time_since_last_mix()
-    var at := t - want + pos                 # 재생 위치를 곡 시간으로 (반복 회차는 서버 시계 기준)
-    if at - t > loop_len * 0.5:
-        at -= loop_len
-    elif t - at > loop_len * 0.5:
-        at += loop_len
-    if absf(at - t) > 0.3:                   # 많이 어긋남 → 다시 맞춤
-        _music.seek(want)
-        _mix_clock = t
+    var pos := _music.get_playback_position()
+    if pos < _last_pos - loop_len * 0.5:
+        _loops += 1                         # 한 바퀴 돌았음
+    _last_pos = pos
+    var at := (_loop_base + _loops) * loop_len + pos + AudioServer.get_time_since_last_mix()
+    if absf(at - t) > 1.0:                  # 반주가 크게 어긋남(멈춤 등) → 다시 맞춤
+        _music.stop()
+        _start_music(t, loop_len)
         return
     _mix_clock += real_dt
     var err := at - _mix_clock
-    if absf(err) > 0.2:
-        _mix_clock = at                      # 멈칫(창 끌기 등) 뒤에만 바로 맞춤
+    if absf(err) > 0.25:
+        _mix_clock = at
     else:
         _mix_clock += err * minf(real_dt * 1.2, 1.0)
+
+
+func _start_music(t: float, loop_len: float) -> void:
+    var want := fposmod(t, loop_len)
+    _loop_base = int(floor(t / loop_len))
+    _loops = 0
+    _last_pos = want
+    _music.play(want)
+    _mix_clock = t
 
 
 # ================================================================ 메시지 (화면)
@@ -1244,7 +1175,7 @@ func _physics_process(delta: float) -> void:
             _fix(i)
     # 따라 치기 끝난 차례 정리
     while _finalized + 1 <= _announced and _finalized + 1 < turns.size():
-        if t < Chart.response_end(turns[_finalized + 1]) + 0.6:
+        if t < Chart.response_end(turns[_finalized + 1]) + 1.0:
             break
         _finalized += 1
         _finalize(_finalized)

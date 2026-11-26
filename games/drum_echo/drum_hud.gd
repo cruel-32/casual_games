@@ -26,7 +26,6 @@ var _result: PanelContainer
 var _result_list: VBoxContainer
 var _result_title: Label
 var _score_key := ""
-var _sync_label: Label
 var _spec: Label                    ## 마디 수·노트 수 (쉼·공격 동안 크게)
 var _spec_box: PanelContainer
 
@@ -77,27 +76,6 @@ func _build_menu_bar() -> void:
     bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     add_child(bar)
     bar.add_child(UI.sound_button())
-    # 박자 보정: 소리가 늦게 들리는 기기(블루투스 이어폰 등)에서 판정을 맞춤
-    var sync := UI.hbox(2)
-    var minus := UI.pill_button("−", UI.CREAM, UI.INK)
-    minus.focus_mode = Control.FOCUS_NONE
-    minus.tooltip_text = "판정이 늦다고(내가 일찍 친다고) 나오면 줄여요"
-    minus.pressed.connect(func(): game.change_sync(-10))
-    sync.add_child(minus)
-    _sync_label = UI.label("", 15, UI.CREAM)
-    _sync_label.add_theme_color_override("font_outline_color", UI.INK)
-    _sync_label.add_theme_constant_override("outline_size", 6)
-    _sync_label.custom_minimum_size.x = 96
-    _sync_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    _sync_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    _sync_label.size_flags_vertical = Control.SIZE_FILL
-    sync.add_child(_sync_label)
-    var plus := UI.pill_button("+", UI.CREAM, UI.INK)
-    plus.focus_mode = Control.FOCUS_NONE
-    plus.tooltip_text = "판정이 이르다고(내가 늦게 친다고) 나오면 늘려요"
-    plus.pressed.connect(func(): game.change_sync(10))
-    sync.add_child(plus)
-    bar.add_child(sync)
     if not game.is_online_match():
         var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
         again.pressed.connect(func(): game.restart_offline())
@@ -174,10 +152,7 @@ func _process(delta: float) -> void:
             _leave_btn.text = "나가기"
     var sc := _screen()
     var t: float = game.heard_time()
-    _sync_label.text = "박자 보정 %+dms" % game.sync_offset_ms
     _update_banner(t)
-    if Time.get_ticks_msec() / 1000.0 - game.calib_note_time < 2.5:
-        _sub.text = game.calib_note
     # 안내 글은 트랙 바로 위 (시선이 한곳에 모이게)
     var hr := _mini_rect()
     _place(_banner, hr.position.y - 50.0)
@@ -229,11 +204,6 @@ func _update_banner(t: float) -> void:
     if t < 0.0:
         _banner.text = str(ceili(-t))
         _sub.text = ("Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱") + "  ·  피버 = 누르고 있다가 떼기"
-        return
-    if t < Chart.INTRO_BARS * Chart.BAR and game.my_slot >= 0:
-        _banner.add_theme_color_override("font_color", UI.YELLOW)
-        _banner.text = "박자 맞추기!"
-        _sub.text = "반주의 '쿵'에 맞춰 아무 북이나 4번 넘게 쳐요 — 이 기기의 소리 지연을 맞춰요"
         return
     var ph: Array = game.phase_at(t)
     var i := int(ph[0])
