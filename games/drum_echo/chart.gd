@@ -4,7 +4,7 @@ extends RefCounted
 ## 시간 단위: 곡 시작(t0)부터의 초. 120 BPM, 4/4, 한 박 = 0.5초, 한 마디 = 2초
 ## 한 차례(turn) = [쉼] 공격 N마디 [쉼] 따라 치기 N마디
 ##   쉼(텀): 컴퓨터가 정해 준 둥·딱 개수를 보고 준비하는 시간. 곡이 진행될수록 짧아진다 (8박 → 4박)
-## 박자는 공격자 마음대로 (칸에 맞추지 않음). 반주 박에 맞으면 공격 점수 전부, 엇박(반 박)이면 절반, 그 밖은 0
+## 박자는 공격자 마음대로 (칸에 맞추지 않음). 반주의 박·반 박·4분의 1박(16분음표)에 맞으면 정박 → 점수 전부, 그 사이면 엇박 → 절반
 ## 노트: [시각 ms, 북, 끝 ms]  시각 = 공격 시작부터 ms, 북 0 = 둥(왼쪽) 1 = 딱(오른쪽), 끝 = -1 이면 한 번 치기, 아니면 피버(누르고 있다가 그 시각에 뗌)
 ## 개수 지정(spec): {"l": 둥 개수, "r": 딱 개수} — 피버 하나는 그 북 2개(누름·뗌)로 센다
 
@@ -24,10 +24,10 @@ const GAP_END := 4
 const PERFECT := 0.045
 const GOOD := 0.09
 const BAD := 0.14
-## 공격: 반주 박(또는 엇박)에서 얼마나 가까운지로 점수
-const ATTACK_PERFECT := 0.04
-const ATTACK_GOOD := 0.075
-const ATTACK_BAD := 0.11
+## 공격: 반주 박을 4로 나눈 자리(박·반 박·4분의 1박 = 0.125초 간격)에서 얼마나 가까운지로 점수
+const ATTACK_GRID := BEAT / 4.0
+const ATTACK_PERFECT := 0.03
+const ATTACK_GOOD := 0.05
 const MIN_NOTE_GAP := 0.09          ## 같은 북을 이보다 빨리 연달아 치면 한 번으로 (따라 치기에서 구분이 안 되므로)
 const MAX_NOTES_PER_BAR := 10
 
@@ -35,12 +35,12 @@ const MAX_NOTES_PER_BAR := 10
 const FEVER_HOLD_MIN := 0.3
 
 const POINTS := {"perfect": 100, "good": 60, "bad": 20, "miss": 0, "wild": -50, "extra": -10}
-## 공격 점수: 반주 박에 맞으면 그대로, 엇박이면 절반, 박도 엇박도 아니면 0 (따라 치기보다 작게)
-const ATTACK_POINTS := {"perfect": 50, "good": 30, "bad": 10}
+## 공격 점수: 정박(박·반 박·4분의 1박)에 맞으면 PERFECT 50 · GOOD 30, 그 사이(엇박)면 GOOD 의 절반 (따라 치기보다 작게)
+const ATTACK_POINTS := {"perfect": 50, "good": 30, "off": 15}
 ## 지정한 개수보다 많거나 적으면 1개당 감점 (피버 1개 = 2개)
 const COUNT_PENALTY := 40
 const JUDGE_NAMES := {"perfect": "PERFECT", "good": "GOOD", "bad": "BAD", "miss": "MISS", "extra": "헛침",
-        "off_perfect": "엇박 PERFECT", "off_good": "엇박 GOOD", "off_bad": "엇박 BAD", "free": "자유 박자"}
+        "off": "엇박"}
 
 ## 곡 길이는 팀 수와 상관없이 거의 같다: 단계별 차례 수 [공격 마디 수, 차례 수]
 ##   팀마다 똑같이 돌아가며 공격하고, 남는 차례(팀 수로 나누어떨어지지 않는 만큼, 최대 2번)는 진행자가 랜덤 리듬으로 공격
@@ -161,22 +161,14 @@ static func make_spec(bars: int, difficulty: float, seed_value: int) -> Dictiona
 
 
 ## 공격 박자 점수: 시각(공격 시작부터 초) → [판정 키, 점수]
-##   반주 박에 가까우면 perfect/good/bad 그대로, 엇박(반 박)에 가까우면 off_* 절반, 둘 다 아니면 free 0
+##   박·반 박·4분의 1박 중 가장 가까운 자리와의 차이로 perfect / good, 그보다 벗어나면 off(엇박, 절반)
 static func attack_score(rel: float) -> Array:
-    var d_on := absf(rel - round(rel / BEAT) * BEAT)
-    var j := _attack_judge(d_on)
-    if j != "":
-        return [j, int(ATTACK_POINTS[j])]
-    var off := rel - BEAT * 0.5
-    var d_off := absf(off - round(off / BEAT) * BEAT)
-    j = _attack_judge(d_off)
-    if j != "":
-        return ["off_" + j, int(ATTACK_POINTS[j]) / 2]
-    return ["free", 0]
-
-
-static func _attack_judge(d: float) -> String:
-    return "perfect" if d <= ATTACK_PERFECT else ("good" if d <= ATTACK_GOOD else ("bad" if d <= ATTACK_BAD else ""))
+    var d := absf(rel - round(rel / ATTACK_GRID) * ATTACK_GRID)
+    if d <= ATTACK_PERFECT:
+        return ["perfect", int(ATTACK_POINTS.perfect)]
+    if d <= ATTACK_GOOD:
+        return ["good", int(ATTACK_POINTS.good)]
+    return ["off", int(ATTACK_POINTS.off)]
 
 
 ## 같은 북에 시각 ms 근처(MIN_NOTE_GAP) 노트가 있나 (피버로 누르고 있는 구간 포함)

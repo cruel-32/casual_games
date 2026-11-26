@@ -543,7 +543,7 @@ func audible_team(turn: int) -> int:
 
 
 func _attack_window(tr: Dictionary, t: float) -> bool:
-    return t >= float(tr.attack_t) - Chart.ATTACK_BAD and t < Chart.attack_end(tr) - 0.05
+    return t >= float(tr.attack_t) - 0.1 and t < Chart.attack_end(tr) - 0.05
 
 
 # ================================================================ 입력
@@ -1121,7 +1121,7 @@ func _schedule_responders(i: int, notes: Array) -> void:
 
 
 static func _judge_color(j: String) -> Color:
-    if j.begins_with("off_"):
+    if j == "off":
         return Color(1.0, 0.65, 0.35)       # 엇박 (점수 절반)
     match j:
         "perfect":
@@ -1254,7 +1254,7 @@ func on_client_message(pid: int, msg: Array) -> void:
                 broadcast(["k", int(_slot_of_peer[pid]), int(msg[1]) & 1, 1 if int(msg[2]) == 1 else 0])
 
 
-const ATTACK_JUDGES := ["perfect", "good", "bad", "off_perfect", "off_good", "off_bad", "free"]
+const ATTACK_JUDGES := ["perfect", "good", "off"]
 const RESPONSE_JUDGES := ["perfect", "good", "bad", "miss", "extra"]
 
 

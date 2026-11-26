@@ -218,7 +218,7 @@ func _update_banner(t: float) -> void:
         if kind == "ready_attack":
             if who == me and me >= 0:
                 _banner.text = "준비! 내가 공격해요"
-                _sub.text = "칩 개수만큼 치면 돼요 — 박자는 마음대로 (반주 박에 맞으면 점수 더)"
+                _sub.text = "칩 개수만큼 치면 돼요 — 박자는 마음대로 (반주 박·반 박·4분의 1박에 맞으면 점수 더)"
             else:
                 _banner.text = "준비! %s 공격" % _team_name_of(team)
                 _sub.text = ("%s 님이 칠 리듬을 잘 들어요" % game.fighters[who].display_name) if who >= 0 else "진행자가 칠 리듬을 잘 들어요"
