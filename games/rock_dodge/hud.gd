@@ -5,6 +5,7 @@ var game: Node
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
 const SeriesPanel := preload("res://scripts/ui/series_panel.gd")
+const Teams := preload("res://scripts/core/teams.gd")
 
 var _top: Label
 var _center: Label
@@ -93,6 +94,16 @@ func _process(delta: float) -> void:
     var total: int = game.fighters.size()
     var my_kills: int = game.human.kills if game.human else 0
     _top.text = "생존 %d / %d     %s     킬 %d" % [alive, total, _fmt_time(game.elapsed), my_kills]
+    if game.teams >= 2:
+        # 팀전: 팀별 생존 인원
+        var parts := PackedStringArray()
+        for t in game.teams:
+            var n := 0
+            for f in game.fighters:
+                if f.team == t and not f.dead:
+                    n += 1
+            parts.append("%s %d" % [Teams.SHORT[t], n])
+        _top.text = "  ".join(parts) + "     %s     킬 %d" % [_fmt_time(game.elapsed), my_kills]
     var ser: Dictionary = game.series()
     if int(ser.get("total", 1)) > 1:
         _top.text = "라운드 %d/%d     " % [int(ser.round), int(ser.total)] + _top.text
@@ -119,7 +130,14 @@ func _process(delta: float) -> void:
                 sub = "생존 %s · 아래 버튼으로 다른 사람 시점을 볼 수 있어요" % _fmt_time(game.human_death_time)
         PartyGame.State.ENDED:
             var w: Fighter = game.winner
-            if total == 1:
+            if game.teams >= 2:
+                if game.winner_team < 0:
+                    center = "무승부"
+                elif human and human.team == game.winner_team:
+                    center = "우리 팀 승리!"
+                else:
+                    center = "%s 승리" % Teams.team_name(game.winner_team)
+            elif total == 1:
                 center = "게임 오버"
             elif w == null:
                 center = "무승부"

@@ -23,6 +23,7 @@ signal game_message(msg: Array)          # 클라이언트: 서버의 게임 모
 
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const Series := preload("res://scripts/core/series.gd")
+const Teams := preload("res://scripts/core/teams.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
 const PROTOCOL_VERSION := 7
@@ -162,6 +163,14 @@ static func start_block_reason(r: Dictionary) -> String:
             need = mini(need, module.min_players)
         if not any_ok:
             return "%d라운드(%s): 최소 %d명이 필요합니다 (또는 봇 채우기)" % [i + 1, Series.choice_name(choice), need]
+    var teams := int(r.get("teams", 0))
+    if teams >= 2:
+        for choice in round_games:
+            if String(choice) != Series.RANDOM and not GameRegistry.get_or_default(String(choice)).supports_teams:
+                return "%s 는 팀전을 지원하지 않아요" % GameRegistry.display_name(String(choice))
+        var tr := Teams.block_reason(r)
+        if tr != "":
+            return tr
     for m in members:
         if not m.get("host", false) and not m.get("ready", false):
             return "모두 레디해야 시작할 수 있습니다"
@@ -221,11 +230,13 @@ func _room_snapshot(rid: int) -> Dictionary:
             "nick": _players[pid].nick,
             "ready": r.ready.get(pid, false),
             "host": pid == r.host,
+            "team": int(r.team.get(pid, 0)),
         })
     return {
         "id": r.id, "name": r.name, "host": r.host, "max": r.max, "game": r.game,
         "bot_fill": r.bot_fill, "state": r.state, "members": members,
         "rounds": r.rounds, "round_games": r.round_games, "series": _series_view(r),
+        "teams": r.teams,
     }
 
 
@@ -248,7 +259,7 @@ func _public_rooms() -> Array:
         out.append({
             "id": rid, "name": r.name, "host_nick": _players[r.host].nick, "game": r.game,
             "count": r.members.size(), "max": r.max, "state": r.state, "bot_fill": r.bot_fill,
-            "rounds": r.rounds,
+            "rounds": r.rounds, "teams": r.teams,
         })
     out.sort_custom(func(a, b): return a.id < b.id)
     return out
@@ -288,6 +299,7 @@ func _leave_room(pid: int, reason: String) -> void:
     r.members.erase(pid)
     r.ready.erase(pid)
     r.returned.erase(pid)
+    r.team.erase(pid)
     _series_drop(r, pid)
     _players[pid].room = 0
     if _peer_alive(pid):
@@ -638,6 +650,7 @@ func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id:
         "max": clampi(max_players, 2, mini(MAX_PLAYERS_LIMIT, module.max_players)), "bot_fill": bot_fill,
         "state": "waiting", "members": [id], "ready": {}, "returned": {},
         "rounds": 1, "round_games": [module.id], "series": {},
+        "teams": 0, "team": {},
     }
     _players[id].room = rid
     print("[server] 방 생성 #%d '%s' [%s] by %s" % [rid, room_name, module.id, _players[id].nick])
@@ -665,6 +678,8 @@ func c_join_room(rid: int) -> void:
     if r.members.size() >= r.max:
         s_error.rpc_id(id, "방이 가득 찼습니다")
         return
+    if r.teams >= 2:
+        r.team[id] = Teams.smallest(_room_snapshot(rid).members, r.teams)
     r.members.append(id)
     r.ready[id] = false
     _players[id].room = rid
@@ -730,6 +745,16 @@ func c_update_settings(settings: Dictionary) -> void:
             r.round_games[i] = g
             games_changed = true
             _room_system_chat(rid, "%d라운드 게임이 '%s'(으)로 바뀌었습니다" % [i + 1, Series.choice_name(g)])
+    if settings.has("teams"):
+        var t := int(settings.teams)
+        if Teams.MODES.has(t) and t != r.teams:
+            r.teams = t
+            r.team.clear()
+            if t >= 2:
+                for i in r.members.size():
+                    r.team[r.members[i]] = i % t       # 고르게 나눔
+            r.ready.clear()
+            _room_system_chat(rid, "%s(으)로 바뀌었습니다" % Teams.mode_name(t))
     if games_changed:
         r.game = r.round_games[0]
         var mx := Series.max_players_for(r.round_games)
@@ -805,6 +830,10 @@ func c_start_game() -> void:
     r.state = "playing"
     r.returned.clear()
     r.series = Series.create(r.rounds, r.members)
+    # 팀전: 팀 배정과 팀 인원을 시리즈 내내 고정 (나간 자리는 봇이 채움)
+    r.series["teams"] = r.teams
+    r.series["team_of"] = r.team.duplicate()
+    r.series["team_size"] = Teams.team_size(_room_snapshot(rid))
     print("[server] 게임 시작 #%d (%d명, %d라운드)" % [rid, r.members.size(), r.rounds])
     _start_round(rid)
     _broadcast_room_list()
@@ -1082,7 +1111,7 @@ func _start_round(rid: int) -> void:
     if players.is_empty():
         return
     s.round = int(s.round) + 1
-    s.game = Series.resolve_game(String(r.round_games[s.round - 1]), players.size(), r.bot_fill)
+    s.game = Series.resolve_game(String(r.round_games[s.round - 1]), players.size(), r.bot_fill, int(s.get("teams", 0)))
     s.games.append(s.game)
     s.phase = "playing"
     s.ready = {}
@@ -1093,6 +1122,14 @@ func _start_round(rid: int) -> void:
     snap["members"] = snap.members.filter(func(m): return players.has(int(m.id)))
     var module = GameRegistry.get_or_default(s.game)
     snap["bot_fill"] = bool(r.bot_fill) and module.supports_bots
+    var teams := int(s.get("teams", 0))
+    if teams >= 2 and module.supports_teams:
+        snap["teams"] = teams
+        snap["team_size"] = int(s.team_size)
+        for m in snap.members:
+            m["team"] = int(s.team_of.get(int(m.id), 0))
+    else:
+        snap["teams"] = 0
     print("[server] 라운드 %d/%d #%d [%s] %d명" % [s.round, s.total, rid, s.game, players.size()])
     _room_system_chat(rid, "라운드 %d/%d: %s" % [s.round, s.total, module.display_name])
     for pid in players:
@@ -1174,3 +1211,28 @@ func _series_drop(r: Dictionary, pid: int) -> void:
 func round_ready(on: bool) -> void:
     if is_online():
         c_round_ready.rpc_id(1, on)
+
+
+# ================================================================ 팀전 — 팀 바꾸기
+## 대기 중에만. 자기 팀은 누구나, 다른 사람 팀은 방장만 바꿀 수 있다
+@rpc("any_peer", "call_remote", "reliable")
+func c_set_team(target: int, team: int) -> void:
+    var id := _sender()
+    if not is_server or id == 0:
+        return
+    var rid := int(_players[id].room)
+    if rid == 0:
+        return
+    var r: Dictionary = _rooms[rid]
+    if r.state != "waiting" or r.teams < 2 or team < 0 or team >= r.teams or not r.members.has(target):
+        return
+    if target != id and r.host != id:
+        return
+    r.team[target] = team
+    _send_room(rid)
+
+
+## 클라이언트: 팀 바꾸기 (target = 내 id 또는 방장이 바꿀 사람)
+func set_team(target: int, team: int) -> void:
+    if is_online():
+        c_set_team.rpc_id(1, target, team)

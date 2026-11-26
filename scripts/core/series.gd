@@ -88,11 +88,13 @@ static func winners(s: Dictionary) -> PackedStringArray:
 
 
 ## 라운드 게임 고르기. 랜덤이면 지금 인원으로 할 수 있는 게임 중 하나
-static func resolve_game(choice: String, players: int, bot_fill: bool) -> String:
+static func resolve_game(choice: String, players: int, bot_fill: bool, teams: int = 0) -> String:
     if choice != RANDOM:
         return GameRegistry.get_or_default(choice).id
     var pool := []
     for m in GameRegistry.all():
+        if teams >= 2 and not m.supports_teams:
+            continue
         if players >= m.min_players or (bot_fill and m.supports_bots):
             pool.append(m.id)
     if pool.is_empty():

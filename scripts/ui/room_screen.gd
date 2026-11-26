@@ -5,6 +5,7 @@ extends Control
 const UI := preload("res://scripts/ui/ui_kit.gd")
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const Series := preload("res://scripts/core/series.gd")
+const Teams := preload("res://scripts/core/teams.gd")
 
 var app: Node
 var _title: Label
@@ -25,6 +26,7 @@ var _s_name: LineEdit
 var _s_max: SpinBox
 var _s_bots: CheckBox
 var _s_rounds: SpinBox
+var _s_teams: OptionButton
 var _s_round_box: GridContainer
 var _s_round_opts: Array[OptionButton] = []
 var _overlay_text: Label
@@ -217,6 +219,8 @@ func _refresh(r: Dictionary) -> void:
     for c in _state_badge_holder.get_children():
         c.queue_free()
     var playing: bool = r.state == "playing"
+    var teams := int(r.get("teams", 0))
+    _state_badge_holder.add_child(UI.badge(Teams.mode_name(teams), UI.PRIMARY if teams >= 2 else UI.SECONDARY))
     _state_badge_holder.add_child(UI.badge("%d라운드" % rounds, UI.SECONDARY))
     _state_badge_holder.add_child(UI.badge("게임 중" if playing else "대기 중", UI.DANGER if playing else UI.GOOD))
     _playing_overlay.visible = playing
@@ -253,7 +257,7 @@ func _refresh(r: Dictionary) -> void:
     _slots_label.text = "참가자  %d / %d" % [members.size(), int(r.max)]
     for i in int(r.max):
         if i < members.size():
-            _grid.add_child(_member_card(members[i], i, host))
+            _grid.add_child(_member_card(members[i], i, host, teams))
         else:
             _grid.add_child(_empty_card(i, bool(r.bot_fill)))
 
@@ -311,11 +315,14 @@ func _portrait_rect(index: int, alpha: float = 1.0) -> TextureRect:
     return t
 
 
-func _member_card(m: Dictionary, index: int, viewer_is_host: bool) -> Control:
+func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 0) -> Control:
     var is_me := int(m.id) == Net.my_id
     var color: Color = Fighter.SLOT_COLORS[index % Fighter.SLOT_COLORS.size()]
-    var card := _slot_card(index, UI.CTA if is_me else UI.INK, 5 if is_me else 3,
-            color.lerp(Color.WHITE, 0.78))
+    var team := int(m.get("team", 0)) if teams >= 2 else -1
+    if team >= 0:
+        color = Teams.color(team)            # 팀전: 카드 색 = 팀 색
+    var card := _slot_card(index, UI.CTA if is_me else (Teams.color(team).darkened(0.2) if team >= 0 else UI.INK), 5 if is_me or team >= 0 else 3,
+            color.lerp(Color.WHITE, 0.72))
     var v := UI.vbox(2)
     card.add_child(v)
 
@@ -335,6 +342,12 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool) -> Control:
         b = UI.badge("대기", UI.MUTED)
     b.position = Vector2(2, 2)
     face.add_child(b)
+    if team >= 0:
+        var tb := UI.badge(Teams.SHORT[team], Teams.color(team), UI.INK if team == 3 else Color.WHITE)
+        tb.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 2)
+        tb.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+        tb.grow_vertical = Control.GROW_DIRECTION_BEGIN
+        face.add_child(tb)
 
     var name_l := UI.heading(String(m.nick), 20)
     name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -346,6 +359,16 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool) -> Control:
         me_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
         v.add_child(me_l)
 
+    # 팀 바꾸기: 나 자신은 누구나, 다른 사람은 방장만
+    if team >= 0 and (is_me or viewer_is_host) and Net.room.get("state", "") == "waiting":
+        var pid_t := int(m.id)
+        var next_team := (team + 1) % teams
+        var tbtn := _small_button("→ %s" % Teams.SHORT[next_team], Teams.color(next_team).darkened(0.1))
+        tbtn.pressed.connect(func(): Net.set_team(pid_t, next_team))
+        var trow := UI.hbox(0)
+        trow.alignment = BoxContainer.ALIGNMENT_CENTER
+        trow.add_child(tbtn)
+        v.add_child(trow)
     if viewer_is_host and not is_me:
         var acts := UI.hbox(6)
         acts.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -398,6 +421,9 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
     var rg: Array = r.get("round_games", [String(r.get("game", ""))])
     if host and _settings_mode == "host":
         _sync_round_widgets(rg)
+        var ti := Teams.MODES.find(int(r.get("teams", 0)))
+        if _s_teams.selected != ti:
+            _s_teams.select(ti)
         _s_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, Series.max_players_for(rg))
         _s_max.set_value_no_signal(int(r.max))
         _s_bots.set_pressed_no_signal(bool(r.bot_fill))
@@ -419,6 +445,14 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
         _s_name.text_submitted.connect(func(t): Net.update_settings({"name": t}))
         _s_name.focus_exited.connect(func(): Net.update_settings({"name": _s_name.text}))
         nrow.add_child(_s_name)
+        _s_teams = OptionButton.new()
+        _s_teams.custom_minimum_size = Vector2(112, 40)
+        _s_teams.add_theme_font_size_override("font_size", 15)
+        for t in Teams.MODES:
+            _s_teams.add_item(Teams.mode_name(t))
+        _s_teams.select(Teams.MODES.find(int(r.get("teams", 0))))
+        _s_teams.item_selected.connect(func(idx): Net.update_settings({"teams": Teams.MODES[idx]}))
+        nrow.add_child(_s_teams)
 
         # 2줄: 라운드 수(1~5) · 최대 인원 · 봇 채우기
         var mrow := UI.hbox(8)
@@ -463,6 +497,7 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
         _settings_box.add_child(rl)
         var chips := UI.hbox(6)
         _settings_box.add_child(chips)
+        chips.add_child(UI.badge(Teams.mode_name(int(r.get("teams", 0))), UI.PRIMARY if int(r.get("teams", 0)) >= 2 else UI.SECONDARY))
         chips.add_child(UI.badge("최대 %d명" % int(r.max), UI.SECONDARY))
         chips.add_child(UI.badge("봇 채우기 %s" % ("ON" if r.bot_fill else "OFF"), UI.GOOD if r.bot_fill else UI.MUTED))
         _settings_box.add_child(UI.label("설정은 방장만 바꿀 수 있어요", 13, UI.MUTED))

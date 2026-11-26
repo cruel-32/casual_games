@@ -19,6 +19,7 @@ var description := ""           # 방 화면에 보여줄 한 줄 설명
 var min_players := 2            # 봇 채우기 없이 시작하려면 필요한 최소 인원
 var max_players := 12
 var supports_bots := true       # 빈 자리 봇 채우기 가능 여부
+var supports_teams := false     # 팀전(2~4팀) 지원 여부 — 팀 순위로 report_result 해야 함
 var game_script_path := ""      # PartyGame 을 상속한 게임 스크립트 경로
 var thumbnail_path := ""        # 메뉴의 게임 카드 이미지 (16:9 권장, 없으면 색 카드)
 var accent := Color(0.2, 0.55, 0.95)   # 게임 카드 강조 색

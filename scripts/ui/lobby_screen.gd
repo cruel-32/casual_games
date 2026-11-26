@@ -156,6 +156,8 @@ func _make_card(r: Dictionary) -> Control:
     info.add_child(chips)
     chips.add_child(UI.badge("게임 중" if playing else ("가득 참" if full else "대기 중"),
             UI.DANGER if playing else (UI.MUTED if full else UI.GOOD)))
+    if int(r.get("teams", 0)) >= 2:
+        chips.add_child(UI.badge("%d팀전" % int(r.teams), UI.PRIMARY))
     if r.bot_fill:
         chips.add_child(UI.badge("봇 채우기", UI.SECONDARY))
 

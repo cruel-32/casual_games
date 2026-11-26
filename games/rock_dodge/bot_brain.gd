@@ -146,6 +146,8 @@ func _pick_target() -> Fighter:
     for o: Fighter in game.fighters:
         if o == f or o.dead:
             continue
+        if f.team >= 0 and o.team == f.team:
+            continue            # 팀전: 같은 팀은 노리지 않음 (사람은 팀킬 가능)
         var d := o.global_position.distance_to(f.global_position) + randf_range(0.0, 3.0)
         if d < best_d:
             best_d = d

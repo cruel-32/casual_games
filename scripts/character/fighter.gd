@@ -45,6 +45,8 @@ const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 @export var mouse_sensitivity := 0.0025
 
 ## 슬롯(참가 순서)별 몸 색 — 게임 안 캐릭터와 대기룸 초상화(ui/portraits/slot_N.png)가 같은 색을 쓴다
+## 팀전 이름표 색 (scripts/core/teams.gd 의 팀 색과 같은 순서, 조금 밝게)
+const TEAM_TAG_COLORS: Array[Color] = [Color(1.0, 0.55, 0.55), Color(0.6, 0.78, 1.0), Color(0.6, 0.92, 0.6), Color(1.0, 0.88, 0.4)]
 const SLOT_COLORS: Array[Color] = [
     Color(0.90, 0.22, 0.27), Color(0.27, 0.48, 0.62), Color(1.0, 0.72, 0.01),
     Color(0.16, 0.62, 0.56), Color(0.48, 0.37, 0.65), Color(0.96, 0.50, 0.12),
@@ -86,6 +88,7 @@ var intent_charge := false          # 밀치기 키를 누르고 있는가
 # 온라인 동기화
 var slot := 0                       # 게임 안 캐릭터 번호 (네트워크 메시지에서 이 번호로 가리킴)
 var peer_id := 0                    # 사람 플레이어의 접속 id (봇·오프라인은 0)
+var team := -1                      # 팀전 팀 번호 (-1 = 개인전)
 var remote := false
 var net_on_floor := true
 var net_invuln := false             # 주인이 보낸 무적 여부
@@ -568,6 +571,9 @@ func _build_name_tag() -> void:
     name_tag.pixel_size = 0.006
     name_tag.position.y = 2.05
     name_tag.visible = not is_human
+    if team >= 0:
+        # 팀전: 이름표를 팀 색으로
+        name_tag.modulate = TEAM_TAG_COLORS[team % TEAM_TAG_COLORS.size()]
     add_child(name_tag)
 
 

@@ -20,6 +20,7 @@ const HUD_SCRIPT := preload("res://games/rock_dodge/hud.gd")
 const Toon := preload("res://scripts/world/toon.gd")
 const Procedural := preload("res://scripts/world/procedural.gd")
 const Sync := preload("res://scripts/core/fighter_sync.gd")
+const Teams := preload("res://scripts/core/teams.gd")
 
 const SNAPSHOT_HZ := 20.0       # 서버 → 클라이언트 상태 전송 빈도
 const SEND_HZ := 30.0           # 클라이언트 → 서버 내 상태 전송 빈도
@@ -50,6 +51,8 @@ const BOT_COLORS := Fighter.SLOT_COLORS      # 슬롯 번호별 색 (대기룸 �
 var rocks: Array = []
 var elapsed := 0.0
 var winner: Fighter = null
+var winner_team := -1               # 팀전: 이긴 팀 (-1 = 없음·개인전)
+var teams := 0                       # 0 = 개인전, 2~4 = 팀 수
 var human_death_time := -1.0
 var _death_elapsed := {}         # 서버: slot -> 탈락 시각 (순위 계산용)
 var last_intensify_time := -10.0     # 탈락자 발생 → "낙석 증가!" 알림용
@@ -204,8 +207,23 @@ func _build_wind_fx() -> void:
 
 func _spawn_fighters() -> void:
     # 참가자 목록 (모든 PC에서 같은 순서 = 같은 slot 번호·시작 위치)
-    var entries: Array = []          # [{peer, name}]  peer 0 = 봇(또는 오프라인의 나)
-    if is_online_match():
+    var entries: Array = []          # [{peer, name, team}]  peer 0 = 봇(또는 오프라인의 나)
+    teams = int(online_match.get("teams", 0)) if is_online_match() else 0
+    if is_online_match() and teams >= 2:
+        # 팀전: 팀 순서대로 사람 → 모자란 자리는 봇 (모든 PC에서 같은 순서)
+        var size := int(online_match.get("team_size", 0))
+        var bot_n := 0
+        for t in teams:
+            var n := 0
+            for m in online_match.members:
+                if int(m.get("team", 0)) == t:
+                    entries.append({"peer": int(m.id), "name": String(m.nick), "team": t})
+                    n += 1
+            while n < size:
+                bot_n += 1
+                entries.append({"peer": 0, "name": "Bot %d" % bot_n, "team": t})
+                n += 1
+    elif is_online_match():
         for m in online_match.members:
             entries.append({"peer": int(m.id), "name": String(m.nick)})
         var total_slots: int = int(online_match.max) if online_match.bot_fill else online_match.members.size()
@@ -225,6 +243,7 @@ func _spawn_fighters() -> void:
         f.slot = i
         f.peer_id = e.peer
         f.display_name = e.name
+        f.team = int(e.get("team", -1))
         match net_role:
             NetRole.OFFLINE:
                 f.is_human = (i == 0)
@@ -235,7 +254,10 @@ func _spawn_fighters() -> void:
                 f.remote = e.peer != 0                   # 사람은 각자 PC에서 움직임
                 if e.peer != 0:
                     _slot_of_peer[e.peer] = i
-        f.body_color = Color(0.95, 0.95, 0.92) if f.is_human else BOT_COLORS[i % BOT_COLORS.size()]
+        if f.team >= 0:
+            f.body_color = Teams.color(f.team)        # 팀전: 팀 색 옷
+        else:
+            f.body_color = Color(0.95, 0.95, 0.92) if f.is_human else BOT_COLORS[i % BOT_COLORS.size()]
         f.look = i
         var a := PI * 0.5 + i * TAU / total
         var p := Vector3(cos(a), 0, sin(a)) * minf(8.0, arena_half - 2.0)
@@ -280,16 +302,27 @@ func _physics_process(delta: float) -> void:
 
 
 func _check_end() -> void:
-    var min_alive := 1 if fighters.size() > 1 else 0
     var alive := alive_fighters()
-    if alive.size() <= min_alive:
-        state = State.ENDED
-        state_time = 0.0
+    if teams >= 2:
+        # 팀전: 살아 있는 팀이 하나 이하가 되면 끝
+        var alive_teams := {}
+        for f in alive:
+            alive_teams[f.team] = true
+        if alive_teams.size() > 1:
+            return
+        winner_team = alive_teams.keys()[0] if alive_teams.size() == 1 else -1
+        winner = null
+    else:
+        var min_alive := 1 if fighters.size() > 1 else 0
+        if alive.size() > min_alive:
+            return
         winner = alive[0] if alive.size() == 1 else null
-        if is_server():
-            broadcast(["end", winner.slot if winner else -1, elapsed])
-            print("[server] 경기 종료 #%d 우승 %s" % [room_id(), winner.display_name if winner else "-"])
-            report_result(_placements())
+    state = State.ENDED
+    state_time = 0.0
+    if is_server():
+        broadcast(["end", winner.slot if winner else -1, elapsed, winner_team])
+        print("[server] 경기 종료 #%d 우승 %s" % [room_id(), winner.display_name if winner else "-"])
+        report_result(_placements())
 
 
 func _on_fighter_died(f: Fighter) -> void:
@@ -299,9 +332,13 @@ func _on_fighter_died(f: Fighter) -> void:
     var now := Time.get_ticks_msec() * 0.001
     var a := f.last_attacker
     var credited := a != null and a != f and now - f.last_attacker_time <= KILL_CREDIT_TIME
+    var team_kill := credited and teams >= 2 and a.team == f.team
     if is_server():
         broadcast(["died", f.slot, a.slot if credited else -1, f.global_position])
-    if credited:
+    if team_kill:
+        # 같은 팀을 밀어 떨어뜨림: 킬로 치지 않음
+        _feed("%s → %s 팀킬!" % [a.display_name, f.display_name], Color(1.0, 0.6, 0.3))
+    elif credited:
         a.kills += 1
         var col := Color(1.0, 0.9, 0.35) if a == human else (Color(1.0, 0.5, 0.45) if f == human else Color.WHITE)
         _feed("%s → %s 낙석행!" % [a.display_name, f.display_name], col)
@@ -314,6 +351,8 @@ func _on_fighter_died(f: Fighter) -> void:
 
 ## 순위: 살아남은 사람 1등, 나머지는 늦게 탈락할수록 높은 순위 (같은 순간 탈락은 같은 순위)
 func _placements() -> Array:
+    if teams >= 2:
+        return _team_placements()
     var order := fighters.duplicate()
     order.sort_custom(func(a: Fighter, b: Fighter):
         var ta: float = INF if not a.dead else float(_death_elapsed.get(a.slot, 0.0))
@@ -329,6 +368,30 @@ func _placements() -> Array:
             rank = i + 1
         prev = t
         out.append({"rank": rank, "members": [participant(f)], "team": ""})
+    return out
+
+
+## 팀 순위: 팀원이 마지막까지 남아 있던 시각이 늦을수록 높은 순위. 팀원 모두가 그 팀의 점수를 받는다
+func _team_placements() -> Array:
+    var last := {}           # team -> 마지막 팀원 탈락 시각 (살아 있으면 INF)
+    var members := {}        # team -> [participant]
+    for f in fighters:
+        var t: float = INF if not f.dead else float(_death_elapsed.get(f.slot, 0.0))
+        last[f.team] = maxf(float(last.get(f.team, -1.0)), t)
+        if not members.has(f.team):
+            members[f.team] = []
+        members[f.team].append(participant(f))
+    var order: Array = last.keys()
+    order.sort_custom(func(a, b): return last[a] > last[b])
+    var out := []
+    var rank := 0
+    var prev := -1.0
+    for i in order.size():
+        var tm: int = order[i]
+        if i == 0 or absf(last[tm] - prev) > 0.05:
+            rank = i + 1
+        prev = last[tm]
+        out.append({"rank": rank, "members": members[tm], "team": Teams.team_name(tm)})
     return out
 
 
@@ -748,6 +811,20 @@ func on_player_left(pid: int) -> void:
     if not _slot_of_peer.has(pid):
         return
     var f := fighters[_slot_of_peer[pid]]
+    if teams >= 2:
+        # 팀전: 나간 자리는 봇이 이어받는다 (팀 인원 유지)
+        _slot_of_peer.erase(pid)
+        f.peer_id = 0
+        f.remote = false
+        f.display_name = "Bot (%s)" % f.display_name
+        f.net_history.clear()
+        if not f.dead:
+            var brain := BOT_BRAIN.new()
+            brain.game = self
+            f.add_child(brain)
+        broadcast(["takeover", f.slot, f.display_name])
+        popup_text(f.global_position + Vector3(0, 2.4, 0), "봇 교체", Color(0.8, 0.8, 0.8))
+        return
     if not f.dead and state != State.ENDED:
         f.last_attacker = null
         f.die()
@@ -894,6 +971,13 @@ func on_server_message(msg: Array) -> void:
             state_time = 0.0
             winner = _fighter_at(int(msg[1]))
             elapsed = float(msg[2])
+            winner_team = int(msg[3]) if msg.size() > 3 else -1
+        "takeover":
+            var tf := _fighter_at(int(msg[1]))
+            if tf:
+                tf.display_name = String(msg[2])
+                if tf.name_tag:
+                    tf.name_tag.text = tf.display_name
 
 
 func _fighter_at(slot: int) -> Fighter:
