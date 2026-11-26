@@ -106,7 +106,8 @@ func method() -> String:
     var pc: Dictionary = manifest.get("pc", {})
     if Boot.can_patch() and pc.get("pck", "") != "" and pc.get("sig", "") != "" \
             and not bool(pc.get("full_required", false)) \
-            and String(manifest.get("engine", "")) == Boot.engine_version():
+            and String(manifest.get("engine", "")) == Boot.engine_version() \
+            and (String(pc.get("settings_sig", "")) == "" or String(pc.get("settings_sig", "")) == Boot.settings_sig()):
         return "patch"
     return "full" if pc.get("full", "") != "" else ""
 
@@ -237,8 +238,10 @@ func install_patch(part: String, pc: Dictionary, version: String) -> String:
     var f := FileAccess.open(Boot.CURRENT_FILE, FileAccess.WRITE)
     if f == null:
         return "업데이트 정보를 저장할 수 없어요"
-    f.store_string(JSON.stringify({"version": version, "file": final.get_file(), "engine": Boot.engine_version()}))
+    f.store_string(JSON.stringify({"version": version, "file": final.get_file(), "engine": Boot.engine_version(),
+            "settings_sig": String(pc.get("settings_sig", ""))}))
     f.close()
+    DirAccess.remove_absolute(Boot.TRY_FILE)      # 새 팩: 지난 '시작 시도' 표시는 의미 없음
     _cleanup_old(final.get_file())
     return ""
 

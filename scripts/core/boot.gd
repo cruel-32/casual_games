@@ -8,6 +8,9 @@ extends Node
 
 const UPDATE_DIR := "user://updates/"
 const CURRENT_FILE := "user://updates/current.json"
+## 업데이트 팩을 적용해 시작했다는 표시. 정상으로 몇 초 버티면 지움 → 남아 있으면 지난번에 팩 때문에 죽은 것
+const TRY_FILE := "user://updates/boot_try.txt"
+const HEALTHY_AFTER := 8.0
 
 var base_version := ""      ## 설치한 앱(실행 파일과 함께 온 팩)에 들어 있는 버전
 var patch_version := ""     ## 적용한 업데이트 팩의 버전 ("" = 없음)
@@ -31,6 +34,19 @@ func _init() -> void:
         patch_note = "설치본이 업데이트 팩보다 새것"
         _forget()
         return
+    # 업데이트 팩으로 바꿀 수 없는 설정(자동 로드·입력)이 다르면 팩을 쓰지 않는다 (전체 설치 필요)
+    var need_sig := String(info.get("settings_sig", ""))
+    if need_sig != "" and need_sig != settings_sig():
+        patch_note = "설정이 바뀐 업데이트라 전체 설치가 필요함"
+        _forget()
+        return
+    # 지난번에 이 팩으로 시작했다가 정상 확인 전에 꺼졌으면(강제 종료) 팩을 버린다
+    if FileAccess.file_exists(TRY_FILE) and FileAccess.get_file_as_string(TRY_FILE).strip_edges() == v:
+        patch_note = "지난번 실행이 비정상 종료되어 업데이트 팩을 쓰지 않음"
+        push_warning("[boot] " + patch_note)
+        _forget()
+        DirAccess.remove_absolute(TRY_FILE)
+        return
     var path := UPDATE_DIR + String(info.get("file", "")).get_file()
     if not FileAccess.file_exists(path) or not ProjectSettings.load_resource_pack(path):
         patch_note = "업데이트 팩을 열 수 없음"
@@ -38,7 +54,48 @@ func _init() -> void:
         return
     patch_version = v
     patch_file = path.get_file()
+    var tf := FileAccess.open(TRY_FILE, FileAccess.WRITE)
+    if tf:
+        tf.store_string(v)
+        tf.close()
     print("[boot] 업데이트 팩 적용 %s (설치본 %s)" % [v, base_version])
+
+
+func _ready() -> void:
+    if patch_version != "":
+        _check_patch_health.call_deferred()
+
+
+## 팩을 적용한 뒤: 자동 로드가 모두 떴는지 확인. 하나라도 없으면(팩의 코드가 설치본 설정과 안 맞음) 팩을 버리고 다시 시작
+## 문제없이 HEALTHY_AFTER 초를 버티면 '시작 시도' 표시를 지운다
+func _check_patch_health() -> void:
+    for prop in ProjectSettings.get_property_list():
+        var name := String(prop.name)
+        if not name.begins_with("autoload/"):
+            continue
+        var node_name := name.trim_prefix("autoload/")
+        if get_tree().root.get_node_or_null(node_name) == null:
+            push_warning("[boot] 업데이트 팩과 설치본이 맞지 않음 (%s 없음) → 설치본으로 다시 시작" % node_name)
+            _forget()
+            DirAccess.remove_absolute(TRY_FILE)
+            OS.set_restart_on_exit(true, OS.get_cmdline_args())
+            get_tree().quit()
+            return
+    get_tree().create_timer(HEALTHY_AFTER).timeout.connect(func(): DirAccess.remove_absolute(TRY_FILE))
+
+
+## 업데이트 팩으로 바꿀 수 없는 설정의 지문: 자동 로드(이름·경로)와 입력 동작 이름
+## 설치본(지금 실행 중인 앱)과 새 버전(version.json 의 pc.settings_sig)이 다르면 팩 대신 전체 설치
+static func settings_sig() -> String:
+    var lines := PackedStringArray()
+    for prop in ProjectSettings.get_property_list():
+        var name := String(prop.name)
+        if name.begins_with("autoload/"):
+            lines.append("%s=%s" % [name, str(ProjectSettings.get_setting(name))])
+        elif name.begins_with("input/"):
+            lines.append(name)
+    lines.sort()
+    return "\n".join(lines).sha256_text().substr(0, 16)
 
 
 ## 지금 실행 중인 게임 버전 (업데이트 팩이 있으면 그 버전)

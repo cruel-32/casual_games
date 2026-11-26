@@ -3,7 +3,7 @@
   audio/drum/ka.wav     오른쪽 북 '딱' (북 테두리)
   audio/drum/cue.wav    '준비' 신호 (마디 앞 박)
   audio/drum/miss.wav   놓침
-  audio/drum/groove.ogg 반주 120 BPM, 8마디 무한 반복 (북 소리와 겹치지 않게 가볍게)
+  audio/drum/groove.ogg 반주 100 BPM, 8마디 무한 반복 (북 소리와 겹치지 않게 가볍게)
 """
 import os, sys
 import numpy as np
@@ -44,7 +44,7 @@ t = t_(.25)
 miss = np.sin(2 * np.pi * np.cumsum(300 * np.exp(-t * 4)) / SR) * np.exp(-t * 10) * .6
 save('miss.wav', miss, .5)
 
-# ---- 반주: 120 BPM, C장조, 리듬 천국 느낌의 가벼운 펑크 (킥·하이햇·베이스·피아노 스탭)
+# ---- 반주: 100 BPM, C장조, 리듬 천국 느낌의 가벼운 펑크 (킥·하이햇·베이스·피아노 스탭)
 ev = []
 prog = ['C', 'Am', 'F', 'G'] * 2
 for bi, c in enumerate(prog):
@@ -63,4 +63,4 @@ for bi, c in enumerate(prog):
         for j, nn in enumerate(tones):
             ev.append((b0 + o + j * .01, G.pluck(G.m(nn + '4'), .55)))
     ev.append((b0 + 1, G.shaker(.9))); ev.append((b0 + 3, G.shaker(.9)))
-G.render(120, 8, ev, os.path.join(OUT, 'groove'), .92)
+G.render(100, 8, ev, os.path.join(OUT, 'groove'), .92)

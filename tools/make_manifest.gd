@@ -22,6 +22,8 @@ func _initialize() -> void:
         "sig": "",
         "full": String(links.get("windows", "/download/SmallPartyWorld-windows.zip")),
         "full_required": bool(release.get("pc_full_required", false)),
+        # 자동 로드·입력 설정 지문: 설치본과 다르면 PC 앱은 팩 대신 전체 zip 을 받는다 (팩으로는 이 설정이 안 바뀜)
+        "settings_sig": load("res://scripts/core/boot.gd").settings_sig(),
     }
     if a.has("pck") and FileAccess.file_exists(a.pck):
         var digest := _sha256(a.pck)

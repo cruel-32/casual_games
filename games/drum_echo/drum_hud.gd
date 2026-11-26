@@ -237,17 +237,11 @@ func _update_banner(t: float) -> void:
         var team := int(game.turns[i].attack_team)
         var bars := int(game.turns[i].bars)
         _banner.add_theme_color_override("font_color", Teams.color(team).lightened(0.35) if team >= 0 else UI.CREAM)
-        var spec: Dictionary = game.view_spec.get(i, {})
-        if not spec.is_empty():
-            _spec_box.visible = true
-            if who == me and me >= 0 and kind == "attack":
-                _spec.text = _progress_text(spec, game.view_notes.get(i, []))
-            else:
-                _spec.text = "%d마디 · %s" % [bars, Chart.spec_text(spec)]
+        # 칠 개수는 북 버튼 위 칩 더미, 길이는 박 램프로 보여 준다 (글자 대신)
         if kind == "ready_attack":
             if who == me and me >= 0:
                 _banner.text = "준비! 내가 공격해요"
-                _sub.text = "박자는 마음대로! 반주 박에 맞으면 점수 전부, 엇박이면 절반 · 개수가 다르면 감점"
+                _sub.text = "칩 개수만큼 치면 돼요 — 박자는 마음대로 (반주 박에 맞으면 점수 더)"
             else:
                 _banner.text = "준비! %s 공격" % _team_name_of(team)
                 _sub.text = ("%s 님이 칠 리듬을 잘 들어요" % game.fighters[who].display_name) if who >= 0 else "진행자가 칠 리듬을 잘 들어요"
@@ -255,7 +249,7 @@ func _update_banner(t: float) -> void:
                     _sub.text = "우리 팀 차례 — %s 님 화이팅!" % game.fighters[who].display_name
         elif who == me and me >= 0:
             _banner.text = "내가 공격! 북을 쳐요"
-            _sub.text = "박자는 마음대로 · 반주 박에 맞으면 점수 전부 · 길게 누르면 피버(2개로 셈)"
+            _sub.text = "칠 때마다 칩이 하나씩 빠져요 · 길게 누르면 피버 (칩 2개)"
         elif team < 0:
             _banner.text = "진행자 공격!"
             _sub.text = "진행자가 치는 리듬을 잘 듣고, 똑같이"
@@ -369,7 +363,9 @@ func _draw() -> void:
         return
     # 판정과 같은 시계(귀에 들리는 반주 시각)로 그린다 — 화면과 판정이 어긋나지 않게
     var t: float = game.heard_time()
-    _draw_beat_dots(t)
+    if not _draw_lamps(t):
+        _draw_beat_dots(t)
+    _draw_chips(t)
     var r := _highway_rect()
     draw_style_box(UI.box(Color(0.11, 0.16, 0.27, 0.82), 18, 0, UI.INK, 4, 0), r)
     var hit_x := r.position.x + r.size.x * 0.12
@@ -514,3 +510,112 @@ func _draw_beat_dots(t: float) -> void:
         var on := k == beat
         var rad := 9.0 + (6.0 * (1.0 - frac) if on else 0.0)
         draw_circle(c, rad, UI.YELLOW if on else Color(1, 1, 1, 0.35))
+
+
+# ---------------------------------------------------------------- 길이(박 램프)·남은 개수(칩)
+## 공격·따라 치기 길이: 박마다 램프 하나 (지나간 박은 켜짐, 지금 박은 깜빡). 쉼 동안은 꺼진 램프로 길이만 미리 보여 줌
+## 반환: 그렸으면 true
+func _draw_lamps(t: float) -> bool:
+    var ph: Array = game.phase_at(t)
+    var i := int(ph[0])
+    var kind: String = ph[1]
+    if i < 0 or kind == "":
+        return false
+    var tr: Dictionary = game.turns[i]
+    var n := int(tr.bars) * 4
+    var base: float = float(tr.attack_t) if kind == "ready_attack" or kind == "attack" else float(tr.response_t)
+    var playing := kind == "attack" or kind == "response"
+    var cur := int(floor((t - base) / Chart.BEAT)) if playing else -1
+    var frac := fposmod(t - base, Chart.BEAT) / Chart.BEAT
+    var sc := _screen()
+    var gap := clampf(620.0 / n, 22.0, 44.0)
+    var rad := minf(gap * 0.38, 15.0)
+    var y := 218.0
+    var span := (n - 1) * gap + rad * 2.0 + 28.0
+    draw_style_box(UI.box(Color(0.08, 0.1, 0.18, 0.72), 22, 0, Color(1, 1, 1, 0.35), 2, 0),
+            Rect2(Vector2(sc.x * 0.5 - span * 0.5, y - rad - 9.0), Vector2(span, rad * 2.0 + 18.0)))
+    var col: Color = Teams.color(int(tr.attack_team)).lightened(0.3) if (kind == "ready_attack" or kind == "attack") and int(tr.attack_team) >= 0 else UI.YELLOW
+    # 남은 쉼: 램프 앞에 작은 점 (곧 시작)
+    if not playing:
+        var left := ceili((base - t) / Chart.BEAT)
+        for k in mini(left, 8):
+            draw_circle(Vector2(sc.x * 0.5 - span * 0.5 - (k + 1) * 14.0, y), 4.0, Color(1, 1, 1, 0.75))
+    for k in n:
+        var c := Vector2(sc.x * 0.5 + (k - (n - 1) * 0.5) * gap, y)
+        var bar_start := k % 4 == 0
+        if k < cur:
+            draw_circle(c, rad, Color(col, 0.85))
+        elif k == cur:
+            draw_circle(c, rad + 5.0 * (1.0 - frac), col)
+        else:
+            draw_circle(c, rad, Color(0.1, 0.12, 0.2, 0.55))
+        draw_arc(c, rad, 0, TAU, 20, Color(1, 1, 1, 0.9 if bar_start else 0.55), 2.5 if bar_start else 1.5)
+    return true
+
+
+var _chip_prev := [-1, -1]
+var _chip_turn := -1
+var _chip_pop := [-10.0, -10.0]
+
+## 남은 개수: 북 버튼 위에 그 북 색 칩이 쌓여 있고, 칠 때마다 맨 위 칩이 빠진다. 넘치면 빨간 '넘침' 칩
+func _draw_chips(t: float) -> void:
+    var ph: Array = game.phase_at(t)
+    var i := int(ph[0])
+    var kind: String = ph[1]
+    if i < 0 or not (kind == "ready_attack" or kind == "attack") or not game.view_spec.has(i):
+        _chip_turn = -1
+        return
+    var spec: Dictionary = game.view_spec[i]
+    var made := Chart.count_of(game.view_notes.get(i, []))
+    var now := Time.get_ticks_msec() / 1000.0
+    if _chip_turn != i:
+        _chip_turn = i
+        _chip_prev = [-1, -1]
+    var sc := _screen()
+    var bs := clampf(sc.y * 0.2, 110.0, 170.0)
+    var font := get_theme_default_font()
+    for lane in 2:
+        var key := "l" if lane == 0 else "r"
+        var need := int(spec[key])
+        var done := int(made[key])
+        var left := maxi(need - done, 0)
+        var over := maxi(done - need, 0)
+        if _chip_prev[lane] >= 0 and left < _chip_prev[lane]:
+            _chip_pop[lane] = now
+        _chip_prev[lane] = left
+        var col := DON if lane == 0 else KA
+        var bx := 24.0 if lane == 0 else sc.x - bs - 24.0
+        var w := bs * 0.78
+        var h := 24.0
+        var x := bx + (bs - w) * 0.5
+        var y0 := sc.y - bs - 22.0 - 12.0           # 버튼 바로 위부터 위로 쌓음
+        var per_col := 8
+        for k in left:
+            var col_i := k / per_col
+            var row := k % per_col
+            var cw := w if left <= per_col else w * 0.5 - 2.0
+            var r := Rect2(Vector2(x + col_i * (w * 0.5 + 2.0), y0 - (row + 1) * (h + 4)), Vector2(cw, h))
+            _chip(r, col)
+        # 방금 빠진 칩: 위로 튀며 사라짐
+        var age: float = now - float(_chip_pop[lane])
+        if age < 0.3:
+            var r := Rect2(Vector2(x, y0 - (left + 1) * (h + 4) - age * 160.0), Vector2(w, h))
+            _chip(r, Color(col, 1.0 - age / 0.3))
+        # 넘친 만큼 빨간 칩
+        for k in over:
+            var r := Rect2(Vector2(x, y0 - (k + 1) * (h + 4)), Vector2(w, h))
+            _chip(r, Color(0.9, 0.2, 0.2))
+        # 맨 위 숫자 (남은 개수)
+        var top_y := y0 - maxi(mini(left, per_col), over) * (h + 4) - 10.0
+        var label := ("+%d 넘침!" % over) if over > 0 else ("%d" % left if left > 0 else "끝!")
+        var lc := Color(1, 0.4, 0.4) if over > 0 else (Color.WHITE if left > 0 else UI.YELLOW)
+        draw_string_outline(font, Vector2(bx, top_y), label, HORIZONTAL_ALIGNMENT_CENTER, bs, 26, 8, UI.INK)
+        draw_string(font, Vector2(bx, top_y), label, HORIZONTAL_ALIGNMENT_CENTER, bs, 26, lc)
+
+
+## 칩 하나: 두툼한 블록 + 윗면 광택
+func _chip(r: Rect2, col: Color) -> void:
+    draw_rect(Rect2(r.position + Vector2(0, 4), r.size), Color(0, 0, 0, 0.3 * col.a))
+    draw_rect(r, col)
+    draw_rect(Rect2(r.position + Vector2(3, 3), Vector2(r.size.x - 6, 6)), Color(1, 1, 1, 0.35 * col.a))
+    draw_rect(r, Color(UI.INK, col.a), false, 3.0)
