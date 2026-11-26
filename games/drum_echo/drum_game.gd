@@ -274,7 +274,7 @@ func _build_stage() -> void:
     _camera.fov = 50.0
     add_child(_camera)
     _overview_pos = Vector3(0, h + 3.0 + r * 0.4, 3.6 + r * 0.95)
-    _overview_look = Vector3(0, h + 1.0, -r * 0.55 + 1.0)
+    _overview_look = Vector3(0, h + 0.4, -r * 0.55 + 1.0)
     _cam_pos = _overview_pos
     _cam_look = _overview_look
     _camera.global_position = _cam_pos
@@ -752,7 +752,7 @@ func _process(delta: float) -> void:
     var who := int(view_attacker.get(show_i, -2)) if show_i >= 0 else -2
     _attack_mark.visible = who >= -1 and state == State.PLAYING
     if _attack_mark.visible:
-        var top: Vector3 = fighters[who].global_position + Vector3(0, 2.75, 0) if who >= 0 else _hosts[0].global_position + Vector3(0, 3.0, 0)
+        var top: Vector3 = fighters[who].global_position + Vector3(0, 2.45, 0) if who >= 0 else _hosts[0].global_position + Vector3(0, 3.0, 0)
         _attack_mark.global_position = top + Vector3(0, sin(t * 8.0) * 0.08, 0)
         var at := int(turns[show_i].attack_team)
         _attack_mark.text = ("진행자 공격!" if at < 0 else "공격!") if cur[1] == "attack" else "다음 공격!"
@@ -897,7 +897,7 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
         dir.y = 0.0
         dir = dir.normalized()
         var dist := 4.8 + spread * 1.3
-        want_look = Vector3(c.x, h + 1.15, c.z)
+        want_look = Vector3(c.x, h + 0.55, c.z)        # 보는 점을 낮춰 캐릭터가 화면 위쪽(아래 UI에 안 가리게)
         want_pos = want_look + dir * dist + Vector3(0, 1.4 + dist * 0.22, 0)
         # 너무 옆으로 돌지 않게 전체 시점과 섞음
         want_pos = want_pos.lerp(_overview_pos, 0.25)
