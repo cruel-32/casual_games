@@ -1,7 +1,7 @@
 // 계정 (소셜 로그인) · 하루 판수 · 광고 보상 · 운영 단계
 //
 // 개인정보 최소화: 제공자 이름과 "제공자 사용자 번호를 해시한 값"만 저장한다.
-// 이메일·이름·프로필 사진은 요청하지도, 저장하지도 않는다 (구글 scope=openid, 카카오 동의 항목 없음, 애플 scope 없음).
+// 이메일·이름·프로필 사진은 요청하지도, 저장하지도 않는다 (구글 scope=openid, 애플 scope 없음).
 //
 // 공개 (Caddy /api/*)
 //   GET    /api/auth/providers            켜진 로그인 제공자
@@ -17,14 +17,14 @@
 //   POST /internal/account/verify {token}         → {account}
 //   POST /internal/plays/start {accounts:[id]}    → {ok, blocked:[id], phase}
 //
-// 환경 변수: PUBLIC_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, KAKAO_REST_KEY, KAKAO_CLIENT_SECRET,
+// 환경 변수: PUBLIC_URL, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET,
 //           APPLE_SERVICE_ID, APPLE_TEAM_ID, APPLE_KEY_ID, APPLE_PRIVATE_KEY
 
 import crypto from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, SignJWT, importPKCS8 } from "jose";
 
-export const PROVIDERS = ["google", "apple", "kakao"];
-const PROVIDER_NAMES = { google: "구글", apple: "Apple", kakao: "카카오" };
+export const PROVIDERS = ["google", "apple"];
+const PROVIDER_NAMES = { google: "구글", apple: "Apple" };
 const LOGIN_TTL_MS = 10 * 60e3;          // 로그인 시작 후 10분 안에 끝내야 함
 const TOKEN_DAYS = 180;                  // 게임 로그인 유지 기간
 const KST_MS = 9 * 3600e3;
@@ -121,25 +121,6 @@ export function makeAccounts({ db, env = {}, getSetting, setSetting, audit, prov
                 },
             };
         })(),
-        kakao: env.KAKAO_REST_KEY && {
-            authorizeUrl: (s) => "https://kauth.kakao.com/oauth/authorize?" + new URLSearchParams({
-                client_id: env.KAKAO_REST_KEY, redirect_uri: s.redirect, response_type: "code", state: s.id,
-            }),
-            async exchange(params, s) {
-                const body = { grant_type: "authorization_code", client_id: env.KAKAO_REST_KEY, redirect_uri: s.redirect, code: params.code };
-                if (env.KAKAO_CLIENT_SECRET) body.client_secret = env.KAKAO_CLIENT_SECRET;
-                const r = await fetchImpl("https://kauth.kakao.com/oauth/token", {
-                    method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded;charset=utf-8" }, body: new URLSearchParams(body),
-                });
-                const d = await r.json();
-                if (!d.access_token) throw new Error("kakao token: " + (d.error || r.status));
-                // 회원번호만 받는다 (동의 항목 없음)
-                const me = await fetchImpl("https://kapi.kakao.com/v2/user/me?property_keys=" + encodeURIComponent("[]"), { headers: { Authorization: "Bearer " + d.access_token } });
-                const u = await me.json();
-                if (!u.id) throw new Error("kakao user: " + me.status);
-                return String(u.id);
-            },
-        },
         apple: env.APPLE_SERVICE_ID && env.APPLE_TEAM_ID && env.APPLE_KEY_ID && env.APPLE_PRIVATE_KEY && (() => {
             const jwks = createRemoteJWKSet(new URL("https://appleid.apple.com/auth/keys"));
             const clientSecret = async () => {
@@ -328,7 +309,7 @@ h1{font-size:24px;margin:0 0 10px;color:${ok ? "#2a9d8f" : "#e63946"}}p{margin:0
             res.end();
             return true;
         }
-        const cb = p.match(/^\/api\/auth\/callback\/(google|apple|kakao)$/);
+        const cb = p.match(/^\/api\/auth\/callback\/(google|apple)$/);
         if (cb && (m === "GET" || m === "POST")) {
             const params = m === "POST" ? await readForm(req) : Object.fromEntries(url.searchParams);
             const s = logins.get(params.state || "");

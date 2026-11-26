@@ -116,7 +116,7 @@ func _ready() -> void:
             _server.select(i)
     server_row.add_child(_server)
 
-    # 계정: 온라인 대전은 구글·Apple·카카오 로그인 필요 (혼자 연습은 로그인 없이)
+    # 계정: 온라인 대전은 구글·Apple 로그인 필요 (혼자 연습은 로그인 없이)
     _account_row = UI.hbox(10)
     cv.add_child(_account_row)
     Account.changed.connect(_refresh_account)
@@ -271,7 +271,7 @@ func _build_help() -> void:
 
 # ---- 계정 줄
 var _account_row: HBoxContainer
-const PROVIDER_COLORS := {"google": Color(0.26, 0.52, 0.96), "apple": Color(0.1, 0.1, 0.12), "kakao": Color(1.0, 0.9, 0.0)}
+const PROVIDER_COLORS := {"google": Color(0.26, 0.52, 0.96), "apple": Color(0.1, 0.1, 0.12)}
 
 
 func _refresh_account() -> void:
@@ -315,7 +315,7 @@ func _refresh_account() -> void:
         for pv in Account.providers:
             var id := String(pv.id)
             var col: Color = PROVIDER_COLORS.get(id, UI.INK)
-            var b := UI.pill_button(String(pv.name), col, UI.INK if id == "kakao" else Color.WHITE)
+            var b := UI.pill_button(String(pv.name), col, Color.WHITE)
             b.pressed.connect(func():
                 _set_status("", UI.MUTED)
                 Account.start_login(id))

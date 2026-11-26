@@ -148,7 +148,7 @@ test("소셜 로그인 → 계정·판수·광고 보상·계정 삭제", async 
     const ssvKeys = { "42": publicKey.export({ type: "spki", format: "pem" }) };
     const providers = {
         google: { authorizeUrl: (s) => "https://fake-google/auth?state=" + s.id, exchange: async (q) => "sub-" + q.code },
-        kakao: { authorizeUrl: (s) => "https://fake-kakao/auth?state=" + s.id, exchange: async (q) => "k-" + q.code },
+        apple: { authorizeUrl: (s) => "https://fake-apple/auth?state=" + s.id, exchange: async (q) => "a-" + q.code },
     };
     const db = openDb(":memory:");
     const srv = http.createServer(createApp({ db, clientId: "", ownerEmails: ["owner@gmail.com"], verifyGoogle: fakeVerify, secureCookie: false, providers, ssvKeys }));
@@ -174,12 +174,12 @@ test("소셜 로그인 → 계정·판수·광고 보상·계정 삭제", async 
         return poll.data;
     }
     try {
-        assert.deepEqual((await req("GET", "/api/auth/providers")).data.providers.map((p) => p.id), ["google", "kakao"]);
-        assert.equal((await req("POST", "/api/auth/start", { provider: "apple" })).status, 400);
+        assert.deepEqual((await req("GET", "/api/auth/providers")).data.providers.map((p) => p.id), ["google", "apple"]);
+        assert.equal((await req("POST", "/api/auth/start", { provider: "naver" })).status, 400);
         const a = await login("google", "111");
         const again = await login("google", "111");
         assert.equal(again.account.id, a.account.id);                 // 같은 사람 = 같은 계정
-        const k = await login("kakao", "111");
+        const k = await login("apple", "111");
         assert.notEqual(k.account.id, a.account.id);
         // 저장된 것은 해시뿐 (원래 번호가 DB 에 없음)
         assert.ok(!JSON.stringify(db.prepare("SELECT * FROM accounts").all()).includes("sub-111"));

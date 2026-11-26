@@ -385,7 +385,7 @@ th { font-size: 12px; color: var(--muted); }
   };
 
   // ---- 운영 정책
-  var PROV = { google: "구글", apple: "Apple", kakao: "카카오" };
+  var PROV = { google: "구글", apple: "Apple" };
   function loadPolicy() {
     api("GET", "/admin/api/policy").then(function (d) {
       var p = d.policy;

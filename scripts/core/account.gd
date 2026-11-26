@@ -1,5 +1,5 @@
 extends Node
-## 계정 (자동 로드 "Account") — 온라인 대전은 구글·Apple·카카오 로그인이 필요하다. 혼자 연습은 로그인 없이.
+## 계정 (자동 로드 "Account") — 온라인 대전은 구글·Apple 로그인이 필요하다. 혼자 연습은 로그인 없이.
 ##   Account.is_logged_in()            로그인했나 (이 기기에 토큰이 있나)
 ##   Account.start_login("google")     브라우저로 로그인 화면을 열고, 끝날 때까지 기다린다 → changed / login_failed
 ##   Account.refresh()                 계정·오늘 판수 다시 읽기 → changed
