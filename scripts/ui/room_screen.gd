@@ -380,7 +380,78 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
         var give := _small_button("방장 위임", UI.SECONDARY)
         give.pressed.connect(func(): Net.transfer_host(pid))
         acts.add_child(give)
+    # 신고·차단: 다른 사람 누구에게나
+    if not is_me:
+        var safety := UI.hbox(6)
+        safety.alignment = BoxContainer.ALIGNMENT_CENTER
+        v.add_child(safety)
+        var pid_s := int(m.id)
+        var nick_s := String(m.nick)
+        var uid := String(m.get("uid", ""))
+        var rep := _small_button("신고", UI.MUTED)
+        rep.pressed.connect(func(): _open_report(pid_s, nick_s))
+        safety.add_child(rep)
+        if uid != "":
+            var is_blocked := Net.blocked.has(uid)
+            var blk := _small_button("차단 해제" if is_blocked else "차단", UI.SECONDARY if is_blocked else UI.MUTED)
+            blk.tooltip_text = "이 사람의 채팅을 내 화면에서 숨겨요"
+            blk.pressed.connect(func():
+                Net.set_blocked(uid, nick_s, not is_blocked)
+                _append_chat("", "%s 님을 %s" % [nick_s, "차단 해제했어요" if is_blocked else "차단했어요. 이 사람의 채팅이 보이지 않아요"], true)
+                _refresh(Net.room))
+            safety.add_child(blk)
+        if Net.blocked.has(uid):
+            var bl := UI.label("차단함", 12, UI.DANGER)
+            bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+            v.add_child(bl)
     return card
+
+
+# ---------------------------------------------------------------- 신고
+var _report_dlg: Control
+var _report_reason: OptionButton
+var _report_detail: LineEdit
+var _report_title: Label
+var _report_target := 0
+
+
+func _open_report(pid: int, nick: String) -> void:
+    if _report_dlg == null:
+        _report_dlg = ColorRect.new()
+        (_report_dlg as ColorRect).color = Color(UI.INK, 0.55)
+        _report_dlg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+        add_child(_report_dlg)
+        var v := UI.centered_panel(_report_dlg, 460)
+        _report_title = UI.heading("", 26)
+        v.add_child(_report_title)
+        var note := UI.label("운영자가 신고 내용과 이 방의 최근 채팅을 확인해요. 거짓 신고는 제재될 수 있어요.", 15, UI.MUTED)
+        note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        v.add_child(note)
+        _report_reason = OptionButton.new()
+        _report_reason.add_theme_font_size_override("font_size", 18)
+        for k in Net.REPORT_REASONS:
+            _report_reason.add_item(Net.REPORT_REASONS[k])
+            _report_reason.set_item_metadata(_report_reason.item_count - 1, k)
+        v.add_child(_report_reason)
+        _report_detail = UI.line_edit("자세한 내용 (선택)", "", 200)
+        v.add_child(_report_detail)
+        var row := UI.hbox(10)
+        v.add_child(row)
+        var cancel := UI.secondary_button("취소")
+        cancel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        cancel.pressed.connect(func(): _report_dlg.visible = false)
+        row.add_child(cancel)
+        var send := UI.cta_button("신고하기")
+        send.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        send.pressed.connect(func():
+            Net.report(_report_target, String(_report_reason.get_item_metadata(_report_reason.selected)), _report_detail.text)
+            _report_dlg.visible = false)
+        row.add_child(send)
+    _report_target = pid
+    _report_title.text = "%s 님 신고" % nick
+    _report_reason.select(0)
+    _report_detail.clear()
+    _report_dlg.visible = true
 
 
 func _empty_card(index: int, bot_fill: bool) -> Control:
@@ -579,6 +650,8 @@ func _on_chat(nick: String, text: String, system: bool) -> void:
 
 
 func _append_chat(nick: String, text: String, system: bool) -> void:
+    if not system and Net.is_blocked_nick(nick):
+        return              # 차단한 사람의 채팅은 숨김
     var safe := text.replace("[", "[lb]")
     if system:
         _chat_log.append_text("[color=#8a90a6]· %s[/color]\n" % safe)

@@ -24,9 +24,10 @@ signal game_message(msg: Array)          # 클라이언트: 서버의 게임 모
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const Series := preload("res://scripts/core/series.gd")
 const Teams := preload("res://scripts/core/teams.gd")
+const WordFilter := preload("res://scripts/core/word_filter.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 8
+const PROTOCOL_VERSION := 9
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
@@ -47,6 +48,10 @@ const ROOM_NAME_MAX := 20
 const CHAT_MAX := 120
 const CONNECT_TIMEOUT := 6.0
 const MATCH_SCENE := "res://scenes/match.tscn"
+## 신고 사유 (관리 서버 REPORT_REASONS 와 같아야 함)
+const REPORT_REASONS := {"abuse": "욕설·비하", "spam": "도배·광고", "nickname": "부적절한 닉네임", "cheat": "핵·부정 이용", "other": "기타"}
+const DEVICE_FILE := "user://device.cfg"
+const ROOM_CHAT_KEEP := 40              # 서버: 방마다 최근 채팅 몇 개를 기억하나 (신고에 첨부, 저장은 안 함)
 
 var is_server := false
 var server_name := ""                   # 현재 접속한 서버의 표시 이름
@@ -58,6 +63,8 @@ var rooms: Array = []
 var room: Dictionary = {}               # 현재 방 스냅샷 (없으면 빈 딕셔너리)
 var match_config: Dictionary = {}       # 게임 시작 시 받은 방 정보 (게임 씬에서 사용)
 var chat_log: Array = []                # 현재 방 채팅 기록 [{nick, text, system}]
+var blocked: Dictionary = {}            # 클라이언트: 차단한 사람 uid -> 닉네임 (이 기기에만 저장, 채팅 숨김)
+var _device_id := ""
 var _connect_timer: SceneTreeTimer
 var _connecting := false
 var rtt := 0.0                          # 왕복 지연(초)
@@ -70,6 +77,11 @@ var _ping_count := 0
 # ---- 서버 상태
 var _players := {}                      # peer_id -> {nick, room}
 var _client_versions := {}              # peer_id -> 게임 버전 (x_hello 로 받음)
+var _client_devices := {}               # peer_id -> 기기 ID (y_device 로 받음, 제재 기준)
+var _sanctions: Array = []              # 관리 서버의 제재 목록 [{device, kind, until, reason}]
+var _mod_http: HTTPRequest
+var _report_queue: Array = []           # 관리 서버로 보낼 신고 (차례로 전송)
+var _report_http: HTTPRequest
 var _min_client_version := "0.0.0"     # release.json 의 min_supported (서버가 시작할 때 읽음)
 ## 점검 모드 (관리 서버 /api/status 를 주기적으로 읽음). 켜지면 새 로그인·방 만들기를 막는다
 var maintenance := {"on": false, "message": ""}
@@ -86,6 +98,7 @@ var _matches := {}                      # room_id -> {vp: SubViewport, game: Nod
 
 func _ready() -> void:
     _nick_regex.compile("^[가-힣A-Za-z0-9_\\-\\.]+$")
+    _load_blocked()
     multiplayer.connected_to_server.connect(_on_connected_to_server)
     multiplayer.connection_failed.connect(_on_connection_failed)
     multiplayer.server_disconnected.connect(_on_server_disconnected)
@@ -200,6 +213,7 @@ func _on_peer_disconnected(id: int) -> void:
     if not is_server:
         return
     _client_versions.erase(id)
+    _client_devices.erase(id)
     if _players.has(id):
         print("[server] 퇴장 %s (%d)" % [_players[id].nick, id])
         _leave_room(id, "")
@@ -216,6 +230,8 @@ func _validate_nick(nick: String) -> String:
         return "닉네임은 %d~%d자여야 합니다" % [NICK_MIN, NICK_MAX]
     if _nick_regex.search(nick) == null:
         return "닉네임은 한글, 영문, 숫자, _ - . 만 쓸 수 있습니다"
+    if WordFilter.contains(nick):
+        return "쓸 수 없는 단어가 들어 있는 닉네임입니다"
     for id in _players:
         if String(_players[id].nick).to_lower() == nick.to_lower():
             return "이미 사용 중인 닉네임입니다"
@@ -232,6 +248,7 @@ func _room_snapshot(rid: int) -> Dictionary:
             "ready": r.ready.get(pid, false),
             "host": pid == r.host,
             "team": int(r.team.get(pid, 0)),
+            "uid": String(_players[pid].get("uid", "")),      # 차단용 (기기 ID 를 해시한 값)
         })
     return {
         "id": r.id, "name": r.name, "host": r.host, "max": r.max, "game": r.game,
@@ -611,12 +628,19 @@ func c_login(nick: String, protocol: int) -> void:
     if Boot.compare(ver, _min_client_version) < 0:
         s_login_result.rpc_id(id, false, "새 버전(%s 이상)이 나왔어요. 첫 화면의 업데이트 버튼으로 업데이트해 주세요" % _min_client_version)
         return
+    var dev := String(_client_devices.get(id, ""))
+    if dev == "":
+        dev = "srv" + Crypto.new().generate_random_bytes(12).hex_encode()     # 기기 ID 를 안 보낸 경우 (이 접속에만)
+    var ban := _sanction_for(dev, "ban")
+    if not ban.is_empty():
+        s_login_result.rpc_id(id, false, "이용이 제한된 기기입니다%s. 문의: 정보 → 이메일" % _until_text(ban))
+        return
     nick = nick.strip_edges()
     var err := _validate_nick(nick)
     if err != "":
         s_login_result.rpc_id(id, false, err)
         return
-    _players[id] = {"nick": nick, "room": 0}
+    _players[id] = {"nick": nick, "room": 0, "dev": dev, "uid": dev.sha256_text().left(16)}
     print("[server] 로그인 %s (%d)" % [nick, id])
     s_login_result.rpc_id(id, true, nick)
     s_room_list.rpc_id(id, _public_rooms())
@@ -640,7 +664,7 @@ func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id:
     if int(_players[id].room) != 0:
         s_error.rpc_id(id, "이미 방에 있습니다")
         return
-    room_name = room_name.strip_edges().left(ROOM_NAME_MAX)
+    room_name = WordFilter.mask(room_name.strip_edges().left(ROOM_NAME_MAX))
     if room_name == "":
         room_name = "%s의 방" % _players[id].nick
     var module = GameRegistry.get_or_default(game_id)
@@ -734,7 +758,7 @@ func c_update_settings(settings: Dictionary) -> void:
     if r.state != "waiting":
         return
     if settings.has("name"):
-        var n := String(settings.name).strip_edges().left(ROOM_NAME_MAX)
+        var n := WordFilter.mask(String(settings.name).strip_edges().left(ROOM_NAME_MAX))
         if n != "":
             r.name = n
     var games_changed := false
@@ -822,7 +846,16 @@ func c_chat(text: String) -> void:
     text = text.strip_edges().left(CHAT_MAX)
     if rid == 0 or text == "":
         return
-    for pid in _rooms[rid].members:
+    var mute := _sanction_for(String(_players[id].get("dev", "")), "mute")
+    if not mute.is_empty():
+        s_chat.rpc_id(id, "", "채팅이 제한된 상태예요%s" % _until_text(mute), true)
+        return
+    text = WordFilter.mask(text)
+    var r: Dictionary = _rooms[rid]
+    var recent: Array = r.get("chat", [])
+    recent.append({"t": Time.get_datetime_string_from_system(true) + "Z", "nick": _players[id].nick, "text": text})
+    r["chat"] = recent.slice(-ROOM_CHAT_KEEP)
+    for pid in r.members:
         s_chat.rpc_id(pid, _players[id].nick, text, false)
 
 
@@ -984,6 +1017,7 @@ func disconnect_from_server() -> void:
 
 func login(nick: String) -> void:
     x_hello.rpc_id(1, Boot.version())      # 같은 연결에서 순서대로 도착 (reliable)
+    y_device.rpc_id(1, device_id())
     c_login.rpc_id(1, nick, PROTOCOL_VERSION)
 
 
@@ -1107,6 +1141,7 @@ func _start_admin_poll() -> void:
             _admin_http.request(base.trim_suffix("/") + "/api/status")
     timer.timeout.connect(poll)
     poll.call()
+    _start_moderation_poll(base)
 
 
 func _maintenance_text() -> String:
@@ -1248,3 +1283,179 @@ func c_set_team(target: int, team: int) -> void:
 func set_team(target: int, team: int) -> void:
     if is_online():
         c_set_team.rpc_id(1, target, team)
+
+
+# ================================================================ 신고·차단·제재 (3단계)
+# RPC 번호가 기존 함수들과 섞이지 않도록 이름을 y_ 로 시작한다 (x_hello 뒤로 정렬)
+
+## 클라이언트: 이 기기의 ID (처음 한 번 무작위로 만들어 저장). 서버의 제재 기준, 다른 사람에게는 해시만 보임
+func device_id() -> String:
+    if _device_id != "":
+        return _device_id
+    var cfg := ConfigFile.new()
+    cfg.load(DEVICE_FILE)
+    var v := String(cfg.get_value("device", "id", ""))
+    if not v.is_valid_hex_number() or v.length() != 32:
+        v = Crypto.new().generate_random_bytes(16).hex_encode()
+        cfg.set_value("device", "id", v)
+        cfg.save(DEVICE_FILE)
+    _device_id = v
+    return v
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func y_device(dev: String) -> void:
+    if not is_server:
+        return
+    var id := multiplayer.get_remote_sender_id()
+    if dev.is_valid_hex_number() and dev.length() == 32 and not _players.has(id):
+        _client_devices[id] = dev
+
+
+## 클라이언트: 같은 방 사람 신고 (reason: REPORT_REASONS 키)
+func report(target_pid: int, reason: String, detail: String) -> void:
+    y_report.rpc_id(1, target_pid, reason, detail.strip_edges().left(200))
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func y_report(target: int, reason: String, detail: String) -> void:
+    var id := _sender()
+    if not is_server or id == 0:
+        return
+    var rid := int(_players[id].room)
+    if rid == 0 or not _rooms.has(rid) or not _rooms[rid].members.has(target) or target == id or not _players.has(target):
+        s_chat.rpc_id(id, "", "신고할 수 없어요 (같은 방에 있는 사람만 신고할 수 있어요)", true)
+        return
+    var r: Dictionary = _rooms[rid]
+    _report_queue.append({
+        "reporter": {"nick": _players[id].nick, "device": String(_players[id].get("dev", ""))},
+        "target": {"nick": _players[target].nick, "device": String(_players[target].get("dev", ""))},
+        "room": String(r.name), "reason": reason if REPORT_REASONS.has(reason) else "other",
+        "detail": detail.left(200), "chat": r.get("chat", []),
+    })
+    print("[server] 신고 %s → %s (%s)" % [_players[id].nick, _players[target].nick, reason])
+    _send_next_report()
+    s_chat.rpc_id(id, "", "%s 님 신고가 접수됐어요. 운영자가 확인할게요 (내용은 신고한 사람에게만 보여요)" % _players[target].nick, true)
+
+
+func _send_next_report() -> void:
+    var base := OS.get_environment("ADMIN_URL")
+    if base == "" or _report_queue.is_empty():
+        if base == "" and not _report_queue.is_empty():
+            print("[server] ADMIN_URL 이 없어 신고를 보내지 못함: ", JSON.stringify(_report_queue.pop_front()).left(300))
+        return
+    if _report_http == null:
+        _report_http = HTTPRequest.new()
+        _report_http.timeout = 10.0
+        add_child(_report_http)
+        _report_http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray):
+            if result == HTTPRequest.RESULT_SUCCESS and code == 200:
+                _report_queue.pop_front()
+            else:
+                print("[server] 신고 전송 실패 (%d/%d) — 다음에 다시 보냄" % [result, code])
+                return
+            _send_next_report())
+    if _report_http.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+        return
+    _report_http.request(base.trim_suffix("/") + "/internal/reports", ["Content-Type: application/json"],
+            HTTPClient.METHOD_POST, JSON.stringify(_report_queue[0]))
+
+
+## 서버: 제재·금칙어 목록을 관리 서버에서 주기적으로 읽는다
+func _start_moderation_poll(base: String) -> void:
+    _mod_http = HTTPRequest.new()
+    _mod_http.timeout = 5.0
+    add_child(_mod_http)
+    _mod_http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, body: PackedByteArray):
+        if result != HTTPRequest.RESULT_SUCCESS or code != 200:
+            return
+        var d = JSON.parse_string(body.get_string_from_utf8())
+        if not d is Dictionary:
+            return
+        if d.get("words") is Array:
+            WordFilter.set_extra(d.words)
+        if d.get("sanctions") is Array:
+            _sanctions = d.sanctions
+            _enforce_bans()
+        _send_next_report())          # 실패해서 남은 신고가 있으면 다시 보냄
+    var timer := Timer.new()
+    timer.wait_time = ADMIN_POLL_SEC
+    timer.autostart = true
+    add_child(timer)
+    var poll := func():
+        if _mod_http.get_http_client_status() == HTTPClient.STATUS_DISCONNECTED:
+            _mod_http.request(base.trim_suffix("/") + "/internal/moderation")
+    timer.timeout.connect(poll)
+    poll.call()
+
+
+## 지금 유효한 제재 (없으면 빈 딕셔너리)
+func _sanction_for(dev: String, kind: String) -> Dictionary:
+    if dev == "":
+        return {}
+    var now := Time.get_datetime_string_from_system(true) + "Z"
+    for x in _sanctions:
+        if String(x.get("device", "")) == dev and String(x.get("kind", "")) == kind:
+            var until := String(x.get("until", ""))
+            if until == "" or until > now:
+                return x
+    return {}
+
+
+func _until_text(x: Dictionary) -> String:
+    var until := String(x.get("until", ""))
+    if until == "":
+        return ""
+    var t := Time.get_unix_time_from_datetime_string(until.trim_suffix("Z").left(19))
+    var left_h := maxf((t - Time.get_unix_time_from_system()) / 3600.0, 0.0)
+    return " (약 %d시간 남음)" % ceili(left_h) if left_h < 48.0 else " (약 %d일 남음)" % ceili(left_h / 24.0)
+
+
+## 접속 차단이 새로 생기면 지금 접속 중인 사람도 내보낸다
+func _enforce_bans() -> void:
+    for pid in _players.keys():
+        var ban := _sanction_for(String(_players[pid].get("dev", "")), "ban")
+        if ban.is_empty() or not _peer_alive(pid):
+            continue
+        print("[server] 접속 차단으로 내보냄 %s" % _players[pid].nick)
+        s_error.rpc_id(pid, "이용이 제한되어 연결을 끊습니다%s" % _until_text(ban))
+        var p: int = pid
+        get_tree().create_timer(0.5).timeout.connect(func():
+            if multiplayer.multiplayer_peer and _peer_alive(p):
+                multiplayer.multiplayer_peer.disconnect_peer(p))
+
+
+# ---- 클라이언트: 차단 (내 화면에서 그 사람 채팅 숨김). 이 기기에만 저장
+const BLOCK_FILE := "user://settings.cfg"
+
+
+func _load_blocked() -> void:
+    var cfg := ConfigFile.new()
+    if cfg.load(BLOCK_FILE) == OK:
+        var b = cfg.get_value("client", "blocked", {})
+        if b is Dictionary:
+            blocked = b
+
+
+func set_blocked(uid: String, nick: String, on: bool) -> void:
+    if uid == "":
+        return
+    if on:
+        blocked[uid] = nick
+    else:
+        blocked.erase(uid)
+    var cfg := ConfigFile.new()
+    cfg.load(BLOCK_FILE)
+    cfg.set_value("client", "blocked", blocked)
+    cfg.save(BLOCK_FILE)
+
+
+## 지금 방에서 이 닉네임의 사람이 차단돼 있나 (채팅 숨김 판단)
+func is_blocked_nick(nick: String) -> bool:
+    if blocked.is_empty():
+        return false
+    for m in room.get("members", []):
+        if String(m.nick) == nick:
+            return blocked.has(String(m.get("uid", "")))
+    return false
+

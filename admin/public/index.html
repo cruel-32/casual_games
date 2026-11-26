@@ -43,6 +43,13 @@ th { font-size: 12px; color: var(--muted); }
 .hidden { display: none !important; }
 .switch { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; }
 .switch input { width: 20px; height: 20px; }
+.chat { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 8px 0; max-height: 220px; overflow: auto; font-size: 13px; }
+.chat .hl { background: #ffe1e3; }
+.report { border-top: 2px solid var(--line); padding: 12px 0; }
+.report:first-child { border-top: 0; }
+.act { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.act select, .act input { width: auto; min-width: 0; padding: 4px 8px; }
+.wordtag { display: inline-flex; gap: 6px; align-items: center; background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 2px 4px 2px 10px; margin: 3px; }
 </style>
 </head>
 <body>
@@ -62,6 +69,9 @@ th { font-size: 12px; color: var(--muted); }
 <main id="app" class="hidden">
   <div class="tabs">
     <button data-tab="notices" class="on">공지</button>
+    <button data-tab="reports">신고 <span id="r-count"></span></button>
+    <button data-tab="sanctions">제재</button>
+    <button data-tab="words">금칙어</button>
     <button data-tab="maint">점검 모드</button>
     <button data-tab="admins">관리자</button>
     <button data-tab="audit">기록</button>
@@ -114,6 +124,44 @@ th { font-size: 12px; color: var(--muted); }
     <div class="card">
       <h2>공지 목록</h2>
       <table><thead><tr><th>종류</th><th>제목</th><th>대상</th><th>기간</th><th>상태</th><th></th></tr></thead><tbody id="n-list"></tbody></table>
+    </div>
+  </section>
+
+  <!-- 신고 -->
+  <section data-pane="reports" class="hidden">
+    <div class="card">
+      <h2>신고</h2>
+      <p class="muted">게임 대기룸에서 들어온 신고예요. 신고 당시 방의 최근 채팅이 함께 저장되고, <b>30일이 지나면 자동으로 지워져요</b>. 이용약관상 24시간 안에 확인해 주세요.</p>
+      <div class="act" style="margin-bottom:8px">
+        <select id="r-filter"><option value="open">처리 전</option><option value="done">처리함</option><option value="dismissed">문제 없음</option><option value="all">전체</option></select>
+        <button class="small ghost" id="r-reload">새로고침</button>
+      </div>
+      <div id="r-list"></div>
+      <div class="msg" id="r-msg"></div>
+    </div>
+  </section>
+
+  <!-- 제재 -->
+  <section data-pane="sanctions" class="hidden">
+    <div class="card">
+      <h2>제재</h2>
+      <p class="muted">제재는 <b>기기 ID</b> 기준이에요 (게임이 처음 켜질 때 만드는 무작위 값). 채팅 금지는 대기룸 채팅만 막고, 접속 차단은 로그인을 막고 지금 접속 중이면 내보내요. 게임 서버에 15초 안에 반영돼요.</p>
+      <table><thead><tr><th>대상</th><th>종류</th><th>사유</th><th>기한</th><th>처리</th><th></th></tr></thead><tbody id="s-list"></tbody></table>
+      <div class="msg" id="s-msg"></div>
+    </div>
+  </section>
+
+  <!-- 금칙어 -->
+  <section data-pane="words" class="hidden">
+    <div class="card">
+      <h2>금칙어</h2>
+      <p class="muted">게임에 기본 금칙어 목록이 들어 있고, 여기서 더한 단어가 추가로 적용돼요. 채팅은 ***로 가려지고, 이 단어가 들어간 닉네임은 쓸 수 없어요. 띄어쓰기·숫자·기호를 끼워 넣어도 걸러요.</p>
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:3"><label for="w-word">추가할 단어</label><input type="text" id="w-word" maxlength="20"></div>
+        <div style="flex:0"><button id="w-add">추가</button></div>
+      </div>
+      <div id="w-list" style="margin-top:10px"></div>
+      <div class="msg" id="w-msg"></div>
     </div>
   </section>
 
@@ -207,7 +255,7 @@ th { font-size: 12px; color: var(--muted); }
     api("GET", "/admin/api/me").then(function (me) {
       $("login").classList.add("hidden"); $("app").classList.remove("hidden"); $("logout").classList.remove("hidden");
       $("who").textContent = me.email;
-      loadNotices(); loadMaint(); loadAdmins(); loadAudit();
+      loadNotices(); loadMaint(); loadAdmins(); loadAudit(); loadReports(); loadSanctions(); loadWords();
     }).catch(function () { showLogin(""); });
   }
   $("logout").onclick = function () { api("POST", "/admin/api/logout").finally(function () { showLogin("로그아웃했어요"); }); };
@@ -218,6 +266,8 @@ th { font-size: 12px; color: var(--muted); }
       document.querySelectorAll(".tabs button").forEach(function (x) { x.classList.toggle("on", x === b); });
       document.querySelectorAll("[data-pane]").forEach(function (p) { p.classList.toggle("hidden", p.dataset.pane !== b.dataset.tab); });
       if (b.dataset.tab === "audit") loadAudit();
+      if (b.dataset.tab === "reports") loadReports();
+      if (b.dataset.tab === "sanctions") loadSanctions();
     };
   });
   function guard(e, el) { if (e.status === 401) showLogin("다시 로그인해 주세요"); else msg(el, e.message); }
@@ -306,9 +356,90 @@ th { font-size: 12px; color: var(--muted); }
       .catch(function (e) { guard(e, $("a-msg")); });
   };
 
+  // ---- 신고
+  var REASON = { abuse: "욕설·비하", spam: "도배·광고", nickname: "부적절한 닉네임", cheat: "핵·부정 이용", other: "기타" };
+  var RSTATE = { open: "처리 전", done: "처리함", dismissed: "문제 없음" };
+  var reports = [];
+  function loadReports() {
+    api("GET", "/admin/api/reports?status=" + $("r-filter").value).then(function (d) {
+      reports = d.reports;
+      $("r-count").textContent = d.counts.open ? "(" + d.counts.open + ")" : "";
+      $("r-list").innerHTML = reports.map(function (r) {
+        var chat = r.chat.map(function (c) {
+          return "<div" + (c.nick === r.target_nick ? " class='hl'" : "") + "><span class='muted'>" + esc((c.t || "").slice(11, 19)) + "</span> <b>" + esc(c.nick) + "</b> " + esc(c.text) + "</div>";
+        }).join("") || "<span class='muted'>채팅 기록 없음</span>";
+        var acts = r.status === "open"
+          ? "<div class='act'><select data-kind='" + r.id + "'><option value='mute'>채팅 금지</option><option value='ban'>접속 차단</option></select>" +
+            "<select data-hours='" + r.id + "'><option value='1'>1시간</option><option value='24' selected>1일</option><option value='168'>7일</option><option value='720'>30일</option><option value='0'>영구</option></select>" +
+            "<input type='text' data-reason='" + r.id + "' placeholder='사유' value='" + esc(REASON[r.reason]) + "'>" +
+            (r.target_device ? "<button class='small red' data-sanction='" + r.id + "'>제재하고 처리</button>" : "<span class='muted'>기기 ID 없음 (구버전)</span>") +
+            "<button class='small ghost' data-dismiss='" + r.id + "'>문제 없음</button></div>"
+          : "<div class='muted'>" + RSTATE[r.status] + " · " + esc(r.handled_by) + " · " + fmt(r.handled_at) + (r.note ? " · " + esc(r.note) : "") +
+            " <button class='small ghost' data-reopen='" + r.id + "'>다시 열기</button></div>";
+        return "<div class='report'><div><b>#" + r.id + "</b> <span class='tag'>" + (REASON[r.reason] || r.reason) + "</span> " +
+          "<b>" + esc(r.target_nick) + "</b> <span class='muted'>← 신고: " + esc(r.reporter_nick) + " · 방: " + esc(r.room) + " · " + fmt(r.created_at) + "</span></div>" +
+          (r.detail ? "<div>“" + esc(r.detail) + "”</div>" : "") + "<div class='chat'>" + chat + "</div>" + acts + "</div>";
+      }).join("") || "<p class='muted'>신고가 없어요</p>";
+    }).catch(function (e) { guard(e, $("r-msg")); });
+  }
+  $("r-filter").onchange = loadReports;
+  $("r-reload").onclick = loadReports;
+  $("r-list").onclick = function (ev) {
+    var t = ev.target, id, r;
+    if ((id = t.dataset.sanction)) {
+      r = reports.find(function (x) { return String(x.id) === id; });
+      var kind = document.querySelector("[data-kind='" + id + "']").value;
+      var hours = Number(document.querySelector("[data-hours='" + id + "']").value);
+      var reason = document.querySelector("[data-reason='" + id + "']").value;
+      if (!confirm(r.target_nick + " 에게 " + (kind === "ban" ? "접속 차단" : "채팅 금지") + " (" + (hours ? hours + "시간" : "영구") + ") 을 적용할까요?")) return;
+      api("POST", "/admin/api/sanctions", { device: r.target_device, nick: r.target_nick, kind: kind, hours: hours, reason: reason, report_id: r.id })
+        .then(function () { msg($("r-msg"), "제재했어요", true); loadReports(); loadSanctions(); })
+        .catch(function (e) { guard(e, $("r-msg")); });
+    } else if ((id = t.dataset.dismiss) || (id = t.dataset.reopen)) {
+      api("PUT", "/admin/api/reports/" + id, { status: t.dataset.dismiss ? "dismissed" : "open" })
+        .then(loadReports).catch(function (e) { guard(e, $("r-msg")); });
+    }
+  };
+
+  // ---- 제재
+  function loadSanctions() {
+    api("GET", "/admin/api/sanctions").then(function (d) {
+      $("s-list").innerHTML = d.sanctions.map(function (x) {
+        return "<tr><td>" + esc(x.nick || "?") + "<div class='muted'>" + esc(x.device.slice(0, 10)) + "…</div></td><td>" + (x.kind === "ban" ? "접속 차단" : "채팅 금지") +
+          "</td><td>" + esc(x.reason) + (x.report_id ? " <span class='muted'>(신고 #" + x.report_id + ")</span>" : "") + "</td><td class='muted'>" + (x.until ? fmt(x.until) + "까지" : "영구") +
+          "</td><td class='muted'>" + esc(x.created_by) + "<br>" + fmt(x.created_at) + "</td><td>" +
+          (x.active ? "<button class='small ghost' data-revoke='" + x.id + "'>해제</button>" : "<span class='muted'>" + (x.revoked_at ? "해제됨" : "끝남") + "</span>") + "</td></tr>";
+      }).join("") || "<tr><td colspan='6' class='muted'>제재 기록이 없어요</td></tr>";
+    }).catch(function (e) { guard(e, $("s-msg")); });
+  }
+  $("s-list").onclick = function (ev) {
+    var id = ev.target.dataset.revoke; if (!id) return;
+    if (!confirm("이 제재를 해제할까요?")) return;
+    api("DELETE", "/admin/api/sanctions/" + id).then(loadSanctions).catch(function (e) { guard(e, $("s-msg")); });
+  };
+
+  // ---- 금칙어
+  function loadWords() {
+    api("GET", "/admin/api/words").then(function (d) {
+      $("w-list").innerHTML = d.words.map(function (w) {
+        return "<span class='wordtag'>" + esc(w.word) + " <button class='small ghost' data-word='" + esc(w.word) + "'>×</button></span>";
+      }).join("") || "<span class='muted'>추가한 단어가 없어요 (기본 목록만 적용 중)</span>";
+    }).catch(function (e) { guard(e, $("w-msg")); });
+  }
+  $("w-add").onclick = function () {
+    api("POST", "/admin/api/words", { word: $("w-word").value }).then(function () { $("w-word").value = ""; msg($("w-msg"), "추가했어요 (게임 서버에 15초 안에 반영)", true); loadWords(); })
+      .catch(function (e) { guard(e, $("w-msg")); });
+  };
+  $("w-list").onclick = function (ev) {
+    var w = ev.target.dataset.word; if (!w) return;
+    api("DELETE", "/admin/api/words/" + encodeURIComponent(w)).then(loadWords).catch(function (e) { guard(e, $("w-msg")); });
+  };
+
   // ---- 기록
   var ACT = { login: "로그인", login_denied: "로그인 거부", notice_create: "공지 작성", notice_update: "공지 수정", notice_delete: "공지 삭제",
-    maintenance_on: "점검 켬", maintenance_off: "점검 끔", admin_add: "관리자 추가", admin_remove: "관리자 삭제" };
+    maintenance_on: "점검 켬", maintenance_off: "점검 끔", admin_add: "관리자 추가", admin_remove: "관리자 삭제",
+    report_done: "신고 처리", report_dismissed: "신고 문제 없음", report_open: "신고 다시 열기", sanction_mute: "채팅 금지", sanction_ban: "접속 차단",
+    sanction_revoke: "제재 해제", word_add: "금칙어 추가", word_remove: "금칙어 삭제" };
   function loadAudit() {
     api("GET", "/admin/api/audit").then(function (d) {
       $("l-list").innerHTML = d.audit.map(function (a) {

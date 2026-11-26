@@ -93,3 +93,51 @@ test("자기 자신은 지울 수 없음", async () => {
         assert.equal((await call("DELETE", "/admin/api/admins/b%40x.com")).status, 400);
     });
 });
+
+test("신고·제재·금칙어 (게임 서버 전용 주소 포함)", async () => {
+    await withServer(async (call) => {
+        const dev = (s) => s.padEnd(16, "x");
+        // 게임 서버 → 신고 접수 (로그인 없이), 프록시를 거친 요청은 거절
+        const rep = { reporter: { nick: "철수", device: dev("aaaa") }, target: { nick: "나쁜애", device: dev("bbbb") }, room: "방1", reason: "abuse", detail: "욕함",
+            chat: [{ t: "2026-11-27T00:00:00Z", nick: "나쁜애", text: "욕설" }] };
+        assert.equal((await call("POST", "/internal/reports", rep, { "X-Forwarded-For": "1.2.3.4" })).status, 404);
+        const r1 = await call("POST", "/internal/reports", rep);
+        assert.equal(r1.status, 200);
+        const r2 = await call("POST", "/internal/reports", rep);
+        assert.equal(r2.data.duplicate, true);               // 10분 안 같은 신고는 하나로
+        // 관리자 로그인 전엔 볼 수 없음
+        assert.equal((await call("GET", "/admin/api/reports")).status, 401);
+        await call("POST", "/admin/api/login", { credential: "ok:owner@gmail.com" });
+        let list = await call("GET", "/admin/api/reports");
+        assert.equal(list.data.reports.length, 1);
+        assert.equal(list.data.reports[0].chat[0].text, "욕설");
+        // 제재 → 게임 서버 목록에 보이고, 신고는 처리됨
+        const s = await call("POST", "/admin/api/sanctions", { device: dev("bbbb"), nick: "나쁜애", kind: "mute", hours: 24, reason: "욕설", report_id: list.data.reports[0].id });
+        assert.equal(s.status, 200);
+        assert.equal((await call("POST", "/admin/api/sanctions", { device: "x", kind: "ban" })).status, 400);
+        let mod = await call("GET", "/internal/moderation");
+        assert.deepEqual(mod.data.sanctions.map((x) => [x.device, x.kind]), [[dev("bbbb"), "mute"]]);
+        assert.equal((await call("GET", "/admin/api/reports?status=open")).data.reports.length, 0);
+        // 제재 해제
+        assert.equal((await call("DELETE", "/admin/api/sanctions/" + s.data.id)).status, 200);
+        mod = await call("GET", "/internal/moderation");
+        assert.equal(mod.data.sanctions.length, 0);
+        // 금칙어
+        await call("POST", "/admin/api/words", { word: " 나 쁜말 " });
+        assert.equal((await call("POST", "/admin/api/words", { word: "a" })).status, 400);
+        mod = await call("GET", "/internal/moderation");
+        assert.deepEqual(mod.data.words, ["나쁜말"]);
+        await call("DELETE", "/admin/api/words/" + encodeURIComponent("나쁜말"));
+        assert.deepEqual((await call("GET", "/internal/moderation")).data.words, []);
+    });
+});
+
+test("30일 지난 신고 삭제", async () => {
+    const db = openDb(":memory:");
+    const app = createApp({ db, clientId: "", ownerEmails: [], verifyGoogle: async () => ({}) });
+    const old = new Date(Date.now() - 31 * 864e5).toISOString();
+    db.prepare("INSERT INTO reports (created_at, reporter_nick, target_nick, reason) VALUES (?, 'a', 'b', 'abuse')").run(old);
+    db.prepare("INSERT INTO reports (created_at, reporter_nick, target_nick, reason) VALUES (?, 'a', 'c', 'abuse')").run(new Date().toISOString());
+    assert.equal(app.purgeOld(), 1);
+    assert.equal(db.prepare("SELECT COUNT(*) AS n FROM reports").get().n, 1);
+});

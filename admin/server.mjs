@@ -2,6 +2,7 @@
 //   https://spw.cloudish.cloud/admin/      관리 페이지 (구글 로그인, 등록된 계정만)
 //   https://spw.cloudish.cloud/api/notices 게임·웹이 읽는 공지 (공개)
 //   http://<컨테이너>:7780/api/status       게임 서버가 읽는 점검 모드 (공개)
+//   http://<컨테이너>:7780/internal/...     게임 서버 전용 (신고 접수, 제재·금칙어 목록). Caddy 로 노출하지 않음
 //
 // 환경 변수
 //   PORT              기본 7780
@@ -25,6 +26,9 @@ const COOKIE = "spw_admin";
 const KINDS = ["banner", "notice", "patch", "popup"];
 const PLATFORMS = ["pc", "android", "ios", "web"];
 const MAX_BODY = 64 * 1024;
+const REPORT_KEEP_DAYS = 30;            // 신고(채팅 기록 포함) 보관 기간 — 개인정보처리방침과 같아야 함
+const REPORT_REASONS = ["abuse", "spam", "nickname", "cheat", "other"];
+const SANCTION_KINDS = ["mute", "ban"];
 
 // ---------------------------------------------------------------- DB
 export function openDb(file) {
@@ -61,6 +65,39 @@ export function openDb(file) {
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'open',
+            reporter_nick TEXT NOT NULL,
+            reporter_device TEXT NOT NULL DEFAULT '',
+            target_nick TEXT NOT NULL,
+            target_device TEXT NOT NULL DEFAULT '',
+            room TEXT NOT NULL DEFAULT '',
+            reason TEXT NOT NULL,
+            detail TEXT NOT NULL DEFAULT '',
+            chat TEXT NOT NULL DEFAULT '[]',
+            handled_by TEXT NOT NULL DEFAULT '',
+            handled_at TEXT NOT NULL DEFAULT '',
+            note TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS sanctions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            device TEXT NOT NULL,
+            nick TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL,
+            reason TEXT NOT NULL DEFAULT '',
+            until TEXT NOT NULL DEFAULT '',
+            report_id INTEGER,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            revoked_at TEXT NOT NULL DEFAULT ''
+        );
+        CREATE TABLE IF NOT EXISTS words (
+            word TEXT PRIMARY KEY,
+            added_by TEXT NOT NULL,
+            added_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS audit (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,6 +187,21 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
         }));
     }
 
+    // 신고는 30일이 지나면 채팅 기록과 함께 지운다
+    function purgeOld(now = Date.now()) {
+        const cut = new Date(now - REPORT_KEEP_DAYS * 864e5).toISOString();
+        return Number(db.prepare("DELETE FROM reports WHERE created_at < ?").run(cut).changes);
+    }
+
+    function activeSanctions() {
+        const now = nowIso();
+        return db.prepare(`SELECT id, device, nick, kind, reason, until FROM sanctions
+            WHERE revoked_at = '' AND (until = '' OR until > ?) ORDER BY id`).all(now);
+    }
+
+    const str = (v, n) => String(v == null ? "" : v).slice(0, n);
+    const device = (v) => (/^[A-Za-z0-9_-]{8,64}$/.test(String(v || "")) ? String(v) : "");
+
     function cleanNotice(b) {
         const kind = KINDS.includes(b.kind) ? b.kind : null;
         const title = String(b.title || "").trim().slice(0, 80);
@@ -188,6 +240,35 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
             return json(res, 200, { maintenance: maintenance() }, true);
         }
         if (p === "/api/health") return json(res, 200, { ok: true });
+
+        // 게임 서버 전용 (같은 도커 네트워크·호스트에서만). 리버스 프록시를 거친 요청은 거절
+        if (p.startsWith("/internal/")) {
+            if (req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"]) return json(res, 404, { error: "없는 주소예요" });
+            if (p === "/internal/moderation" && m === "GET") {
+                return json(res, 200, {
+                    sanctions: activeSanctions().map((x) => ({ device: x.device, kind: x.kind, until: x.until, reason: x.reason })),
+                    words: db.prepare("SELECT word FROM words ORDER BY word").all().map((w) => w.word),
+                });
+            }
+            if (p === "/internal/reports" && m === "POST") {
+                const b = await readJson(req);
+                const reason = REPORT_REASONS.includes(b.reason) ? b.reason : "other";
+                const chat = (Array.isArray(b.chat) ? b.chat : []).slice(-40).map((c) => ({
+                    t: str(c.t, 30), nick: str(c.nick, 24), text: str(c.text, 200),
+                }));
+                const rep = b.reporter || {}, tgt = b.target || {};
+                if (!str(tgt.nick, 24)) return json(res, 400, { error: "대상이 없어요" });
+                // 같은 사람이 같은 대상을 10분 안에 여러 번 신고하면 하나로
+                const dup = db.prepare(`SELECT id FROM reports WHERE reporter_device = ? AND target_device = ? AND created_at > ? AND status = 'open'`)
+                    .get(device(rep.device), device(tgt.device), new Date(Date.now() - 600e3).toISOString());
+                if (dup && device(rep.device)) return json(res, 200, { id: dup.id, duplicate: true });
+                const r = db.prepare(`INSERT INTO reports (created_at, reporter_nick, reporter_device, target_nick, target_device, room, reason, detail, chat)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nowIso(), str(rep.nick, 24), device(rep.device), str(tgt.nick, 24), device(tgt.device),
+                    str(b.room, 60), reason, str(b.detail, 300), JSON.stringify(chat));
+                return json(res, 200, { id: Number(r.lastInsertRowid) });
+            }
+            return json(res, 404, { error: "없는 주소예요" });
+        }
 
         // 관리 페이지 (정적 파일)
         if (p === "/admin") return redirect(res, "/admin/");
@@ -295,13 +376,83 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
             return json(res, 200, { ok: true });
         }
 
+        // 신고
+        if (p === "/admin/api/reports" && m === "GET") {
+            purgeOld();
+            const status = url.searchParams.get("status") || "open";
+            const rows = status === "all"
+                ? db.prepare("SELECT * FROM reports ORDER BY id DESC LIMIT 200").all()
+                : db.prepare("SELECT * FROM reports WHERE status = ? ORDER BY id DESC LIMIT 200").all(status);
+            const counts = Object.fromEntries(db.prepare("SELECT status, COUNT(*) AS n FROM reports GROUP BY status").all().map((r) => [r.status, r.n]));
+            return json(res, 200, { reports: rows.map((r) => ({ ...r, chat: JSON.parse(r.chat || "[]") })), counts });
+        }
+        const rm = p.match(/^\/admin\/api\/reports\/(\d+)$/);
+        if (rm && m === "PUT") {
+            const b = await readJson(req);
+            const status = ["open", "done", "dismissed"].includes(b.status) ? b.status : null;
+            if (!status) return json(res, 400, { error: "상태가 올바르지 않아요" });
+            const r = db.prepare("UPDATE reports SET status = ?, note = ?, handled_by = ?, handled_at = ? WHERE id = ?")
+                .run(status, str(b.note, 300), email, nowIso(), Number(rm[1]));
+            if (!r.changes) return json(res, 404, { error: "없는 신고예요" });
+            audit(email, "report_" + status, rm[1]);
+            return json(res, 200, { ok: true });
+        }
+
+        // 제재 (기기 ID 기준: mute = 채팅 금지, ban = 접속 차단)
+        if (p === "/admin/api/sanctions" && m === "GET") {
+            const rows = db.prepare("SELECT * FROM sanctions ORDER BY id DESC LIMIT 200").all();
+            const now = nowIso();
+            return json(res, 200, { sanctions: rows.map((x) => ({ ...x, active: !x.revoked_at && (!x.until || x.until > now) })) });
+        }
+        if (p === "/admin/api/sanctions" && m === "POST") {
+            const b = await readJson(req);
+            const dev = device(b.device);
+            if (!dev) return json(res, 400, { error: "기기 ID가 올바르지 않아요" });
+            if (!SANCTION_KINDS.includes(b.kind)) return json(res, 400, { error: "제재 종류가 올바르지 않아요" });
+            const hours = Number(b.hours) || 0;     // 0 = 영구
+            const until = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : "";
+            const r = db.prepare(`INSERT INTO sanctions (device, nick, kind, reason, until, report_id, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(dev, str(b.nick, 24), b.kind, str(b.reason, 200), until, Number(b.report_id) || null, email, nowIso());
+            if (Number(b.report_id)) {
+                db.prepare("UPDATE reports SET status = 'done', handled_by = ?, handled_at = ? WHERE id = ?").run(email, nowIso(), Number(b.report_id));
+            }
+            audit(email, "sanction_" + b.kind, `${str(b.nick, 24)} ${dev.slice(0, 8)} ${hours ? hours + "h" : "영구"} ${str(b.reason, 100)}`);
+            return json(res, 200, { id: Number(r.lastInsertRowid), until });
+        }
+        const sm = p.match(/^\/admin\/api\/sanctions\/(\d+)$/);
+        if (sm && m === "DELETE") {
+            const r = db.prepare("UPDATE sanctions SET revoked_at = ? WHERE id = ? AND revoked_at = ''").run(nowIso(), Number(sm[1]));
+            if (!r.changes) return json(res, 404, { error: "없거나 이미 풀린 제재예요" });
+            audit(email, "sanction_revoke", sm[1]);
+            return json(res, 200, { ok: true });
+        }
+
+        // 금칙어 (게임에 기본 목록이 있고, 여기서 추가한 것을 더함)
+        if (p === "/admin/api/words" && m === "GET") {
+            return json(res, 200, { words: db.prepare("SELECT * FROM words ORDER BY word").all() });
+        }
+        if (p === "/admin/api/words" && m === "POST") {
+            const w = String((await readJson(req)).word || "").trim().toLowerCase().replace(/\s+/g, "").slice(0, 20);
+            if (w.length < 2) return json(res, 400, { error: "두 글자 이상 입력해 주세요" });
+            db.prepare("INSERT OR IGNORE INTO words (word, added_by, added_at) VALUES (?, ?, ?)").run(w, email, nowIso());
+            audit(email, "word_add", w);
+            return json(res, 200, { ok: true });
+        }
+        const wm = p.match(/^\/admin\/api\/words\/(.+)$/);
+        if (wm && m === "DELETE") {
+            const w = decodeURIComponent(wm[1]);
+            db.prepare("DELETE FROM words WHERE word = ?").run(w);
+            audit(email, "word_remove", w);
+            return json(res, 200, { ok: true });
+        }
+
         if (p === "/admin/api/audit" && m === "GET") {
             return json(res, 200, { audit: db.prepare("SELECT * FROM audit ORDER BY id DESC LIMIT 100").all() });
         }
         return json(res, 404, { error: "없는 주소예요" });
     }
 
-    return async (req, res) => {
+    const app = async (req, res) => {
         try {
             await handle(req, res);
         } catch (e) {
@@ -310,6 +461,8 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
             json(res, 500, { error: "서버 오류" });
         }
     };
+    app.purgeOld = purgeOld;
+    return app;
 }
 
 // ---------------------------------------------------------------- 도우미
@@ -379,7 +532,10 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const owners = (process.env.ADMIN_EMAILS || "").split(",");
     const db = openDb(path.join(dataDir, "admin.sqlite"));
     if (!clientId) console.warn("[admin] GOOGLE_CLIENT_ID 가 없어 관리 페이지에 로그인할 수 없습니다");
-    http.createServer(createApp({ db, clientId, ownerEmails: owners })).listen(port, () => {
+    const app = createApp({ db, clientId, ownerEmails: owners });
+    app.purgeOld();
+    setInterval(() => app.purgeOld(), 3600e3);      // 30일 지난 신고 삭제 (1시간마다)
+    http.createServer(app).listen(port, () => {
         console.log(`[admin] http://0.0.0.0:${port}  관리자: ${owners.filter(Boolean).join(", ") || "(없음)"}`);
     });
 }
