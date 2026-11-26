@@ -113,6 +113,8 @@ var stun_timer := 0.0
 var drum_mode := false                 ## 뒷북의 달인: 북 치는 자세 (drum_l/drum_r = 1 이면 방금 친 손)
 var drum_l := 0.0
 var drum_r := 0.0
+var drum_hold_l := false                ## 북을 누르고 있는 중 (피버) → 팔을 내린 채로
+var drum_hold_r := false
 var stun_guard := 0.0                # 경직 면역 남은 시간 (STUN_GUARD)
 var _dash_hit_relief := 0.0          # 차징 돌진이 맞으면 줄여 줄 정지 시간 (헛치면 그대로 오래 정지)
 var invuln_timer := 0.0
@@ -1338,14 +1340,16 @@ func _animate(delta: float) -> void:
 
     if drum_mode:
         # 북 치기 (뒷북의 달인): drum_l/drum_r 가 1 이면 막 내리친 순간, 0 이면 들고 있는 자세
-        drum_l = maxf(drum_l - delta * 7.0, 0.0)
-        drum_r = maxf(drum_r - delta * 7.0, 0.0)
-        la = lerpf(1.25, 0.45, drum_l)
-        ra = lerpf(1.25, 0.45, drum_r)
+        # 친 순간 팔을 확 내리고(바로 그 자세로) 천천히 들어 올림 → 빠르게 쳐도 한 번 한 번이 보이게
+        drum_l = maxf(drum_l - delta * 5.0, 0.85 if drum_hold_l else 0.0)
+        drum_r = maxf(drum_r - delta * 5.0, 0.85 if drum_hold_r else 0.0)
+        var hit := maxf(drum_l, drum_r)
+        la = lerpf(1.45, 0.15, drum_l)
+        ra = lerpf(1.45, 0.15, drum_r)
         arm_spread = -0.1
-        crouch = -0.05 * maxf(drum_l, drum_r)
-        lean = 0.08 + 0.06 * maxf(drum_l, drum_r)
-        k = 1.0 if maxf(drum_l, drum_r) > 0.9 else k
+        crouch = -0.09 * hit
+        lean = 0.08 + 0.12 * hit
+        k = 1.0 if hit > 0.6 else maxf(k, clampf(delta * 20.0, 0.0, 1.0))
     elif is_stunned():
         la = 2.6 + sin(_t * 18.0) * 0.5
         ra = 2.6 - sin(_t * 18.0) * 0.5

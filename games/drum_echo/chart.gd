@@ -153,8 +153,8 @@ static func spec_text(spec: Dictionary) -> String:
 static func make_spec(bars: int, difficulty: float, seed_value: int) -> Dictionary:
     var rng := RandomNumberGenerator.new()
     rng.seed = seed_value
-    # 처음엔 한 마디에 3개 정도 → 끝에는 5개 남짓
-    var per_bar := 3.0 + difficulty * 2.2
+    # 처음엔 한 마디에 2개 정도 → 끝에는 4개 남짓 (속도는 120 BPM 그대로, 노트 수로 난이도를 과하게 올리지 않음)
+    var per_bar := 2.0 + difficulty * 1.9
     var total := clampi(int(round(per_bar * bars + rng.randf_range(-0.4, 0.4))), 2, bars * 6)
     var l := clampi(int(round(total * rng.randf_range(0.35, 0.65))), 1, total - 1)
     return {"l": l, "r": total - l}
