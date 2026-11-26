@@ -241,12 +241,34 @@ func _build_collision() -> void:
 
 
 func _part(parent: Node3D, mesh: Mesh, pos: Vector3, mat: Material) -> MeshInstance3D:
+    _lower_poly(mesh)
     var mi := MeshInstance3D.new()
     mi.mesh = mesh
+    # 눈·단추·볼터치 같은 작은 부품은 그림자를 안 만든다 (그림자 패스 그리기 호출 절약)
+    if mesh.get_aabb().get_longest_axis_size() < 0.22:
+        mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     mi.material_override = mat
     mi.position = pos
     parent.add_child(mi)
     return mi
+
+
+## 기본 도형은 분할 수가 아주 많다(구 하나 ≈ 4천 삼각형) — 작은 몸 부품엔 과해서 크기에 맞게 줄인다
+## (캐릭터 1명 약 10만 → 1만 삼각형대. 웹·모바일 프레임에 큰 영향)
+static func _lower_poly(mesh: Mesh) -> void:
+    if mesh is SphereMesh:
+        var seg := clampi(int(mesh.radius * 90.0), 12, 28)
+        mesh.radial_segments = mini(mesh.radial_segments, seg)
+        mesh.rings = mini(mesh.rings, seg / 2)
+    elif mesh is CapsuleMesh:
+        mesh.radial_segments = mini(mesh.radial_segments, clampi(int(mesh.radius * 90.0), 10, 20))
+        mesh.rings = mini(mesh.rings, 4)
+    elif mesh is CylinderMesh:
+        mesh.radial_segments = mini(mesh.radial_segments, clampi(int(maxf(mesh.top_radius, mesh.bottom_radius) * 90.0), 10, 24))
+        mesh.rings = mini(mesh.rings, 1)
+    elif mesh is TorusMesh:
+        mesh.rings = mini(mesh.rings, 24)
+        mesh.ring_segments = mini(mesh.ring_segments, 8)
 
 
 func _capsule(radius: float, height: float) -> CapsuleMesh:

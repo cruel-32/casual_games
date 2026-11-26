@@ -160,6 +160,9 @@ func shatter() -> void:
     Sfx.play_at("rock_break", _rock.global_position, self)
 
 
+static var _dust_mesh: SphereMesh
+
+
 func _spawn_dust(at: Vector3 = Vector3.INF) -> void:
     var p := CPUParticles3D.new()
     p.one_shot = true
@@ -179,13 +182,14 @@ func _spawn_dust(at: Vector3 = Vector3.INF) -> void:
     curve.add_point(Vector2(0, 1))
     curve.add_point(Vector2(1, 0))
     p.scale_amount_curve = curve
-    var m := SphereMesh.new()
-    m.radius = 0.14
-    m.height = 0.28
-    m.radial_segments = 8
-    m.rings = 4
-    m.material = Toon.make(Color(0.78, 0.70, 0.55), {"rim_strength": 0.0, "shade_softness": 0.3})
-    p.mesh = m
+    if _dust_mesh == null:          # 먼지 메쉬·재질은 한 번만 만들어 모든 바위가 같이 쓴다
+        _dust_mesh = SphereMesh.new()
+        _dust_mesh.radius = 0.14
+        _dust_mesh.height = 0.28
+        _dust_mesh.radial_segments = 8
+        _dust_mesh.rings = 4
+        _dust_mesh.material = Toon.make(Color(0.78, 0.70, 0.55), {"rim_strength": 0.0, "shade_softness": 0.3})
+    p.mesh = _dust_mesh
     p.top_level = true
     add_child(p)
     p.global_position = (target_point + Vector3(0, 0.2, 0)) if at == Vector3.INF else at

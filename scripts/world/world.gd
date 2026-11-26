@@ -43,8 +43,9 @@ func _ready() -> void:
 		_start_game()
 		return
 	# 웹(WebGL)·모바일은 GPU 부담을 줄이기 위해 풀 밀도를 낮춘다
-	if OS.has_feature("web") or OS.has_feature("mobile"):
+	if _low_spec():
 		grass_density = minf(grass_density, 1.0)
+		grass_radius = minf(grass_radius, 60.0)
 	rng.seed = 20261124
 	_setup_input()
 	noise_tex = _make_noise_texture(512, 0.012, 3, 7)
@@ -54,6 +55,8 @@ func _ready() -> void:
 	_scatter_trees()
 	_scatter_rocks()
 	_build_ruins()
+	_batch_scenery()
+	_apply_low_spec()
 	if menu_mode:
 		_start_menu_showcase()
 	else:
@@ -349,6 +352,55 @@ func _build_ruins() -> void:
 		var col := CollisionShape3D.new()
 		col.shape = shape
 		body.add_child(col)
+
+
+# ---------------------------------------------------------------- 성능
+## 웹(WebGL)·모바일: 그리기 부담을 줄인다
+func _low_spec() -> bool:
+	return OS.has_feature("web") or OS.has_feature("mobile") or OS.get_environment("SPW_LOW_SPEC") != ""
+
+
+func _apply_low_spec() -> void:
+	if not _low_spec():
+		return
+	get_viewport().msaa_3d = Viewport.MSAA_2X
+	RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_LOW)
+	var sun := get_node_or_null("Sun") as DirectionalLight3D
+	if sun:
+		sun.directional_shadow_max_distance = 60.0
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+
+
+## 배경 소품(나무·바위·유적)의 메쉬 수백 개를 재질·구역별로 합쳐 그리기 호출 수를 크게 줄인다
+## (충돌체는 그대로 두고 보이는 메쉬만 합침)
+const BATCH_CELL := 50.0
+
+
+func _batch_scenery() -> void:
+	var groups := {}
+	for body in get_children():
+		if not body is StaticBody3D:
+			continue
+		for mi in body.get_children():
+			if not mi is MeshInstance3D or mi.mesh == null or mi.material_override == null:
+				continue
+			var xf: Transform3D = mi.global_transform
+			var key := "%d|%d|%d" % [mi.material_override.get_instance_id(),
+					floori(xf.origin.x / BATCH_CELL), floori(xf.origin.z / BATCH_CELL)]
+			if not groups.has(key):
+				var st := SurfaceTool.new()
+				st.begin(Mesh.PRIMITIVE_TRIANGLES)
+				groups[key] = {"mat": mi.material_override, "st": st}
+			for si in mi.mesh.get_surface_count():
+				groups[key].st.append_from(mi.mesh, si, xf)
+			body.remove_child(mi)
+			mi.free()
+	for key in groups:
+		var out := MeshInstance3D.new()
+		out.name = "Scenery"
+		out.mesh = groups[key].st.commit()
+		out.material_override = groups[key].mat
+		add_child(out)
 
 
 # ---------------------------------------------------------------- 게임
