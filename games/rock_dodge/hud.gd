@@ -28,9 +28,12 @@ func _ready() -> void:
     if _touch:
         _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 점프 · 밀치기 (길게 누르면 차징 돌진)"
     else:
-        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제 · M 소리" \
+        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제 (오른쪽 위 버튼 사용)" \
                 % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
+    _build_menu_bar()
+    _build_result_box()
+    _build_spectate_bar()
 
     _top = _make_label(24, true)
     _top.add_theme_constant_override("outline_size", 0)
@@ -76,9 +79,14 @@ func _place_centered(l: Label, y: float) -> void:
     l.position = Vector2((_screen().x - l.size.x) * 0.5, y)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     if game == null:
         return
+    _tick_leave(delta)
+    if _bar:
+        _bar.position = Vector2(_screen().x - _bar.size.x - 14.0, 12.0)
+    _update_result_box()
+    _update_spectate(delta)
     var scr := _screen()
     var alive: int = game.alive_fighters().size()
     var total: int = game.fighters.size()
@@ -104,8 +112,7 @@ func _process(_delta: float) -> void:
                 sub = "남은 인원 %d명" % alive
             elif human and human.dead:
                 center = "탈락!"
-                var watch_hint := "끝나면 방으로 돌아갑니다" if game.is_online_match() else ("끝나면 다시 할 수 있습니다" if _touch else "R 다시 하기")
-                sub = "생존 %s · 관전 중 · %s" % [_fmt_time(game.human_death_time), watch_hint]
+                sub = "생존 %s · 아래 버튼으로 다른 사람 시점을 볼 수 있어요" % _fmt_time(game.human_death_time)
         PartyGame.State.ENDED:
             var w: Fighter = game.winner
             if total == 1:
@@ -117,10 +124,7 @@ func _process(_delta: float) -> void:
             else:
                 center = "%s 승리" % w.display_name
             var t: float = game.human_death_time if game.human_death_time >= 0.0 else game.elapsed
-            var hint := "Enter 방으로 돌아가기" if game.is_online_match() else "R 다시 하기 · Enter 메인 메뉴"
-            if _touch:
-                hint = "아래 버튼을 누르세요"
-            sub = "내 생존 시간 %s · 킬 %d · %s" % [_fmt_time(t), my_kills, hint]
+            sub = "내 생존 시간 %s · 킬 %d" % [_fmt_time(t), my_kills]
     _center.text = center
     _sub.text = sub
     _play_event_sounds(center, human)
@@ -130,7 +134,7 @@ func _process(_delta: float) -> void:
     var spd: float = game.wind.length()
     _wind_label.text = "바람 %.1f m/s" % spd
     _wind_label.size = _wind_label.get_minimum_size()
-    _wind_label.position = Vector2(scr.x - 90 - _wind_label.size.x * 0.5, 150)
+    _wind_label.position = Vector2(scr.x - 90 - _wind_label.size.x * 0.5, 206)
 
     _skill_label.text = _skill_text()
     _place_centered(_skill_label, scr.y - 100)
@@ -185,8 +189,8 @@ func _status_text() -> String:
         parts.append("차징 가속 ×%d" % h.charge_stacks)
     if h.cooldown_stacks > 0:
         parts.append("쿨타임 감소 ×%d" % h.cooldown_stacks)
-    if h.heavy_timer > 0.0:
-        parts.append("무거운 신발 %.0f초" % ceilf(h.heavy_timer))
+    if h.glove_stacks > 0:
+        parts.append("글러브 ×%d" % h.glove_stacks)
     if h.shield_timer > 0.0:
         parts.append("무적 %.1f초" % h.shield_timer)
     return "  ·  ".join(parts)
@@ -205,7 +209,7 @@ func _draw() -> void:
 
 func _draw_wind_compass() -> void:
     var scr := _screen()
-    var c := Vector2(scr.x - 90, 90)
+    var c := Vector2(scr.x - 90, 146)       # 오른쪽 위 버튼 줄 아래
     var r := 46.0
     draw_circle(c, r + 4, UI.INK)
     draw_circle(c, r, UI.CREAM)
@@ -299,8 +303,179 @@ func _play_event_sounds(center: String, human: Fighter) -> void:
 
 
 
-## M: 소리 켜기/끄기
+
+# ---- 오른쪽 위 버튼: 소리 켬/끔 · (혼자 연습) 다시 하기 · 나가기
+var _leave_btn: Button
+var _bar: HBoxContainer
+var _leave_armed := 0.0
+
+
+func _build_menu_bar() -> void:
+    var bar := UI.hbox(8)
+    bar.add_to_group("touch_block")      # 터치 조작(스틱·시점)이 이 영역은 무시
+    add_child(bar)
+    _bar = bar
+    bar.add_child(UI.sound_button())
+    if not game.is_online_match():
+        var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
+        again.pressed.connect(func(): game.restart_offline())
+        bar.add_child(again)
+    _leave_btn = UI.pill_button("나가기", UI.RED)
+    _leave_btn.pressed.connect(_on_leave_pressed)
+    bar.add_child(_leave_btn)
+
+
+## 온라인 경기 도중이면 한 번 더 눌러야 나감 (기권 처리되므로)
+func _on_leave_pressed() -> void:
+    var human: Fighter = game.human
+    var risky: bool = game.is_online_match() and game.state != PartyGame.State.ENDED and human != null and not human.dead
+    if risky and _leave_armed <= 0.0:
+        _leave_armed = 3.0
+        _leave_btn.text = "정말 나가기? (기권)"
+        return
+    game.leave_to_menu()
+
+
+func _tick_leave(delta: float) -> void:
+    if _leave_armed > 0.0:
+        _leave_armed -= delta
+        if _leave_armed <= 0.0:
+            _leave_btn.text = "나가기"
+
+
+
+# ---- 결과 화면 버튼 (모든 기기): 온라인 = 방으로 돌아가기 / 혼자 연습 = 다시 하기 · 메인으로
+var _result_box: HBoxContainer
+var _was_ended := false
+
+
+func _build_result_box() -> void:
+    _result_box = UI.hbox(14)
+    _result_box.visible = false
+    _result_box.add_to_group("touch_block")
+    add_child(_result_box)
+    if game.is_online_match():
+        _add_result_button("방으로 돌아가기", UI.PRIMARY, func(): game.leave_to_menu())
+    else:
+        _add_result_button("다시 하기", UI.PRIMARY, func(): game.restart_offline())
+        _add_result_button("메인으로", UI.SECONDARY, func(): game.leave_to_menu())
+
+
+func _add_result_button(text: String, color: Color, cb: Callable) -> void:
+    var b := UI.colored_button(text, color, color.lightened(0.15))
+    b.custom_minimum_size = Vector2(220, 64)
+    b.add_theme_font_size_override("font_size", 22)
+    b.pressed.connect(cb)
+    _result_box.add_child(b)
+
+
+func _update_result_box() -> void:
+    var ended: bool = game.state == PartyGame.State.ENDED
+    _result_box.visible = ended
+    if ended:
+        if not _was_ended:
+            Input.mouse_mode = Input.MOUSE_MODE_VISIBLE      # 버튼을 누를 수 있게 마우스 풀기
+        _result_box.size = _result_box.get_minimum_size()
+        _result_box.position = Vector2((_screen().x - _result_box.size.x) * 0.5, _screen().y * 0.30 + 150)
+    _was_ended = ended
+
+
+# ---- 관전 (내가 탈락한 뒤): 살아 있는 다른 사람 시점으로 카메라를 옮긴다. ◀ ▶ 버튼 (키보드 ← →)
+var _spec_bar: HBoxContainer
+var _spec_label: Label
+var _spec_wait := 0.0          # 보던 사람이 탈락하면 잠깐 보여 준 뒤 다음 사람으로
+var _was_dead := false
+
+
+func _build_spectate_bar() -> void:
+    _spec_bar = UI.hbox(10)
+    _spec_bar.visible = false
+    _spec_bar.add_to_group("touch_block")
+    add_child(_spec_bar)
+    var prev := UI.pill_button("◀ 이전", UI.INK)
+    prev.custom_minimum_size = Vector2(110, 52)
+    prev.focus_mode = Control.FOCUS_NONE
+    prev.pressed.connect(func(): _cycle_spectate(-1))
+    _spec_bar.add_child(prev)
+    _spec_label = Label.new()
+    _spec_label.add_theme_font_override("font", UI.DISPLAY_FONT)
+    _spec_label.add_theme_font_size_override("font_size", 22)
+    _spec_label.add_theme_color_override("font_color", UI.INK)
+    _spec_label.add_theme_stylebox_override("normal", UI.box(UI.CREAM, 18, 16, UI.INK, 3, 4))
+    _spec_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    _spec_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    _spec_label.custom_minimum_size = Vector2(240, 52)
+    _spec_bar.add_child(_spec_label)
+    var next := UI.pill_button("다음 ▶", UI.INK)
+    next.custom_minimum_size = Vector2(110, 52)
+    next.focus_mode = Control.FOCUS_NONE
+    next.pressed.connect(func(): _cycle_spectate(1))
+    _spec_bar.add_child(next)
+
+
+## 관전할 수 있는 사람 (나 빼고 살아 있는 캐릭터)
+func _spectate_candidates() -> Array[Fighter]:
+    var out: Array[Fighter] = []
+    for f: Fighter in game.alive_fighters():
+        if f != game.human:
+            out.append(f)
+    return out
+
+
+func _cycle_spectate(dir: int) -> void:
+    var human: Fighter = game.human
+    if human == null or not human.dead:
+        return
+    var list := _spectate_candidates()
+    if list.is_empty():
+        return
+    var i := list.find(human.spectating)
+    i = (0 if dir > 0 else list.size() - 1) if i < 0 else posmod(i + dir, list.size())
+    human.set_spectate(list[i])
+    _spec_wait = 1.2
+
+
+func _update_spectate(delta: float) -> void:
+    var human: Fighter = game.human
+    var dead: bool = human != null and human.dead and game.state == PartyGame.State.PLAYING
+    if dead and not _was_dead:
+        # 방금 탈락: 마우스를 풀어 버튼을 누를 수 있게 하고, 1초 뒤 나를 떨어뜨린 사람(없으면 아무나)을 비춘다
+        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+        _spec_wait = 1.0
+    _was_dead = dead
+    var list := _spectate_candidates() if dead else ([] as Array[Fighter])
+    _spec_bar.visible = dead and not list.is_empty()
+    if not dead:
+        return
+    var cur: Fighter = human.spectating
+    if cur == null or cur.dead:
+        # 아직 아무도 안 봄 → 1초 뒤 / 보던 사람이 탈락 → 1.2초 보여 준 뒤 다음 사람으로
+        _spec_wait -= delta
+        if _spec_wait <= 0.0 and not list.is_empty():
+            var pick: Fighter = list[0]
+            var killer: Fighter = human.last_attacker
+            if cur == null and killer and not killer.dead and killer != human:
+                pick = killer
+            human.set_spectate(pick)
+            _spec_wait = 1.2
+    if _spec_bar.visible:
+        var who: Fighter = human.spectating
+        _spec_label.text = ("관전: %s" % who.display_name) if who and not who.dead else "관전"
+        _spec_bar.size = _spec_bar.get_minimum_size()
+        var y := _screen().y - _spec_bar.size.y - (200.0 if _touch else 90.0)
+        _spec_bar.position = Vector2((_screen().x - _spec_bar.size.x) * 0.5, y)
+
+
 func _unhandled_key_input(event: InputEvent) -> void:
     var k := event as InputEventKey
-    if k and k.pressed and not k.echo and k.keycode == KEY_M:
-        Sfx.set_enabled(not Sfx.enabled)
+    if k == null or not k.pressed or k.echo:
+        return
+    if _spec_bar and _spec_bar.visible:
+        if k.keycode == KEY_LEFT:
+            Sfx.play("click")
+            _cycle_spectate(-1)
+            get_viewport().set_input_as_handled()
+        elif k.keycode == KEY_RIGHT:
+            Sfx.play("click")
+            _cycle_spectate(1)
+            get_viewport().set_input_as_handled()

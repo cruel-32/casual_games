@@ -155,10 +155,12 @@ cd = np.zeros(int(.7 * SR))
 for i, n in enumerate([84, 79, 84, 79, 91]):
     mixat(cd, .7 * blip(n, .1, duty=.5, decay=25) if i < 4 else bell(n, .4, decay=8), i * .07)
 sfx['pickup_cooldown'] = cd
-bt = np.zeros(int(.5 * SR))
+# 글러브: 퍽퍽 (주먹 두 번) + 띵
+gl = np.zeros(int(.55 * SR))
 for i in range(2):
-    mixat(bt, (np.sin(sweep(120, 60, .15)) + .5 * lp(noise(.15), 700)) * np.exp(-t_(.15) * 20), i * .13)
-sfx['pickup_boots'] = bt
+    mixat(gl, (np.sin(sweep(220, 70, .12)) + .6 * bp(noise(.12), 300, 2500)) * np.exp(-t_(.12) * 30), i * .1)
+mixat(gl, .55 * bell(88, .3, decay=9), .22)
+sfx['pickup_glove'] = gl
 # 보호막 켜짐 '위잉~ 짠'
 t = t_(.8)
 sh = np.zeros(len(t))

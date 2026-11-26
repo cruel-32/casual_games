@@ -1,0 +1,3 @@
+이 zip 을 프로젝트 루트(spw/)에 덮어쓴 뒤, 아래 두 파일은 지워 주세요 (무거운 신발 효과음 — 더 이상 쓰지 않음):
+audio/sfx/pickup_boots.wav
+audio/sfx/pickup_boots.wav.import

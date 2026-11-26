@@ -1,17 +1,17 @@
 class_name ItemPickup
 extends Area3D
 ## 아레나에 떨어지는 아이템. 캐릭터가 닿으면 획득 (거부되면 그대로 남음 — 예: 헬멧 2개 꽉 참)
-## 차징 가속·쿨타임 감소는 경기 끝까지 유지되고 먹을수록 중첩된다 (최대 Fighter.MAX_STACKS 개)
+## 차징 가속·쿨타임 감소·글러브는 경기 끝까지 유지되고 먹을수록 중첩된다 (최대 Fighter.MAX_STACKS 개)
 
 const Toon := preload("res://scripts/world/toon.gd")
 
 ## 순서 = 네트워크로 보내는 번호 (바꾸면 PROTOCOL_VERSION 도 올릴 것)
-enum Kind { HELMET, CHARGE_UP, BOOTS, SHIELD5, SHIELD10, COOL_DOWN }
+enum Kind { HELMET, CHARGE_UP, GLOVE, SHIELD5, SHIELD10, COOL_DOWN }
 
 const NAMES := {
     Kind.HELMET: "헬멧",
     Kind.CHARGE_UP: "차징 가속",
-    Kind.BOOTS: "무거운 신발",
+    Kind.GLOVE: "글러브",
     Kind.SHIELD5: "무적 5초",
     Kind.SHIELD10: "무적 10초",
     Kind.COOL_DOWN: "쿨타임 감소",
@@ -19,7 +19,7 @@ const NAMES := {
 const COLORS := {
     Kind.HELMET: Color(1.0, 0.82, 0.2),
     Kind.CHARGE_UP: Color(1.0, 0.45, 0.15),
-    Kind.BOOTS: Color(0.55, 0.36, 0.22),
+    Kind.GLOVE: Color(0.95, 0.22, 0.2),
     Kind.SHIELD5: Color(0.35, 0.9, 1.0),
     Kind.SHIELD10: Color(1.0, 0.75, 0.15),
     Kind.COOL_DOWN: Color(0.3, 0.9, 0.45),
@@ -47,15 +47,15 @@ static func apply_to(f: Fighter, k: int) -> bool:
             ok = f.add_charge_stack()
         Kind.COOL_DOWN:
             ok = f.add_cooldown_stack()
-        Kind.BOOTS:
-            f.give_heavy()
+        Kind.GLOVE:
+            ok = f.add_glove_stack()
         Kind.SHIELD5:
             f.give_invuln(5.0)       # 보호막 소리는 give_invuln 에서
         Kind.SHIELD10:
             f.give_invuln(10.0)
     if ok:
         var snd := {Kind.HELMET: "pickup_helmet", Kind.CHARGE_UP: "pickup_charge", Kind.COOL_DOWN: "pickup_cooldown",
-            Kind.BOOTS: "pickup_boots"}.get(k, "pickup") as String
+            Kind.GLOVE: "pickup_glove"}.get(k, "pickup") as String
         f._sfx(snd)
     return ok
 
@@ -158,10 +158,30 @@ func _build_mesh(color: Color) -> void:
             mi2.material_override = mat
             mi2.position.y = -0.15
             _pivot.add_child(mi2)
-        Kind.BOOTS:
-            var m := BoxMesh.new()
-            m.size = Vector3(0.28, 0.3, 0.45)
+        Kind.GLOVE:
+            # 권투 글러브: 주먹(구) + 엄지 + 흰 손목 띠
+            var m := SphereMesh.new()
+            m.radius = 0.28
+            m.height = 0.56
             mi.mesh = m
+            mi.scale = Vector3(1.0, 1.05, 1.2)
+            var thumb := MeshInstance3D.new()
+            var tm := SphereMesh.new()
+            tm.radius = 0.12
+            tm.height = 0.24
+            thumb.mesh = tm
+            thumb.material_override = mat
+            thumb.position = Vector3(0.22, 0.04, -0.1)
+            _pivot.add_child(thumb)
+            var cuff := MeshInstance3D.new()
+            var cm := CylinderMesh.new()
+            cm.top_radius = 0.2
+            cm.bottom_radius = 0.22
+            cm.height = 0.16
+            cuff.mesh = cm
+            cuff.material_override = Toon.make(Color(1.0, 0.97, 0.9), {"rim_strength": 0.6})
+            cuff.position = Vector3(0, -0.32, 0)
+            _pivot.add_child(cuff)
         _:
             var m := SphereMesh.new()   # 다이아몬드(팔면체)
             m.radial_segments = 4

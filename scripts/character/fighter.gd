@@ -30,9 +30,9 @@ const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 @export var tap_cooldown := 0.3            # 탭은 제자리 밀기 대신 쿨타임이 짧다
 @export var charge_cooldown_min := 0.6
 @export var charge_cooldown_max := 1.8
-@export var dash_distance_min := 1.0
-@export var dash_distance_max := 3.5
-@export var push_reach := 1.45
+@export var dash_distance_min := 1.4
+@export var dash_distance_max := 5.0
+@export var push_reach := 1.9
 @export var tap_lock_time := 0.3            # 탭 밀치기 동안 제자리 정지
 @export var dash_end_lock_min := 0.25       # 차징 돌진 후 제자리 정지 (차징 0%)
 @export var dash_end_lock_max := 0.45       # 〃 (풀차징)
@@ -57,10 +57,11 @@ const JUMP_BUFFER := 0.12
 const BUMP_FORCE := 3.5
 const MAX_HELMETS := 2
 const JUMP_GRAVITY_MULT := 2.0      # 스스로 점프한 동안의 중력 배수 (넉백으로 뜬 것은 1배)
-const MAX_STACKS := 8               # 차징 가속·쿨타임 감소 아이템 최대 중첩
+const MAX_STACKS := 8               # 차징 가속·쿨타임 감소·글러브 아이템 최대 중첩
 const CHARGE_RATE_PER_STACK := 0.25 # 차징 속도 +25% / 개
 const COOLDOWN_PER_STACK := 0.2     # 쿨타임 = 기본 / (1 + 0.2 × 개수)
-const BOOTS_TIME := 8.0
+const GLOVE_FORCE_PER_STACK := 0.07 # 글러브: 밀치기 넉백 +7% / 개
+const GLOVE_STUN_PER_STACK := 0.15  # 글러브: 상대 경직 시간 +15% / 개
 const WALL_SLAM_STUN_MULT := 1.5
 const CHAIN_MIN_SPEED := 5.0
 const CLASH_FORCE := 11.0
@@ -116,10 +117,10 @@ var shake := 0.0
 
 # 아이템
 var helmets := 0
-var heavy_timer := 0.0
 var shield_timer := 0.0             # 무적 아이템 (헬멧이 막은 직후의 짧은 무적 invuln_timer 와 별개 — 보호막 연출용)
 var charge_stacks := 0              # 차징 가속 아이템 개수 (경기 끝까지 유지, 중첩)
 var cooldown_stacks := 0            # 쿨타임 감소 아이템 개수 (〃)
+var glove_stacks := 0               # 글러브 아이템 개수 (〃)
 var _jump_arc := false
 var _air_time := 0.0                # 공중에 있던 시간 (착지음 크기)
 var _full_sfx := false              # 이번 차징에서 '풀차징' 소리를 냈는지              # 스스로 점프해서 떠 있는 중 (중력 배수 적용)
@@ -159,11 +160,12 @@ var helmet_mi: Node3D
 var helmet_mat: ShaderMaterial
 var helmet_trim_mat: ShaderMaterial
 var helmet_extra: Node3D
-var boots: Array[Node3D] = []
+var gloves: Array[Node3D] = []
 var shield_mi: Node3D
 var shield_mat: ShaderMaterial
 var shield_rings: Array[MeshInstance3D] = []
 var pitch_pivot: Node3D
+var spectating: Fighter = null       # 죽은 뒤 관전 중인 캐릭터 (사람만)
 var spring_arm: SpringArm3D
 var camera: Camera3D
 
@@ -463,14 +465,20 @@ func _build_item_visuals() -> void:
     dome2.is_hemisphere = true
     _part(helmet_extra, dome2, Vector3(0, 0.36, 0), helmet_mat)
 
-    # 무거운 신발
-    var bm := BoxMesh.new()
-    bm.size = Vector3(0.26, 0.18, 0.36)
-    var boot_mat := Toon.make(Color(0.45, 0.28, 0.16), {"rim_strength": 0.3})
-    for leg in [left_leg, right_leg]:
-        var b := _part(leg, bm, Vector3(0, -0.3, -0.05), boot_mat)
-        b.visible = false
-        boots.append(b)
+    # 글러브: 손을 덮는 빨간 권투 장갑 (개수가 많을수록 커진다)
+    var glove_mat := Toon.make(Color(0.88, 0.16, 0.14), {"rim_strength": 0.5})
+    var cuff_mat := Toon.make(Color(1.0, 0.97, 0.9), {"rim_strength": 0.3})
+    for arm in [left_arm, right_arm]:
+        var g := Node3D.new()
+        g.position = Vector3(0, -0.34, 0)
+        g.visible = false
+        arm.add_child(g)
+        var fist := _part(g, _sphere(0.13), Vector3(0, -0.02, -0.02), glove_mat)
+        fist.scale = Vector3(1.0, 1.05, 1.15)
+        _part(g, _sphere(0.06), Vector3(0.09, 0.01, -0.06), glove_mat)    # 엄지
+        var cuff := _part(g, _capsule(0.1, 0.12), Vector3(0, 0.1, 0), cuff_mat)
+        cuff.scale = Vector3(1.0, 0.6, 1.0)
+        gloves.append(g)
 
     # 무적 보호막: 몸을 감싸는 빛나는 구(가장자리가 밝음) + 주위를 도는 고리 2개
     shield_mi = Node3D.new()
@@ -516,8 +524,9 @@ func _update_item_fx() -> void:
         helmet_mat.set_shader_parameter("albedo", Color(1.0, 0.82, 0.05))
         helmet_mi.scale = Vector3.ONE
         helmet_extra.visible = false
-    for b in boots:
-        b.visible = heavy_timer > 0.0
+    for g in gloves:
+        g.visible = glove_stacks > 0
+        g.scale = Vector3.ONE * (1.0 + 0.06 * glove_stacks)
 
 
 func _build_arrow() -> void:
@@ -751,10 +760,32 @@ func _physics_process(delta: float) -> void:
     _update_item_fx()
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     if camera:
         camera.h_offset = randf_range(-1.0, 1.0) * shake * 0.15
         camera.v_offset = randf_range(-1.0, 1.0) * shake * 0.15
+    if pitch_pivot and pitch_pivot.top_level:
+        # 관전: 카메라 받침대가 다른 캐릭터를 부드럽게 따라간다 (시점 회전은 그대로 내 마우스·터치)
+        var who: Fighter = spectating if is_instance_valid(spectating) else self
+        var goal := who.global_position + Vector3(0, 1.3, 0)
+        pitch_pivot.global_position = pitch_pivot.global_position.lerp(goal, 1.0 - exp(-10.0 * delta))
+
+
+## 관전: 내 카메라가 다른 캐릭터를 따라가게 한다. null 이나 자기 자신이면 내 캐릭터로 돌아옴
+func set_spectate(target: Fighter) -> void:
+    if pitch_pivot == null:
+        return
+    if target == self:
+        target = null
+    spectating = target
+    if not pitch_pivot.top_level:
+        var gt := pitch_pivot.global_transform
+        pitch_pivot.top_level = true
+        pitch_pivot.global_transform = gt
+    spring_arm.clear_excluded_objects()
+    spring_arm.add_excluded_object(get_rid())
+    if target:
+        spring_arm.add_excluded_object(target.get_rid())
 
 
 func _tick_timers(delta: float) -> void:
@@ -770,7 +801,6 @@ func _tick_timers(delta: float) -> void:
     var had_shield := shield_timer > 0.0
     var had_cooldown := cooldown_timer > 0.0
     shield_timer = maxf(shield_timer - delta, 0.0)
-    heavy_timer = maxf(heavy_timer - delta, 0.0)
     if not remote and not dead:
         if had_shield and shield_timer <= 0.0:
             _sfx("shield_off")
@@ -834,7 +864,7 @@ func _release_push() -> void:
         lock_after = maxf(tap_lock_time - dash_time, 0.0)
         cooldown_total = tap_cooldown * cooldown_mult()
     else:
-        dash_time = lerpf(0.12, 0.22, c)
+        dash_time = lerpf(0.12, 0.26, c)
         dash_speed = dash_distance_for(c) / dash_time
         cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c) * cooldown_mult()
         lock_after = lerpf(dash_end_lock_min, dash_end_lock_max, c)
@@ -872,19 +902,10 @@ func _check_push_hits() -> void:
             _popup((global_position + o.global_position) * 0.5, "맞밀치기!", Color(1.0, 0.9, 0.3))
             return
 
-        # 무거운 신발: 밀리지 않고 미는 쪽이 튕김
-        if o.heavy_timer > 0.0:
-            dash_timer = 0.0
-            push_window = 0.0
-            knock += -dir * 5.0
-            _popup(o.global_position, "꿈쩍 안 함!", Color(0.8, 0.6, 0.4))
-            Sfx.play_at("bump", o.global_position, self, 2.0, 0.6)
-            return
-
-        # 밀려나는 거리는 탭이든 차징이든 항상 풀차징과 같다. 차징 정도는 경직 시간에만 반영
-        var force := PUSH_FORCE
+        # 밀려나는 거리는 탭이든 차징이든 같다 (글러브만 키움). 차징 정도는 경직 시간에 반영
+        var force := PUSH_FORCE * glove_force_mult()
         var lift := PUSH_LIFT
-        var stun := 0.45 if push_tap else lerpf(0.8, 1.8, push_power)
+        var stun := (0.45 if push_tap else lerpf(0.8, 1.8, push_power)) * glove_stun_mult()
         if _deliver_push(o, dir * force + Vector3.UP * lift, stun):
             if o.remote:
                 Sfx.play_at("hit", o.global_position, self)     # 상대 PC에서 맞는 소리를 내 PC에서도
@@ -906,11 +927,11 @@ func _deliver_push(o: Fighter, impulse: Vector3, stun: float) -> bool:
     return o.receive_push(impulse, stun, self)
 
 
-## 밀치기에 맞음. 무적/무거운 신발이면 무시하고 false
+## 밀치기에 맞음. 무적이면 무시하고 false
 ## attacker: 킬 크레딧 대상 (연쇄 충돌이면 최초로 민 사람)
 ## sound: 맞는 소리 ("hit" 밀치기, "swat" 회전 기둥)
 func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null, sound: String = "hit") -> bool:
-    if dead or is_invulnerable() or heavy_timer > 0.0:
+    if dead or is_invulnerable():
         return false
     _sfx(sound, 0.0, 1.0 + randf_range(-0.04, 0.04))
     if stun >= 1.2:
@@ -938,7 +959,7 @@ func receive_push(impulse: Vector3, stun: float, attacker: Fighter = null, sound
 
 ## 몸끼리 부딪혔을 때 살짝 튕김
 func bump(impulse: Vector3) -> void:
-    if dead or bump_cooldown > 0.0 or dash_timer > 0.0 or heavy_timer > 0.0:
+    if dead or bump_cooldown > 0.0 or dash_timer > 0.0:
         return
     knock += impulse
     bump_cooldown = 0.3
@@ -988,8 +1009,6 @@ func die() -> void:
     shake = 1.0
     helmet_mi.visible = false
     shield_mi.visible = false
-    for b in boots:
-        b.visible = false
     died.emit(self)
 
 
@@ -1019,9 +1038,20 @@ func add_cooldown_stack() -> bool:
     return true
 
 
-func give_heavy(seconds: float = BOOTS_TIME) -> void:
-    heavy_timer = maxf(heavy_timer, seconds)
-    knock = Vector3.ZERO
+## 글러브 1개 추가 (중첩): 밀치기 넉백·상대 경직 증가. 이미 최대면 false
+func add_glove_stack() -> bool:
+    if glove_stacks >= MAX_STACKS:
+        return false
+    glove_stacks += 1
+    return true
+
+
+func glove_force_mult() -> float:
+    return 1.0 + GLOVE_FORCE_PER_STACK * glove_stacks
+
+
+func glove_stun_mult() -> float:
+    return 1.0 + GLOVE_STUN_PER_STACK * glove_stacks
 
 
 ## 무적 아이템: 보호막 (낙석·밀치기 모두 무시)

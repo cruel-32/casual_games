@@ -21,7 +21,7 @@ const MIX := {
     "bump": [-10.0, 0.12], "helmet_break": [-3.0, 0.05], "die": [-2.0, 0.0], "dizzy": [-9.0, 0.0],
     "rock_fall": [-16.0, 0.12], "rock_land": [-7.0, 0.15], "rock_break": [-5.0, 0.1], "item_spawn": [-10.0, 0.1],
     "pickup": [-4.0, 0.03], "pickup_helmet": [-4.0, 0.0], "pickup_charge": [-4.0, 0.0],
-    "pickup_cooldown": [-4.0, 0.0], "pickup_boots": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
+    "pickup_cooldown": [-4.0, 0.0], "pickup_glove": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
     "shield_off": [-6.0, 0.0], "ready_ping": [-12.0, 0.0], "wind": [-10.0, 0.08],
 }
 const BGM_DB := {"menu": -11.0, "match": -13.0}
@@ -47,6 +47,7 @@ func _ready() -> void:
     var cfg := ConfigFile.new()
     if cfg.load(SETTINGS_PATH) == OK:
         enabled = bool(cfg.get_value("client", "sound", true))
+    # 버스는 default_bus_layout.tres 에 미리 정의 (웹은 실행 중에 만든 버스로 소리를 보내면 안 들림)
     for bus in ["Music", "Sfx"]:
         if AudioServer.get_bus_index(bus) == -1:
             AudioServer.add_bus()

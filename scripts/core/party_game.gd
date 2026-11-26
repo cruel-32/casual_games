@@ -144,7 +144,10 @@ func restart_offline() -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-    if state == State.ENDED and event.is_action_pressed(&"ui_accept"):
+    # 결과 화면은 HUD 버튼으로 처리. Enter 는 보조 단축키 (Space 는 점프와 겹쳐 제외)
+    var key := event as InputEventKey
+    if state == State.ENDED and key and key.pressed and not key.echo \
+            and (key.keycode == KEY_ENTER or key.keycode == KEY_KP_ENTER):
         leave_to_menu()
         return
     if not is_online_match() and event.is_action_pressed(&"restart"):
