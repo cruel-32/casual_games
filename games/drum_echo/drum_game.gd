@@ -1,31 +1,23 @@
 extends PartyGame
-## 뒷북의 달인 — 공격팀 한 명이 북으로 리듬을 치면, 나머지 팀이 똑같이 따라 친다
+## 뒷북의 달인 — 가면 쓴 진행자가 북으로 리듬을 선창하면, 모든 플레이어가 똑같이 따라 친다
 ##
-## 진행 (chart.gd): 반주가 흐르는 동안 팀이 돌아가며 공격 (1 → 2 → 4마디). 남는 차례·개인전은 가면 쓴 진행자가 공격
-##   차례마다 컴퓨터가 둥·딱 개수를 정해 준다 → 쉼(8박 → 4박으로 점점 짧아짐) → 공격 → 쉼 → 따라 치기
-##   공격: 그 팀 사람 중 한 명(봇만 있는 팀이면 봇)이 두 북(둥·딱)을 마음대로의 박자로 친다
-##     반주 박에 맞으면 공격 점수 전부, 엇박이면 절반. 정해진 개수보다 많거나 적으면 개수만큼 감점 후 컴퓨터가 개수를 맞춰 상대에게 보냄
-##     피버 = 누르고 있다가 정확한 박자에 뗀다 (노트 2개로 셈)
-##   따라 치기: 공격팀 밖의 모두가 같은 노트를 같은 타이밍에 친다 → PERFECT·GOOD·BAD·MISS (피버는 누름·뗌 각각)
+## 진행 (chart.gd): 반주가 흐르는 동안 [쉼 2박] 진행자 선창 N마디 [텀] 모두 따라 치기 N마디 를 되풀이 (1마디 6번 → 2마디 6번)
+##   진행자 리듬은 반주에 맞는 리듬 모음에서 고른다 (진행할수록 어렵게). 선창과 따라 치기 사이 텀은 4박 → 0박으로 점점 짧아짐
+##   따라 치기: 같은 노트를 같은 타이밍에 → PERFECT·GOOD·BAD·MISS (피버 = 누르고 있다가 끝 박자에 뗌, 누름·뗌 각각 판정)
 ##   곡이 끝나면 팀원 점수 합계(개인전은 개인 점수)로 순위
 ##
-## 판정은 서버(오프라인이면 이 PC)가 한다. 클라이언트는 친 시각(곡 시간)을 보내고, 화면에는 즉시 예상 판정을 보여 준다.
-## 시간: 화면(노트 길)·판정은 '귀에 들리는 반주 시각'(heard_time) 하나로 맞춘다 — 반주 재생 위치를 기준 시계로 쓰고
-##   소리 출력 지연과 사용자가 고른 보정값을 뺀다. 효과음 예약은 '지금 섞이는 시각'(mix_time) 기준.
+## 판정은 각 플레이어 기기에서 한다 (박자에 민감한 리듬 게임이라 네트워크를 거치지 않게). 서버는 결과만 받아 점수에 반영하고 알린다
+## 시간: 화면(노트 길)·판정은 '귀에 들리는 반주 시각'(heard_time) 하나로 맞춘다 — 반주를 기준 시계로 쓰고 소리 출력 지연을 뺀다.
+##   효과음 예약은 '지금 섞이는 시각'(mix_time) 기준.
 ## 메시지 (서버 → 모두)
 ##   ["start", t0, teams]                 곡 시작 시각(서버 시계)
-##   ["turn", i, attacker_slot, notes, spec]  i번째 차례 공격자·노트 수 발표 (쉼 전). notes 가 있으면 컴퓨터·봇 공격
-##   ["note", i, ms, lane, judge]         사람 공격자가 친 노트 (공격 시작부터 ms)
-##   ["fev", i, note_index, end_ms, judge]  그 노트가 피버가 됨 (뗀 시각)
-##   ["cnt", i, attacker, made, penalty]  공격 끝: 만든 개수 {l, r}·개수 감점
-##   ["notes", i, notes]                  따라 칠 최종 노트 (개수 보정 후)
+##   ["turn", i, -1, notes]               i번째 차례 진행자 리듬 (쉼 전에 미리)
 ##   ["j", fighter_slot, judge, lane]     따라 치기 판정 (머리 위 문구 + 그 사람 북소리). lane +2 = 피버 뗌
+##   ["k", slot, lane, 1|0]               누름·뗌 — 그 사람 캐릭터가 바로 북을 친다 (판정과 상관없이 누르면 움직임)
 ##   ["tres", i, {slot: [점수, p, g, b, m]}]  차례 결과 (봇·놓친 노트 포함)
 ##   ["score", {slot: 총점}]
 ##   ["end", {slot: 총점}, rank, winner_text]
-## 메시지 (클라이언트 → 서버): ["loaded"], 판정 결과 ["atk"|"atkfev"|"res"|"resrel", ...] (_apply_result), ["key", lane, 1|0] 누름·뗌
-##   서버 → 모두: ["k", slot, lane, 1|0] — 그 사람 캐릭터가 바로 북을 친다 (판정과 상관없이 누르면 움직임)
-## 판정은 각 플레이어 기기에서 한다 (박자에 민감한 리듬 게임이라 네트워크를 거치지 않게). 서버는 결과만 받아 점수에 반영하고 알린다
+## 메시지 (클라이언트 → 서버): ["loaded"], 판정 결과 ["res"|"resrel", ...] (_apply_result), ["key", lane, 1|0] 누름·뗌
 
 const Chart := preload("res://games/drum_echo/chart.gd")
 const HUD_SCRIPT := preload("res://games/drum_echo/drum_hud.gd")
@@ -48,7 +40,6 @@ const MUSIC_DB := 2.0
 const OTHERS_DB := -5.0             ## 남이 치는 북소리 (내 소리보다 조금 작게)
 const ROLL_STEP := 0.125            ## 피버를 누르고 있는 동안 '드르륵' 간격 (16분음표)
 const ROLL_DB := -9.0
-const FIX_DELAY := 0.6              ## 공격이 끝나고 이만큼 뒤에 개수 보정 (마지막 결과가 도착하도록, 기기 반주 시계와 서버 시계 차이 여유)
 
 @export var bot_count := 3          ## 혼자 연습: 나 + 봇 3 (2팀)
 
@@ -60,8 +51,6 @@ var end_time := 0.0
 ## 화면용 (모든 PC)
 var view_notes := {}                ## turn -> [[slot, lane, end], ...]
 var view_attacker := {}             ## turn -> fighter slot (-1 = 진행자)
-var view_spec := {}                 ## turn -> {l, r} 둥·딱 개수
-var view_cnt := {}                  ## turn -> [made {l, r}, penalty] (사람 공격만)
 var view_final := {}                ## turn -> true (따라 칠 노트 확정)
 var view_taken := {}                ## turn -> {note index: judge, -(index+1): 피버 뗌 판정} 내가 맞힌 노트
 var view_hold := {}                 ## lane -> [turn, note index] 내가 피버를 누르고 있는 중
@@ -72,7 +61,7 @@ var last_judge_time := -10.0
 var winner_text := ""
 
 # 판정 (서버·오프라인)
-var _auth := {}                     ## turn -> {attacker, spec, notes, computer, hold:{lane:[idx, t]}, rhold:{slot:{lane: idx}}, taken:{slot:{key:judge}}, fixed}
+var _auth := {}                     ## turn -> {attacker(-1), notes, rhold:{slot:{lane: idx}}, taken:{slot:{key:judge}}, fixed}
 var _loaded := {}
 var _wait_time := 0.0
 var _slot_of_peer := {}
@@ -91,7 +80,6 @@ var _cue_beat := -999
 var _attack_mark: Label3D
 var _key_down := [false, false]
 var _press_t := [0.0, 0.0]
-var _atk_hold := {}                 ## lane -> [turn, 0, press time] 내가 공격 중 누르고 있는 북 (화면용)
 var _real_prev := -1
 var _mats := {}                     ## 북 재질 (모두 같이 씀 → 그리기 묶음)
 var _vsync_before := -1
@@ -542,10 +530,6 @@ func audible_team(turn: int) -> int:
     return -2
 
 
-func _attack_window(tr: Dictionary, t: float) -> bool:
-    return t >= float(tr.attack_t) - 0.1 and t < Chart.attack_end(tr) - 0.05
-
-
 # ================================================================ 입력
 ## PC·웹: Space = 둥, Enter = 딱 (F·J 도 됨). 버튼보다 먼저 받아서 Space·Enter 가 화면 버튼을 누르지 않게 한다
 func _input(event: InputEvent) -> void:
@@ -581,21 +565,6 @@ func press(lane: int) -> void:
     _snd("don" if lane == 0 else "ka")
     _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": ROLL_DB, "mine": true})
     # 판정은 이 기기에서 한다 (박자에 민감하므로). 서버에는 결과만 보내고, 서버는 그대로 점수에 반영해 다른 사람에게 알린다
-    var ph := phase_at(t + 0.12)
-    var i := int(ph[0])
-    if i >= 0 and int(view_attacker.get(i, -2)) == my_slot and _attack_window(turns[i], t) and not view_final.has(i):
-        var rel := maxf(t - float(turns[i].attack_t), 0.0)
-        var ms := int(round(rel * 1000.0))
-        var mine: Array = view_notes.get(i, [])
-        if Chart.lane_busy(mine, ms, lane):
-            return                      # 같은 북을 너무 빨리 연달아 → 한 번으로
-        var q := Chart.attack_score(rel)
-        mine.append([ms, lane, -1])
-        view_notes[i] = mine
-        _atk_hold[lane] = [i, mine.size() - 1, t]
-        _show_judge(String(q[0]))
-        _send_result(["atk", i, ms, lane, q[0], int(q[1])])
-        return
     var rt := _response_turn_at(t)
     if rt >= 0 and is_responder(my_slot, rt) and view_final.has(rt):
         var notes: Array = view_notes.get(rt, [])
@@ -631,20 +600,6 @@ func release(lane: int) -> void:
     if my_slot < 0 or state == State.ENDED or t0 < 0.0:
         return
     var t := input_time()
-    if _atk_hold.has(lane):
-        var h: Array = _atk_hold[lane]
-        _atk_hold.erase(lane)
-        var i := int(h[0])
-        var mine: Array = view_notes.get(i, [])
-        var idx := int(h[1])
-        if t - float(h[2]) >= Chart.FEVER_HOLD_MIN and idx < mine.size() and not view_final.has(i):
-            var rel := t - float(turns[i].attack_t)
-            var e := clampi(int(round(rel * 1000.0)), int(mine[idx][0]) + int(Chart.FEVER_HOLD_MIN * 1000.0), int(turns[i].bars) * int(Chart.BAR * 1000.0))
-            if not Chart.lane_busy(mine, int(mine[idx][0]), lane, e, idx):
-                mine[idx][2] = e
-                var q := Chart.attack_score(rel)
-                _show_judge(String(q[0]))
-                _send_result(["atkfev", i, idx, e, q[0], int(q[1])])
     if view_hold.has(lane):
         var vh: Array = view_hold[lane]
         view_hold.erase(lane)
@@ -754,18 +709,14 @@ func _process(delta: float) -> void:
     _bot_hits = keep
     _update_rolls(mt, ht)
     _check_hold_miss(ht)
-    # 공격자 표시: 쉼·공격 동안 공격자 머리 위
+    # 진행자 머리 위: 선창 중 "선창!"
     var cur := phase_at(ht)
-    var show_i := int(cur[0]) if cur[1] == "ready_attack" or cur[1] == "attack" else -1
-    var who := int(view_attacker.get(show_i, -2)) if show_i >= 0 else -2
-    _attack_mark.visible = who >= -1 and state == State.PLAYING
+    _attack_mark.visible = state == State.PLAYING and cur[1] == "attack"
     if _attack_mark.visible:
-        var top: Vector3 = fighters[who].global_position + Vector3(0, 2.45, 0) if who >= 0 else _hosts[0].global_position + Vector3(0, 3.0, 0)
-        _attack_mark.global_position = top + Vector3(0, sin(t * 8.0) * 0.08, 0)
-        var at := int(turns[show_i].attack_team)
-        _attack_mark.text = ("진행자 공격!" if at < 0 else "공격!") if cur[1] == "attack" else "다음 공격!"
-        _attack_mark.modulate = Teams.color(at).lightened(0.25) if at >= 0 else Color(1.0, 0.85, 0.2)
-    _update_camera(delta, ht, cur, who)
+        _attack_mark.global_position = _hosts[0].global_position + Vector3(0, 3.0 + sin(t * 8.0) * 0.08, 0)
+        _attack_mark.text = "선창!"
+        _attack_mark.modulate = Color(1.0, 0.85, 0.2)
+    _update_camera(delta, ht, cur, -1)
 
 
 ## 박자 신호: 공격·따라 치기 시작 직전 쉼의 박마다 '띵' (마지막 박이 가장 큼), 쉼 시작에 작게
@@ -839,6 +790,7 @@ var _shot := {}
 var _shot_t := 0.0
 var _shot_len := 3.0
 var _shot_rng := RandomNumberGenerator.new()
+var _cycle_idx := -1
 
 
 func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
@@ -847,6 +799,7 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
     var i := int(cur[0])
     var kind: String = cur[1]
     # 지금 비출 무리와 고를 샷
+    #   선창: 진행자 클로즈업·아래에서 + 가끔 듣고 있는 연주자들 / 따라 치기: 연주자들을 한 명씩 번갈아 클로즈업 + 무리·위에서
     var group: Array = []
     var picks: Array = []               # [샷 이름, 무게]
     if state == State.ENDED:
@@ -854,16 +807,11 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
             group = fighters.filter(func(f): return f.team == int(final_rank[0].get("team", -1)))
         picks = [["medium", 2], ["low", 1]]
     elif t0 >= 0.0 and ht >= 0.0 and i >= 0 and (kind == "attack" or kind == "ready_attack"):
-        if who >= 0:
-            var tm := fighters[who].team
-            group = fighters.filter(func(f): return f.team == tm) if tm >= 0 else [fighters[who]]
-            picks = [["close", 3], ["medium", 2], ["low", 1], ["side", 1]] if kind == "attack" else [["medium", 2], ["close", 1]]
-        else:
-            group = [_hosts[0]]
-            picks = [["close", 2], ["low", 1], ["medium", 1]]
+        group = [_hosts[0]]
+        picks = [["close", 3], ["low", 1], ["medium", 1], ["players", 2]]
     elif t0 >= 0.0 and ht >= 0.0 and i >= 0:
-        group = fighters.filter(func(f): return is_responder(f.slot, i))
-        picks = [["medium", 3], ["close", 2], ["high", 1], ["wide", 1]] if kind == "response" else [["medium", 2], ["high", 1]]
+        group = fighters.duplicate()
+        picks = [["cycle", 5], ["medium", 1], ["high", 1]] if kind == "response" else [["cycle", 2], ["medium", 1]]
     else:
         picks = [["wide", 3], ["host", 1]]
     var key := str(group.map(func(f): return f.get_instance_id())) + kind.substr(0, 5)
@@ -900,10 +848,21 @@ func _pick_shot(picks: Array, group: Array) -> void:
             name = p[0]
             break
     var prev: String = _shot.get("name", "")
-    if name == prev and picks.size() > 1 and _shot_rng.randf() < 0.6:
+    if name == prev and name != "cycle" and picks.size() > 1 and _shot_rng.randf() < 0.6:
         name = picks[(picks.find(picks.filter(func(p): return p[0] == name)[0]) + 1) % picks.size()][0]
     var targets: Array = group
-    if name == "close" and group.size() > 1:
+    if name == "players":
+        targets = fighters.duplicate()          # 듣고 있는 연주자들 (팀이 많으면 무리 하나)
+        if teams >= 2:
+            var tm := _shot_rng.randi_range(0, teams - 1)
+            targets = fighters.filter(func(f): return f.team == tm)
+        name = "medium"
+    elif name == "cycle":
+        # 연주자를 차례로 한 명씩 클로즈업 (같은 사람 연속 없이)
+        _cycle_idx = (_cycle_idx + 1) % maxi(fighters.size(), 1)
+        targets = [fighters[_cycle_idx]] if not fighters.is_empty() else group
+        name = "close"
+    elif name == "close" and group.size() > 1:
         targets = [group[_shot_rng.randi_range(0, group.size() - 1)]]
     if name == "host" and not _hosts.is_empty():
         targets = [_hosts[0]]
@@ -911,7 +870,7 @@ func _pick_shot(picks: Array, group: Array) -> void:
     _shot = {"name": name, "targets": targets, "side": -1.0 if _shot_rng.randf() < 0.5 else 1.0,
             "cut": prev != "" and _shot_rng.randf() < 0.6}
     _shot_t = Time.get_ticks_msec() / 1000.0
-    _shot_len = _shot_rng.randf_range(2.5, 4.5)
+    _shot_len = _shot_rng.randf_range(1.8, 2.8) if targets.size() == 1 and targets[0] is Fighter else _shot_rng.randf_range(2.5, 4.0)
 
 
 ## 샷의 지금 카메라 위치·보는 점·화각
@@ -1001,45 +960,8 @@ func on_server_message(msg: Array) -> void:
         "turn":
             var i := int(msg[1])
             view_attacker[i] = int(msg[2])
-            if msg.size() > 4 and msg[4] is Dictionary:
-                view_spec[i] = msg[4]
             if msg.size() > 3 and msg[3] is Array and not (msg[3] as Array).is_empty():
                 _set_notes(i, msg[3], int(msg[2]), true)
-        "notes":
-            _set_notes(int(msg[1]), msg[2], -1, false)
-        "note":
-            var i := int(msg[1])
-            if view_final.has(i):
-                return
-            var who := int(view_attacker.get(i, -1))
-            if who == my_slot and my_slot >= 0:
-                return                      # 내 공격은 이미 이 기기에 그려 둠
-            var list: Array = view_notes.get(i, [])
-            list.append([int(msg[2]), int(msg[3]), -1])
-            view_notes[i] = list
-            if who >= 0 and who != my_slot:
-                # 남의 공격: 박자 칸보다 일찍 도착하면 그 칸에 맞춰 울리고, 늦게 오면 바로
-                var at := float(turns[i].attack_t) + int(msg[2]) / 1000.0
-                _bot_hits.append([maxf(at, mix_time()), NO_ANIM, int(msg[3]), -3.0, false, -1.0])
-        "fev":
-            var i := int(msg[1])
-            var list: Array = view_notes.get(i, [])
-            var idx := int(msg[2])
-            if int(view_attacker.get(i, -1)) == my_slot and my_slot >= 0:
-                return
-            if not view_final.has(i) and idx < list.size():
-                list[idx][2] = int(msg[3])
-                var who := int(view_attacker.get(i, -1))
-                if who >= 0 and who != my_slot:
-                    var t1 := float(turns[i].attack_t) + int(msg[3]) / 1000.0
-                    var now := mix_time()
-                    if t1 > now:
-                        _rolls.append({"who": who, "lane": int(list[idx][1]), "until": t1, "next": now, "db": -3.0 + ROLL_DB})
-        "cnt":
-            var i := int(msg[1])
-            view_cnt[i] = [msg[3], int(msg[4])]
-            if int(msg[2]) == my_slot and int(msg[4]) > 0:
-                _snd("miss", -6.0)
         "j":
             var s := int(msg[1])
             if s != my_slot and s >= 0 and s < fighters.size():
@@ -1162,17 +1084,10 @@ func _physics_process(delta: float) -> void:
     var t := song_time()
     if t >= 0.0 and state == State.COUNTDOWN and is_server():
         state = State.PLAYING
-    # 공격자·노트 수 발표: 쉼이 시작되기 1초 전 (쉼 동안 화면에 크게 보임)
+    # 진행자 리듬 발표: 쉼이 시작되기 1초 전 (따라 칠 노트를 미리 다 알려 줌 — 화면엔 소리가 난 뒤에만 나타남)
     while _announced + 1 < turns.size() and t >= Chart.ready_t(turns[_announced + 1]) - 1.0:
         _announced += 1
         _announce(_announced)
-    # 사람 공격이 끝나면: 개수 감점 + 컴퓨터가 개수를 맞춘 최종 노트를 보냄
-    for i in range(maxi(_announced - 1, 0), _announced + 1):
-        if not _auth.has(i):
-            continue
-        var a: Dictionary = _auth[i]
-        if not a.fixed and t >= Chart.attack_end(turns[i]) + FIX_DELAY:
-            _fix(i)
     # 따라 치기 끝난 차례 정리
     while _finalized + 1 <= _announced and _finalized + 1 < turns.size():
         if t < Chart.response_end(turns[_finalized + 1]) + 1.0:
@@ -1187,50 +1102,12 @@ func _difficulty(i: int) -> float:
     return clampf(float(i) / maxf(turns.size() - 1, 1.0), 0.0, 1.0)
 
 
+## 차례 발표: 진행자가 칠 리듬 (모두가 따라 친다)
 func _announce(i: int) -> void:
     var tr: Dictionary = turns[i]
-    var at := int(tr.attack_team)
-    var attacker := -1
-    var notes := []
-    var spec := Chart.make_spec(int(tr.bars), _difficulty(i), i * 977 + 31)
-    var computer := true
-    if at >= 0:
-        var humans := []
-        var members := []
-        for f in fighters:
-            if f.team == at:
-                members.append(f.slot)
-                if _is_live_human(f):
-                    humans.append(f.slot)
-        # 같은 사람이 연달아 걸리지 않게
-        var prev := int(_auth[i - teams].attacker) if i - teams >= 0 and _auth.has(i - teams) else -1
-        if humans.size() > 1:
-            humans.erase(prev)
-        if not humans.is_empty():
-            attacker = humans.pick_random()
-            computer = false
-        else:
-            attacker = members.pick_random() if not members.is_empty() else -1
-    if computer:
-        notes = Chart.computer_pattern(int(tr.bars), spec, i * 131 + 7, _difficulty(i))
-    _auth[i] = {"attacker": attacker, "spec": spec, "notes": notes, "computer": computer, "hold": {}, "rhold": {},
-            "taken": {}, "fixed": computer}
-    _emit(["turn", i, attacker, notes, spec])
-
-
-## 사람 공격 마무리: 개수 감점, 개수 보정한 최종 노트 발표
-func _fix(i: int) -> void:
-    var a: Dictionary = _auth[i]
-    a.fixed = true
-    var tr: Dictionary = turns[i]
-    var made := Chart.count_of(a.notes)
-    var penalty := Chart.COUNT_PENALTY * Chart.count_diff(a.notes, a.spec)
-    if penalty > 0 and int(a.attacker) >= 0:
-        _add_score(int(a.attacker), -penalty)
-    _emit(["cnt", i, int(a.attacker), made, penalty])
-    a.notes = Chart.fit_pattern(a.notes, int(tr.bars), a.spec, i * 53 + 11)
-    a.hold = {}
-    _emit(["notes", i, a.notes])
+    var notes := Chart.host_pattern(int(tr.bars), _difficulty(i), i * 131 + 7 + int(t0 * 10.0) % 997)
+    _auth[i] = {"attacker": -1, "notes": notes, "rhold": {}, "taken": {}, "fixed": true}
+    _emit(["turn", i, -1, notes])
 
 
 func _is_live_human(f: Fighter) -> bool:
@@ -1245,7 +1122,7 @@ func on_client_message(pid: int, msg: Array) -> void:
     match String(msg[0]):
         "loaded":
             _loaded[pid] = true
-        "atk", "atkfev", "res", "resrel":
+        "res", "resrel":
             if _slot_of_peer.has(pid):
                 _apply_result(int(_slot_of_peer[pid]), msg)
         "key":
@@ -1254,13 +1131,10 @@ func on_client_message(pid: int, msg: Array) -> void:
                 broadcast(["k", int(_slot_of_peer[pid]), int(msg[1]) & 1, 1 if int(msg[2]) == 1 else 0])
 
 
-const ATTACK_JUDGES := ["perfect", "good", "off"]
 const RESPONSE_JUDGES := ["perfect", "good", "bad", "miss", "extra"]
 
 
 ## 플레이어 기기가 계산한 판정 결과를 반영 (서버·오프라인). 서버는 박자를 다시 재지 않는다 — 앞뒤가 맞는지만 본다
-##   ["atk", turn, ms, lane, judge, 점수]        공격 노트 (서버에 쌓이는 순서 = 그 기기의 노트 번호)
-##   ["atkfev", turn, 노트 번호, 끝 ms, judge, 점수]  그 노트가 피버가 됨
 ##   ["res", turn, 노트 번호(-1 = 헛침), judge, lane]  따라 치기 누름
 ##   ["resrel", turn, 노트 번호, judge, lane]   따라 치기 피버 뗌
 func _apply_result(slot: int, msg: Array) -> void:
@@ -1272,25 +1146,6 @@ func _apply_result(slot: int, msg: Array) -> void:
     var a: Dictionary = _auth[i]
     var tr: Dictionary = turns[i]
     match String(msg[0]):
-        "atk":
-            var ms := int(msg[2])
-            var lane := int(msg[3]) & 1
-            var j := String(msg[4])
-            if int(a.attacker) != slot or a.fixed or not j in ATTACK_JUDGES:
-                return
-            if ms < 0 or ms > int(tr.bars) * int(Chart.BAR * 1000.0) or a.notes.size() >= int(tr.bars) * Chart.MAX_NOTES_PER_BAR:
-                return
-            a.notes.append([ms, lane, -1])
-            _add_score(slot, clampi(int(msg[5]) if msg.size() > 5 else 0, 0, int(Chart.ATTACK_POINTS.perfect)))
-            _emit(["note", i, ms, lane, j])
-        "atkfev":
-            var idx := int(msg[2])
-            var e := int(msg[3])
-            if int(a.attacker) != slot or a.fixed or idx < 0 or idx >= a.notes.size() or e <= int(a.notes[idx][0]):
-                return
-            a.notes[idx][2] = mini(e, int(tr.bars) * int(Chart.BAR * 1000.0))
-            _add_score(slot, clampi(int(msg[5]) if msg.size() > 5 else 0, 0, int(Chart.ATTACK_POINTS.perfect)))
-            _emit(["fev", i, idx, int(a.notes[idx][2]), String(msg[4])])
         "res", "resrel":
             var n_i := int(msg[2])
             var j := String(msg[3])
