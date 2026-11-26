@@ -13,7 +13,7 @@ const F_CHARGING := 2
 const F_INVULN := 4
 const F_PUSH_ANIM := 8
 const F_STUN := 16
-const F_HEAVY := 32
+# 32: (예전 무거운 신발 — 비워 둠)
 const F_SHIELD := 64             # 무적 아이템 보호막 (보기용)
 const F_PUSH_WINDOW := 128
 
@@ -33,8 +33,6 @@ static func flags_of(f: Fighter) -> int:
         fl |= F_PUSH_ANIM
     if f.is_stunned():
         fl |= F_STUN
-    if f.heavy_timer > 0.0:
-        fl |= F_HEAVY
     if f.shield_timer > 0.0:
         fl |= F_SHIELD
     if f.push_window > 0.0:
@@ -123,7 +121,6 @@ static func _apply(f: Fighter, pos: Vector3, rot: float, vel: Vector3, e: Array)
     f.helmets = int(e[6])
     var fl := int(e[4])
     f.invuln_timer = 0.3 if fl & F_INVULN else 0.0
-    f.heavy_timer = 1.0 if fl & F_HEAVY else 0.0
     f.shield_timer = 1.0 if fl & F_SHIELD else 0.0
 
 

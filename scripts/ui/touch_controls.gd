@@ -3,7 +3,7 @@ extends Control
 ## - 왼쪽 아래: 이동 스틱 (화면 왼쪽 절반 어디를 눌러도 그 자리에 스틱이 생김)
 ## - 오른쪽 화면 드래그: 시점 회전
 ## - 오른쪽 아래 버튼: 밀치기(길게 누르면 차징), 점프
-## - 결과 화면: 방으로 / 다시 하기 / 메인으로 버튼
+## (결과 화면 버튼·관전 버튼은 HUD 가 모든 기기 공용으로 만든다)
 ## 멀티터치(스틱을 움직이며 동시에 시점 회전·버튼)를 지원한다.
 ## - 점프·밀치기 버튼을 누른 손가락을 그대로 끌면 시점도 함께 돌아간다
 ## - 시점 회전량은 손가락별로 직접 기록한 위치 차이로 계산한다.
@@ -31,7 +31,6 @@ var _jump_index := -1
 var _last_pos := {}                 # 손가락 index -> 마지막 위치
 var _press_pos := {}                # 손가락 index -> 누른 위치
 var _button_looking := {}           # 버튼 손가락이 시점 회전을 시작했는가
-var _result_box: HBoxContainer
 
 
 ## 터치 컨트롤을 켤지: 휴대폰·태블릿
@@ -43,23 +42,6 @@ func _ready() -> void:
     set_anchors_preset(Control.PRESET_FULL_RECT)
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     fighter.touch_mode = true
-
-    _result_box = UI.hbox(14)
-    _result_box.visible = false
-    add_child(_result_box)
-    if game.is_online_match():
-        _add_result_button("방으로 돌아가기", UI.PRIMARY, func(): game.leave_to_menu())
-    else:
-        _add_result_button("다시 하기", UI.PRIMARY, func(): get_tree().reload_current_scene())
-        _add_result_button("메인으로", UI.SECONDARY, func(): game.leave_to_menu())
-
-
-func _add_result_button(text: String, color: Color, cb: Callable) -> void:
-    var b := UI.colored_button(text, color, color.lightened(0.15))
-    b.custom_minimum_size = Vector2(220, 64)
-    b.add_theme_font_size_override("font_size", 22)
-    b.pressed.connect(cb)
-    _result_box.add_child(b)
 
 
 func _scr() -> Vector2:
@@ -122,7 +104,7 @@ func _on_touch_down(index: int, pos: Vector2) -> void:
     _last_pos[index] = pos
     _press_pos[index] = pos
     _button_looking.erase(index)
-    if _result_box.visible:
+    if game.state == PartyGame.State.ENDED:
         return   # 결과 화면에선 버튼(Control)이 처리
     for c in get_tree().get_nodes_in_group("touch_block"):
         if c is Control and (c as Control).is_visible_in_tree() and (c as Control).get_global_rect().grow(8).has_point(pos):
@@ -171,10 +153,7 @@ func _update_stick() -> void:
 
 func _process(_delta: float) -> void:
     var ended: bool = game.state == PartyGame.State.ENDED
-    _result_box.visible = ended
     if ended:
-        _result_box.size = _result_box.get_minimum_size()
-        _result_box.position = Vector2((_scr().x - _result_box.size.x) * 0.5, _scr().y * 0.30 + 150)
         _stick_index = -1
         _look_index = -1
         fighter.touch_move = Vector2.ZERO
@@ -183,7 +162,7 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
-    if _result_box.visible or fighter.dead:
+    if game.state == PartyGame.State.ENDED or fighter.dead:
         return
     var s := _scr()
     # 이동 스틱 (누르지 않을 땐 기본 위치에 흐리게)

@@ -50,6 +50,10 @@ if [ "${BUILD_WINDOWS:-1}" = "1" ]; then
 fi
 
 echo "[web-build] /out 교체"
+# 폰 테스트용 APK 는 Android 작업이 따로 올리므로, 웹만 다시 배포할 때 지워지지 않게 옮겨 둔다
+if ls /out/download/*.apk >/dev/null 2>&1; then
+    mkdir -p /tmp/web/download && cp /out/download/*.apk /tmp/web/download/
+fi
 find /out -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 cp -r /tmp/web/. /out/
 ls -la /out

@@ -40,7 +40,7 @@ const PUSH_REWIND_MAX := 0.6    # 서버: 이보다 오래된 시점의 밀치�
 @export var item_interval_max := 3.5
 @export var max_items := 5
 @export var item_lifetime := 15.0
-## 등장 가중치 (ItemPickup.Kind 순서): 헬멧, 차징 가속, 무거운 신발, 무적5, 무적10, 쿨타임 감소
+## 등장 가중치 (ItemPickup.Kind 순서): 헬멧, 차징 가속, 글러브, 무적5, 무적10, 쿨타임 감소
 @export var item_weights: Array[float] = [26.0, 20.0, 16.0, 14.0, 6.0, 20.0]
 
 const KILL_CREDIT_TIME := 3.0      # 민 뒤 이 시간 안에 낙석에 맞으면 민 사람 득점
@@ -403,6 +403,8 @@ func on_item_picked(it: ItemPickup, f: Fighter) -> void:
         text = "차징 가속 ×%d" % f.charge_stacks
     elif it.kind == ItemPickup.Kind.COOL_DOWN:
         text = "쿨타임 감소 ×%d" % f.cooldown_stacks
+    elif it.kind == ItemPickup.Kind.GLOVE:
+        text = "글러브 ×%d" % f.glove_stacks
     popup_text(f.global_position + Vector3(0, 2.4, 0), text, ItemPickup.COLORS[it.kind].lightened(0.2))
 
 
@@ -417,6 +419,8 @@ func nearest_item(pos: Vector3, max_dist: float, f: Fighter) -> Node3D:
         if it.kind == ItemPickup.Kind.CHARGE_UP and f.charge_stacks >= Fighter.MAX_STACKS:
             continue
         if it.kind == ItemPickup.Kind.COOL_DOWN and f.cooldown_stacks >= Fighter.MAX_STACKS:
+            continue
+        if it.kind == ItemPickup.Kind.GLOVE and f.glove_stacks >= Fighter.MAX_STACKS:
             continue
         var d: float = pos.distance_to(it.global_position)
         if d < best_d:
@@ -532,7 +536,7 @@ func on_rock_hit(rock: FallingRock, f: Fighter, res: int) -> void:
 func deliver_push(attacker: Fighter, target: Fighter, impulse: Vector3, stun: float) -> bool:
     if is_client():
         # 내 화면에서 맞힘 → 서버에 알림. 서버가 검증 후 상대에게 넉백을 전달한다
-        if target.dead or target.is_invulnerable() or target.heavy_timer > 0.0:
+        if target.dead or target.is_invulnerable():
             return false
         var ap := attacker.global_position
         var tp := target.global_position
@@ -546,7 +550,7 @@ func deliver_push(attacker: Fighter, target: Fighter, impulse: Vector3, stun: fl
 func _apply_push(target: Fighter, impulse: Vector3, stun: float, attacker: Fighter) -> bool:
     if not target.remote:
         return target.receive_push(impulse, stun, attacker)
-    if target.dead or target.is_invulnerable() or target.heavy_timer > 0.0:
+    if target.dead or target.is_invulnerable():
         return false
     if attacker and attacker != target:
         target.last_attacker = attacker
@@ -695,14 +699,14 @@ func _server_receive_push(a: Fighter, target_slot: int, impulse: Vector3, stun: 
     if tt < now - PUSH_REWIND_MAX or not _near_history(t, tt, tpos, 1.5):
         _debug("push 거부: 상대 위치 기록 불일치 (%.0fms 전)" % ((now - tt) * 1000.0))
         return
-    if apos.distance_to(tpos) > a.push_reach + 1.0:
+    if apos.distance_to(tpos) > a.push_reach + 1.2:
         _debug("push 거부: 거리 %.2f" % apos.distance_to(tpos))
         return
     _debug("push 승인 %s → %s (%.0fms 전 위치 기준)" % [a.display_name, t.display_name, (now - tt) * 1000.0])
-    # 3) 세기 상한 (풀차징 밀치기 수준)
-    var h := Vector3(impulse.x, 0.0, impulse.z).limit_length(18.0)
+    # 3) 세기 상한 (풀차징 밀치기 × 미는 사람의 글러브 배수)
+    var h := Vector3(impulse.x, 0.0, impulse.z).limit_length(Fighter.PUSH_FORCE * a.glove_force_mult() + 1.0)
     var imp := Vector3(h.x, clampf(impulse.y, 0.0, 6.0), h.z)
-    _apply_push(t, imp, clampf(stun, 0.0, 1.9), a)
+    _apply_push(t, imp, clampf(stun, 0.0, 1.9 * a.glove_stun_mult()), a)
 
 
 func _near_history(f: Fighter, t: float, pos: Vector3, tol: float) -> bool:

@@ -21,7 +21,7 @@ const MIX := {
     "bump": [-10.0, 0.12], "helmet_break": [-3.0, 0.05], "die": [-2.0, 0.0], "dizzy": [-9.0, 0.0],
     "rock_fall": [-16.0, 0.12], "rock_land": [-7.0, 0.15], "rock_break": [-5.0, 0.1], "item_spawn": [-10.0, 0.1],
     "pickup": [-4.0, 0.03], "pickup_helmet": [-4.0, 0.0], "pickup_charge": [-4.0, 0.0],
-    "pickup_cooldown": [-4.0, 0.0], "pickup_boots": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
+    "pickup_cooldown": [-4.0, 0.0], "pickup_glove": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
     "shield_off": [-6.0, 0.0], "ready_ping": [-12.0, 0.0], "wind": [-10.0, 0.08],
 }
 const BGM_DB := {"menu": -11.0, "match": -13.0}
