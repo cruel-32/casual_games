@@ -244,9 +244,11 @@ func _draw_wind_compass() -> void:
     var human: Fighter = game.human
     if human == null:
         return
-    var yaw := human.rotation.y
-    if human.dead and human.pitch_pivot:
-        yaw += human.pitch_pivot.rotation.y
+    var cam := get_viewport().get_camera_3d()
+    if cam == null:
+        return
+    var fwd := -cam.global_transform.basis.z
+    var yaw := atan2(-fwd.x, -fwd.z)          # 카메라가 보는 방향 (캐릭터 방향과 다를 수 있음)
     var w: Vector2 = game.wind
     var spd := w.length()
     if spd < 0.05:

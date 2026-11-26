@@ -110,7 +110,6 @@ var dead := false
 var control_vel := Vector3.ZERO
 var knock := Vector3.ZERO
 var stun_timer := 0.0
-var _aim_detached := false           # 사람: 차징 돌진 방향으로 몸을 돌려 카메라와 몸 방향이 잠시 다름
 var stun_guard := 0.0                # 경직 면역 남은 시간 (STUN_GUARD)
 var _dash_hit_relief := 0.0          # 차징 돌진이 맞으면 줄여 줄 정지 시간 (헛치면 그대로 오래 정지)
 var invuln_timer := 0.0
@@ -701,25 +700,27 @@ static func touch_device() -> bool:
 func apply_look(delta_rad: Vector2) -> void:
     if pitch_pivot == null:
         return
-    if dead or _aim_detached:
-        pitch_pivot.rotation.y -= delta_rad.x      # 돌진 중엔 카메라만 돌리고 몸(돌진 방향)은 그대로
-    else:
-        rotate_y(-delta_rad.x)
+    # 마우스·터치는 카메라만 돌린다. 캐릭터는 이동(방향키) 방향을 바라본다
+    pitch_pivot.rotation.y -= delta_rad.x
     pitch_pivot.rotation.x = clampf(pitch_pivot.rotation.x - delta_rad.y,
             deg_to_rad(-70.0), deg_to_rad(50.0))
 
 
-## 카메라가 바라보는 수평 방향 (보통은 몸 방향과 같고, 차징 돌진 중엔 다를 수 있음)
+## 카메라가 바라보는 수평 방향 (방향키는 이 기준). 카메라 받침대는 몸의 자식이라 몸 회전 + 받침대 회전
 func _camera_basis() -> Basis:
-    var yaw := rotation.y + (pitch_pivot.rotation.y if pitch_pivot and not dead else 0.0)
-    return Basis(Vector3.UP, yaw)
+    if pitch_pivot == null:
+        return global_transform.basis
+    if pitch_pivot.top_level:
+        return Basis(Vector3.UP, pitch_pivot.global_rotation.y)
+    return Basis(Vector3.UP, rotation.y + pitch_pivot.rotation.y)
 
 
-## 차징 돌진 방향: 사람이 방향키(조이스틱)를 누르고 있으면 그 방향, 아니면 바라보는 방향. 반환: 월드 yaw (없으면 NAN)
-func _dash_input_yaw() -> float:
-    if not is_human or remote or intent_move.length() < 0.3:
-        return NAN
-    return atan2(-intent_move.x, -intent_move.z)
+## 사람: 몸을 yaw 쪽으로 돌린다. 카메라 받침대를 반대로 돌려 화면은 그대로 유지
+func _turn_body_to(yaw: float, weight: float) -> void:
+    var diff := wrapf(yaw - rotation.y, -PI, PI) * weight
+    rotation.y += diff
+    if pitch_pivot and not pitch_pivot.top_level:
+        pitch_pivot.rotation.y -= diff
 
 
 func _read_human_input() -> void:
@@ -742,28 +743,9 @@ func _read_human_input() -> void:
 
 
 # ================================================================ 물리
-## 차징 돌진으로 돌렸던 몸을 돌진·정지가 끝나면 다시 카메라 방향으로 (카메라는 움직이지 않음)
-func _realign_to_camera(delta: float) -> void:
-    if not _aim_detached:
-        return
-    if dead or pitch_pivot == null:
-        _aim_detached = false
-        return
-    if dash_timer > 0.0 or lock_timer > 0.0:
-        return
-    var off := wrapf(pitch_pivot.rotation.y, -PI, PI)
-    var step := off if absf(off) < 0.02 else off * clampf(delta * 14.0, 0.0, 1.0)
-    rotation.y += step
-    pitch_pivot.rotation.y = off - step
-    if absf(pitch_pivot.rotation.y) < 0.0001:
-        pitch_pivot.rotation.y = 0.0
-        _aim_detached = false
-
-
 func _physics_process(delta: float) -> void:
     _t += delta
     _tick_timers(delta)
-    _realign_to_camera(delta)
     if remote:
         # 위치·상태는 게임이 네트워크로 받은 값으로 채운다. 여기선 보이기만.
         _animate(delta)
@@ -812,14 +794,18 @@ func _physics_process(delta: float) -> void:
         _coyote = 0.0
         _sfx("jump")
 
-    # 봇 회전 (사람은 마우스로 회전)
-    if not is_human and controllable and lock_timer <= 0.0:
+    # 회전: 캐릭터는 이동 방향을 바라본다 (봇은 노리는 상대 쪽). 밀치기는 항상 바라보는 방향으로 나간다
+    # 돌진·밀치기 직후 정지 중이나 경직 중엔 돌지 않음 → 상대가 바라보는 방향을 보고 수를 읽을 수 있음
+    if controllable and lock_timer <= 0.0:
         var look := intent_face if intent_face.length() > 0.01 else intent_move
         look.y = 0.0
         if look.length() > 0.01:
             var yaw := atan2(-look.x, -look.z)
-            var turn := 14.0 if charging else 9.0
-            rotation.y = lerp_angle(rotation.y, yaw, clampf(delta * turn, 0.0, 1.0))
+            if is_human:
+                _turn_body_to(yaw, clampf(delta * 18.0, 0.0, 1.0))
+            else:
+                var turn := 14.0 if charging else 9.0
+                rotation.y = lerp_angle(rotation.y, yaw, clampf(delta * turn, 0.0, 1.0))
 
     _update_push(delta, controllable and intent_charge)
 
@@ -970,14 +956,6 @@ func _release_push() -> void:
         lock_after = maxf(tap_lock_time - dash_time, 0.0)
         cooldown_total = tap_cooldown * cooldown_mult()
     else:
-        # 차징 돌진은 누르고 있는 방향으로 (뒤·옆으로 빠지는 회피에도 쓸 수 있음). 카메라는 그대로 둔다
-        var yaw := _dash_input_yaw()
-        if not is_nan(yaw):
-            var diff := wrapf(yaw - rotation.y, -PI, PI)
-            rotation.y += diff
-            if pitch_pivot:
-                pitch_pivot.rotation.y -= diff
-            _aim_detached = true
         dash_time = lerpf(0.14, 0.30, c)
         dash_speed = dash_distance_for(c) / dash_time
         cooldown_total = lerpf(charge_cooldown_min, charge_cooldown_max, c) * cooldown_mult()
@@ -1133,6 +1111,8 @@ func die() -> void:
     shield_mi.visible = false
     if team_ring:
         team_ring.visible = false
+    if charge_aura:
+        charge_aura.visible = false
     died.emit(self)
 
 
@@ -1237,15 +1217,57 @@ func _popup(pos: Vector3, text: String, color: Color) -> void:
 
 
 # ================================================================ 연출
+## 차징 표시 (모두에게 보임): 발밑에서 커지는 주황→빨강 고리. 풀차징이면 깜빡임
+## 방향·거리는 안 보여 줌 — 상대는 '바라보는 방향'으로 수를 읽는다
+var charge_aura: MeshInstance3D
+var _aura_mat: StandardMaterial3D
+
+
+func _update_charge_aura() -> void:
+    var show := charging and not dead and charge_time >= tap_threshold
+    if charge_aura == null:
+        if not show:
+            return
+        var torus := TorusMesh.new()
+        torus.inner_radius = 0.78
+        torus.outer_radius = 0.92
+        torus.rings = 32
+        torus.ring_segments = 6
+        _aura_mat = StandardMaterial3D.new()
+        _aura_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+        _aura_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+        _aura_mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+        charge_aura = MeshInstance3D.new()
+        charge_aura.name = "ChargeAura"
+        charge_aura.mesh = torus
+        charge_aura.material_override = _aura_mat
+        charge_aura.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+        charge_aura.position.y = 0.06
+        add_child(charge_aura)
+    charge_aura.visible = show
+    if not show:
+        return
+    var c := get_charge_ratio()
+    var col := Color(1.0, 0.75, 0.2).lerp(Color(1.0, 0.18, 0.08), c)
+    var a := 0.35 + 0.45 * c
+    var sc := lerpf(0.75, 1.25, c)
+    if c >= 0.999:
+        var p := 0.5 + 0.5 * sin(_t * 25.0)
+        a = 0.5 + 0.5 * p
+        sc *= 1.0 + 0.06 * p
+    _aura_mat.albedo_color = Color(col.r, col.g, col.b, a)
+    charge_aura.scale = Vector3(sc, 0.12, sc)
+
+
 func _update_arrow() -> void:
-    arrow.visible = charging
-    if not charging:
+    _update_charge_aura()
+    # 돌진 거리 화살표는 내 캐릭터에만 (상대에겐 차징 중이라는 것만 보이고 방향·거리는 안 보임)
+    arrow.visible = charging and is_human and not remote
+    if not arrow.visible:
         return
     var c := get_charge_ratio()
     var tapping := charge_time < tap_threshold
     var length := 0.6 if tapping else dash_distance_for(c)
-    var yaw := NAN if tapping else _dash_input_yaw()
-    arrow.rotation.y = 0.0 if is_nan(yaw) else wrapf(yaw - rotation.y, -PI, PI)     # 돌진할 방향 미리 보기
     var start := 0.45
     arrow_shaft.position.z = -(start + length * 0.5)
     arrow_shaft.scale = Vector3(1.0, 1.0, length)
