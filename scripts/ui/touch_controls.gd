@@ -124,6 +124,9 @@ func _on_touch_down(index: int, pos: Vector2) -> void:
     _button_looking.erase(index)
     if _result_box.visible:
         return   # 결과 화면에선 버튼(Control)이 처리
+    for c in get_tree().get_nodes_in_group("touch_block"):
+        if c is Control and (c as Control).is_visible_in_tree() and (c as Control).get_global_rect().grow(8).has_point(pos):
+            return   # 화면 위 버튼(소리·나가기 등)을 누른 손가락은 조작에 쓰지 않음
     if pos.distance_to(_push_center()) <= _push_radius() + 12.0:
         _push_index = index
         fighter.touch_push = true

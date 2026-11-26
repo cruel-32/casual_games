@@ -28,9 +28,10 @@ func _ready() -> void:
     if _touch:
         _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 점프 · 밀치기 (길게 누르면 차징 돌진)"
     else:
-        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제 · M 소리" \
+        _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제 (오른쪽 위 버튼 사용)" \
                 % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
+    _build_menu_bar()
 
     _top = _make_label(24, true)
     _top.add_theme_constant_override("outline_size", 0)
@@ -76,9 +77,12 @@ func _place_centered(l: Label, y: float) -> void:
     l.position = Vector2((_screen().x - l.size.x) * 0.5, y)
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
     if game == null:
         return
+    _tick_leave(delta)
+    if _bar:
+        _bar.position = Vector2(_screen().x - _bar.size.x - 14.0, 12.0)
     var scr := _screen()
     var alive: int = game.alive_fighters().size()
     var total: int = game.fighters.size()
@@ -130,7 +134,7 @@ func _process(_delta: float) -> void:
     var spd: float = game.wind.length()
     _wind_label.text = "바람 %.1f m/s" % spd
     _wind_label.size = _wind_label.get_minimum_size()
-    _wind_label.position = Vector2(scr.x - 90 - _wind_label.size.x * 0.5, 150)
+    _wind_label.position = Vector2(scr.x - 90 - _wind_label.size.x * 0.5, 206)
 
     _skill_label.text = _skill_text()
     _place_centered(_skill_label, scr.y - 100)
@@ -205,7 +209,7 @@ func _draw() -> void:
 
 func _draw_wind_compass() -> void:
     var scr := _screen()
-    var c := Vector2(scr.x - 90, 90)
+    var c := Vector2(scr.x - 90, 146)       # 오른쪽 위 버튼 줄 아래
     var r := 46.0
     draw_circle(c, r + 4, UI.INK)
     draw_circle(c, r, UI.CREAM)
@@ -299,8 +303,41 @@ func _play_event_sounds(center: String, human: Fighter) -> void:
 
 
 
-## M: 소리 켜기/끄기
-func _unhandled_key_input(event: InputEvent) -> void:
-    var k := event as InputEventKey
-    if k and k.pressed and not k.echo and k.keycode == KEY_M:
-        Sfx.set_enabled(not Sfx.enabled)
+
+# ---- 오른쪽 위 버튼: 소리 켬/끔 · (혼자 연습) 다시 하기 · 나가기
+var _leave_btn: Button
+var _bar: HBoxContainer
+var _leave_armed := 0.0
+
+
+func _build_menu_bar() -> void:
+    var bar := UI.hbox(8)
+    bar.add_to_group("touch_block")      # 터치 조작(스틱·시점)이 이 영역은 무시
+    add_child(bar)
+    _bar = bar
+    bar.add_child(UI.sound_button())
+    if not game.is_online_match():
+        var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
+        again.pressed.connect(func(): game.restart_offline())
+        bar.add_child(again)
+    _leave_btn = UI.pill_button("나가기", UI.RED)
+    _leave_btn.pressed.connect(_on_leave_pressed)
+    bar.add_child(_leave_btn)
+
+
+## 온라인 경기 도중이면 한 번 더 눌러야 나감 (기권 처리되므로)
+func _on_leave_pressed() -> void:
+    var human: Fighter = game.human
+    var risky: bool = game.is_online_match() and game.state != PartyGame.State.ENDED and human != null and not human.dead
+    if risky and _leave_armed <= 0.0:
+        _leave_armed = 3.0
+        _leave_btn.text = "정말 나가기? (기권)"
+        return
+    game.leave_to_menu()
+
+
+func _tick_leave(delta: float) -> void:
+    if _leave_armed > 0.0:
+        _leave_armed -= delta
+        if _leave_armed <= 0.0:
+            _leave_btn.text = "나가기"

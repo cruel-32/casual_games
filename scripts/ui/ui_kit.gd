@@ -192,6 +192,17 @@ static func plain_button(text: String) -> Button:
     return b
 
 
+## 소리 켜기/끄기 알약 버튼 (누르면 글자도 바뀜). 설정은 저장된다
+static func sound_button() -> Button:
+    var b := pill_button("", BLUE)
+    var refresh := func(): b.text = "소리 켬" if Sfx.enabled else "소리 끔"
+    refresh.call()
+    b.pressed.connect(func():
+        Sfx.set_enabled(not Sfx.enabled)
+        refresh.call())
+    return b
+
+
 ## 작은 알약 버튼 (메뉴: 조작법, 나가기 …). 기본 = 남색 + 크림 글자
 static func pill_button(text: String, color: Color = INK, font_color: Color = CREAM) -> Button:
     var b := Button.new()

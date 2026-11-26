@@ -37,6 +37,9 @@ func _ready() -> void:
     var me_text := ("%s  ·  %s" % [Net.server_name, Net.nickname]) if Net.server_name != "" else Net.nickname
     var me := UI.badge("●  " + me_text, UI.BLUE)
     top.add_child(me)
+    var snd := UI.sound_button()
+    snd.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    top.add_child(snd)
     var logout := UI.pill_button("나가기")
     logout.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     logout.pressed.connect(_on_logout)

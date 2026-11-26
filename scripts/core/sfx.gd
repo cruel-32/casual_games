@@ -47,6 +47,7 @@ func _ready() -> void:
     var cfg := ConfigFile.new()
     if cfg.load(SETTINGS_PATH) == OK:
         enabled = bool(cfg.get_value("client", "sound", true))
+    # 버스는 default_bus_layout.tres 에 미리 정의 (웹은 실행 중에 만든 버스로 소리를 보내면 안 들림)
     for bus in ["Music", "Sfx"]:
         if AudioServer.get_bus_index(bus) == -1:
             AudioServer.add_bus()

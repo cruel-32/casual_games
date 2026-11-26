@@ -55,6 +55,9 @@ func _ready() -> void:
     top.add_child(_title)
     _state_badge_holder = UI.hbox(8)
     top.add_child(_state_badge_holder)
+    var snd := UI.sound_button()
+    snd.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    top.add_child(snd)
     var leave := UI.pill_button("방 나가기")
     leave.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     leave.pressed.connect(func(): Net.leave_room())
