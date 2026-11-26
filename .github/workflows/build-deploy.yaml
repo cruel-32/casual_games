@@ -53,18 +53,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: 서명 키가 없으면 건너뜀
+      - name: 서명 키가 없으면 AAB 는 건너뜀
         if: env.HAS_KEYSTORE != 'true'
-        run: echo "::warning::ANDROID_KEYSTORE_BASE64 시크릿이 없어 Android 빌드를 건너뜁니다"
+        run: echo "::warning::ANDROID_KEYSTORE_BASE64 시크릿이 없어 AAB(Google Play)는 건너뛰고, 디버그 키로 서명한 테스트 APK 만 만듭니다"
 
       - uses: actions/setup-java@v4
-        if: env.HAS_KEYSTORE == 'true'
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Godot + 내보내기 템플릿 설치
-        if: env.HAS_KEYSTORE == 'true'
         run: |
           V=$GODOT_VERSION
           wget -q "https://github.com/godotengine/godot/releases/download/${V}-stable/Godot_v${V}-stable_linux.x86_64.zip" -O godot.zip
@@ -76,7 +74,6 @@ jobs:
           rm -rf t t.tpz godot.zip
 
       - name: Android 빌드 템플릿 설치 (Gradle 빌드용, AAB 에 필요)
-        if: env.HAS_KEYSTORE == 'true'
         run: |
           mkdir -p android/build
           unzip -q ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable/android_source.zip -d android/build
@@ -84,7 +81,6 @@ jobs:
           touch android/build/.gdignore
 
       - name: 에디터 설정 (Android SDK·JDK 경로, 디버그 키)
-        if: env.HAS_KEYSTORE == 'true'
         run: |
           keytool -genkeypair -v -keystore "$HOME/debug.keystore" -storepass android -alias androiddebugkey \
             -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" >/dev/null 2>&1
@@ -103,10 +99,15 @@ jobs:
           sed -i 's/^ *//' ~/.config/godot/editor_settings-${V_MAJOR_MINOR}.tres
 
       - name: 버전 코드 = 실행 번호 (업로드마다 증가해야 함)
-        if: env.HAS_KEYSTORE == 'true'
         run: |
           sed -i "s/^version\/code=.*/version\/code=${{ github.run_number }}/" export_presets.cfg
           grep -n "version/" export_presets.cfg
+
+      - name: 리소스 가져오기 (import)
+        run: |
+          godot --headless --path . --import >/dev/null 2>&1 || true
+          godot --headless --path . --import >/dev/null 2>&1 || true
+          mkdir -p build/android
 
       - name: AAB 내보내기
         if: env.HAS_KEYSTORE == 'true'
@@ -116,15 +117,26 @@ jobs:
           GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
-          godot --headless --path . --import >/dev/null 2>&1 || true
-          godot --headless --path . --import >/dev/null 2>&1 || true
-          mkdir -p build/android
           godot --headless --path . --export-release "Android" build/android/SmallPartyWorld.aab 2>&1 | tail -40
-          test -f build/android/SmallPartyWorld.aab
-          # 같은 키로 서명한 APK (폰에 직접 설치해 보는 용도). 프리셋을 잠깐 APK 형식으로 바꿔 한 번 더 내보낸다
-          sed -i 's/^gradle_build\/export_format=.*/gradle_build\/export_format=0/' export_presets.cfg
-          godot --headless --path . --export-release "Android" build/android/SmallPartyWorld-android.apk 2>&1 | tail -20
           rm -f release.keystore
+          test -f build/android/SmallPartyWorld.aab
+          ls -la build/android
+
+      # 폰에 직접 설치해 보는 APK. 서명 키가 있으면 그 키로(release), 없으면 디버그 키로(debug) 서명
+      - name: APK 내보내기 (폰 테스트용)
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ github.workspace }}/release.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          sed -i 's/^gradle_build\/export_format=.*/gradle_build\/export_format=0/' export_presets.cfg
+          if [ "$HAS_KEYSTORE" = "true" ]; then
+            echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > release.keystore
+            godot --headless --path . --export-release "Android" build/android/SmallPartyWorld-android.apk 2>&1 | tail -30
+            rm -f release.keystore
+          else
+            godot --headless --path . --export-debug "Android" build/android/SmallPartyWorld-android.apk 2>&1 | tail -30
+          fi
           test -f build/android/SmallPartyWorld-android.apk
           ls -la build/android
 
@@ -136,7 +148,6 @@ jobs:
           retention-days: 14
 
       - uses: actions/upload-artifact@v4
-        if: env.HAS_KEYSTORE == 'true'
         with:
           name: android-apk
           path: build/android/SmallPartyWorld-android.apk
