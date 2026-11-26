@@ -27,10 +27,11 @@ const Teams := preload("res://scripts/core/teams.gd")
 const WordFilter := preload("res://scripts/core/word_filter.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 9
+const PROTOCOL_VERSION := 10
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
+const DEFAULT_ROUNDS := 3                   # 새 방의 기본 라운드 수 (1판 = 최대 5라운드)
 const DEFAULT_SERVER := "wss://spwsv.cloudish.cloud"    # 게임 서버 (웹 게임 페이지는 spw.cloudish.cloud)
 
 ## 접속 화면에 보여줄 서버 목록 — 사용자에게는 이름만 보이고 주소는 노출하지 않는다.
@@ -78,6 +79,8 @@ var _ping_count := 0
 var _players := {}                      # peer_id -> {nick, room}
 var _client_versions := {}              # peer_id -> 게임 버전 (x_hello 로 받음)
 var _client_devices := {}               # peer_id -> 기기 ID (y_device 로 받음, 제재 기준)
+var _client_accounts := {}              # peer_id -> 계정 {id, ...} (y_auth 토큰을 관리 서버로 확인한 결과, 실패면 {})
+var _pending_logins := {}               # peer_id -> [nick] 계정 확인이 끝나면 이어서 로그인
 var _sanctions: Array = []              # 관리 서버의 제재 목록 [{device, kind, until, reason}]
 var _mod_http: HTTPRequest
 var _report_queue: Array = []           # 관리 서버로 보낼 신고 (차례로 전송)
@@ -214,6 +217,8 @@ func _on_peer_disconnected(id: int) -> void:
         return
     _client_versions.erase(id)
     _client_devices.erase(id)
+    _client_accounts.erase(id)
+    _pending_logins.erase(id)
     if _players.has(id):
         print("[server] 퇴장 %s (%d)" % [_players[id].nick, id])
         _leave_room(id, "")
@@ -628,19 +633,33 @@ func c_login(nick: String, protocol: int) -> void:
     if Boot.compare(ver, _min_client_version) < 0:
         s_login_result.rpc_id(id, false, "새 버전(%s 이상)이 나왔어요. 첫 화면의 업데이트 버튼으로 업데이트해 주세요" % _min_client_version)
         return
+    # 온라인은 계정 로그인 필수 (관리 서버가 있을 때). 토큰 확인이 아직이면 끝날 때 이어서 처리
+    if _accounts_required():
+        if not _client_accounts.has(id):
+            _pending_logins[id] = [nick]         # y_auth 확인이 끝나면 _finish_login
+            return
+        if (_client_accounts[id] as Dictionary).is_empty():
+            s_login_result.rpc_id(id, false, "계정 로그인이 필요해요. 첫 화면에서 로그인해 주세요")
+            return
+    _finish_login(id, nick)
+
+
+func _finish_login(id: int, nick: String) -> void:
     var dev := String(_client_devices.get(id, ""))
     if dev == "":
         dev = "srv" + Crypto.new().generate_random_bytes(12).hex_encode()     # 기기 ID 를 안 보낸 경우 (이 접속에만)
-    var ban := _sanction_for(dev, "ban")
+    var acc_id := String((_client_accounts.get(id, {}) as Dictionary).get("id", ""))
+    var ban := _sanction_for(dev, "ban", acc_id)
     if not ban.is_empty():
-        s_login_result.rpc_id(id, false, "이용이 제한된 기기입니다%s. 문의: 정보 → 이메일" % _until_text(ban))
+        s_login_result.rpc_id(id, false, "이용이 제한된 계정입니다%s. 문의: 정보 → 이메일" % _until_text(ban))
         return
     nick = nick.strip_edges()
     var err := _validate_nick(nick)
     if err != "":
         s_login_result.rpc_id(id, false, err)
         return
-    _players[id] = {"nick": nick, "room": 0, "dev": dev, "uid": dev.sha256_text().left(16)}
+    _players[id] = {"nick": nick, "room": 0, "dev": dev, "account": acc_id,
+            "uid": (acc_id if acc_id != "" else dev).sha256_text().left(16)}
     print("[server] 로그인 %s (%d)" % [nick, id])
     s_login_result.rpc_id(id, true, nick)
     s_room_list.rpc_id(id, _public_rooms())
@@ -674,7 +693,7 @@ func c_create_room(room_name: String, max_players: int, bot_fill: bool, game_id:
         "id": rid, "name": room_name, "host": id, "game": module.id,
         "max": clampi(max_players, 2, mini(MAX_PLAYERS_LIMIT, module.max_players)), "bot_fill": bot_fill,
         "state": "waiting", "members": [id], "ready": {}, "returned": {},
-        "rounds": 1, "round_games": [module.id], "series": {},
+        "rounds": DEFAULT_ROUNDS, "round_games": [module.id, module.id, module.id].slice(0, DEFAULT_ROUNDS), "series": {},
         "teams": DEFAULT_TEAMS, "team": {},
     }
     var r0: Dictionary = _rooms[rid]
@@ -846,7 +865,7 @@ func c_chat(text: String) -> void:
     text = text.strip_edges().left(CHAT_MAX)
     if rid == 0 or text == "":
         return
-    var mute := _sanction_for(String(_players[id].get("dev", "")), "mute")
+    var mute := _sanction_for(String(_players[id].get("dev", "")), "mute", String(_players[id].get("account", "")))
     if not mute.is_empty():
         s_chat.rpc_id(id, "", "채팅이 제한된 상태예요%s" % _until_text(mute), true)
         return
@@ -872,6 +891,29 @@ func c_start_game() -> void:
         s_error.rpc_id(id, reason)
         return
     var r: Dictionary = _rooms[rid]
+    # 하루 판수 (정식 출시 단계에서만 관리 서버가 차감·거절). 관리 서버가 응답하지 않으면 그냥 진행
+    if _accounts_required() and not r.get("_starting", false):
+        r["_starting"] = true
+        var accs := []
+        for pid in r.members:
+            var a := String(_players[pid].get("account", ""))
+            if a != "":
+                accs.append(a)
+        var res := await _admin_post("/internal/plays/start", {"accounts": accs})
+        if _rooms.has(rid):
+            r.erase("_starting")
+        if not _rooms.has(rid) or r.state != "waiting" or r.host != id or start_block_reason(_room_snapshot(rid)) != "":
+            return
+        if res.get("ok", true) == false:
+            var names := []
+            for pid in r.members:
+                if (res.get("blocked", []) as Array).has(String(_players[pid].get("account", ""))):
+                    names.append(_players[pid].nick)
+            for pid in r.members:
+                s_error.rpc_id(pid, "오늘 플레이할 수 있는 판을 다 쓴 사람이 있어요: %s (광고를 보면 판이 늘어나요)" % ", ".join(names))
+            return
+    elif r.get("_starting", false):
+        return
     r.state = "playing"
     r.returned.clear()
     r.series = Series.create(r.rounds, r.members)
@@ -1018,6 +1060,7 @@ func disconnect_from_server() -> void:
 func login(nick: String) -> void:
     x_hello.rpc_id(1, Boot.version())      # 같은 연결에서 순서대로 도착 (reliable)
     y_device.rpc_id(1, device_id())
+    y_auth.rpc_id(1, Account.token)
     c_login.rpc_id(1, nick, PROTOCOL_VERSION)
 
 
@@ -1328,8 +1371,8 @@ func y_report(target: int, reason: String, detail: String) -> void:
         return
     var r: Dictionary = _rooms[rid]
     _report_queue.append({
-        "reporter": {"nick": _players[id].nick, "device": String(_players[id].get("dev", ""))},
-        "target": {"nick": _players[target].nick, "device": String(_players[target].get("dev", ""))},
+        "reporter": {"nick": _players[id].nick, "device": String(_players[id].get("dev", "")), "account": String(_players[id].get("account", ""))},
+        "target": {"nick": _players[target].nick, "device": String(_players[target].get("dev", "")), "account": String(_players[target].get("account", ""))},
         "room": String(r.name), "reason": reason if REPORT_REASONS.has(reason) else "other",
         "detail": detail.left(200), "chat": r.get("chat", []),
     })
@@ -1390,12 +1433,13 @@ func _start_moderation_poll(base: String) -> void:
 
 
 ## 지금 유효한 제재 (없으면 빈 딕셔너리)
-func _sanction_for(dev: String, kind: String) -> Dictionary:
-    if dev == "":
+func _sanction_for(dev: String, kind: String, account: String = "") -> Dictionary:
+    if dev == "" and account == "":
         return {}
     var now := Time.get_datetime_string_from_system(true) + "Z"
     for x in _sanctions:
-        if String(x.get("device", "")) == dev and String(x.get("kind", "")) == kind:
+        var hit := (dev != "" and String(x.get("device", "")) == dev) or (account != "" and String(x.get("account", "")) == account)
+        if hit and String(x.get("kind", "")) == kind:
             var until := String(x.get("until", ""))
             if until == "" or until > now:
                 return x
@@ -1414,7 +1458,7 @@ func _until_text(x: Dictionary) -> String:
 ## 접속 차단이 새로 생기면 지금 접속 중인 사람도 내보낸다
 func _enforce_bans() -> void:
     for pid in _players.keys():
-        var ban := _sanction_for(String(_players[pid].get("dev", "")), "ban")
+        var ban := _sanction_for(String(_players[pid].get("dev", "")), "ban", String(_players[pid].get("account", "")))
         if ban.is_empty() or not _peer_alive(pid):
             continue
         print("[server] 접속 차단으로 내보냄 %s" % _players[pid].nick)
@@ -1458,4 +1502,55 @@ func is_blocked_nick(nick: String) -> bool:
         if String(m.nick) == nick:
             return blocked.has(String(m.get("uid", "")))
     return false
+
+
+# ================================================================ 계정 (소셜 로그인 토큰 확인)
+## 관리 서버(ADMIN_URL)가 있는 실제 서버에서만 계정 로그인을 요구한다 (로컬 테스트 서버는 닉네임만)
+func _accounts_required() -> bool:
+    return is_server and OS.get_environment("ADMIN_URL") != ""
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func y_auth(token: String) -> void:
+    if not is_server:
+        return
+    var id := multiplayer.get_remote_sender_id()
+    if _players.has(id) or not _accounts_required():
+        return
+    var acc := {}
+    if token.length() >= 20 and token.length() <= 100:
+        var res := await _admin_post("/internal/account/verify", {"token": token})
+        if res.get("account") is Dictionary:
+            acc = res.account
+    if not multiplayer.get_peers().has(id):
+        return
+    _client_accounts[id] = acc
+    if _pending_logins.has(id):
+        var args: Array = _pending_logins[id]
+        _pending_logins.erase(id)
+        if acc.is_empty():
+            s_login_result.rpc_id(id, false, "계정 로그인이 필요해요. 첫 화면에서 로그인해 주세요")
+        else:
+            _finish_login(id, String(args[0]).strip_edges())
+
+
+## 관리 서버 /internal 호출 → 응답 JSON (실패하면 빈 딕셔너리)
+func _admin_post(path: String, body: Dictionary) -> Dictionary:
+    var base := OS.get_environment("ADMIN_URL")
+    if base == "":
+        return {}
+    var http := HTTPRequest.new()
+    http.timeout = 5.0
+    add_child(http)
+    var err := http.request(base.trim_suffix("/") + path, ["Content-Type: application/json"], HTTPClient.METHOD_POST, JSON.stringify(body))
+    if err != OK:
+        http.queue_free()
+        return {}
+    var res: Array = await http.request_completed
+    http.queue_free()
+    if res[0] != HTTPRequest.RESULT_SUCCESS or int(res[1]) != 200:
+        print("[server] 관리 서버 호출 실패 %s (%d/%d)" % [path, res[0], res[1]])
+        return {}
+    var d = JSON.parse_string((res[3] as PackedByteArray).get_string_from_utf8())
+    return d if d is Dictionary else {}
 

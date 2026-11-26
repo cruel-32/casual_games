@@ -69,6 +69,7 @@ th { font-size: 12px; color: var(--muted); }
 <main id="app" class="hidden">
   <div class="tabs">
     <button data-tab="notices" class="on">공지</button>
+    <button data-tab="policy">운영 정책</button>
     <button data-tab="reports">신고 <span id="r-count"></span></button>
     <button data-tab="sanctions">제재</button>
     <button data-tab="words">금칙어</button>
@@ -124,6 +125,33 @@ th { font-size: 12px; color: var(--muted); }
     <div class="card">
       <h2>공지 목록</h2>
       <table><thead><tr><th>종류</th><th>제목</th><th>대상</th><th>기간</th><th>상태</th><th></th></tr></thead><tbody id="n-list"></tbody></table>
+    </div>
+  </section>
+
+  <!-- 운영 정책 -->
+  <section data-pane="policy" class="hidden">
+    <div class="card">
+      <h2>운영 단계</h2>
+      <p class="muted"><b>베타</b>: 하루 판수 제한·광고 모두 꺼짐. <b>정식 출시</b>: 계정당 하루 무료 판수 제한(웹·PC·모바일 공통, 1판 = 한 번 시작한 경기·최대 5라운드), 모바일 보상형 광고로 판수 추가, 광고 제거 계정은 무제한.</p>
+      <div class="row">
+        <div><label for="p-phase">단계</label><select id="p-phase"><option value="beta">베타 (제한 없음)</option><option value="live">정식 출시 (제한 적용)</option></select></div>
+        <div><label for="p-free">하루 무료 판수</label><input type="text" id="p-free"></div>
+        <div><label for="p-reward">광고 1번에 늘어나는 판수</label><input type="text" id="p-reward"></div>
+        <div><label for="p-admax">하루 광고 보상 최대 횟수</label><input type="text" id="p-admax"></div>
+      </div>
+      <div style="margin-top:12px"><button id="p-save">저장</button></div>
+      <div class="msg" id="p-msg"></div>
+      <p class="muted" id="p-stats"></p>
+    </div>
+    <div class="card">
+      <h2>계정 찾기 · 광고 제거</h2>
+      <p class="muted">계정 번호(게임 '정보' 창에 보이는 12자리)로 찾아요. 스토어 결제 연동 전까지는 여기서 광고 제거를 직접 켜요. 계정에는 이메일·이름이 저장되지 않아요.</p>
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:3"><label for="c-id">계정 번호</label><input type="text" id="c-id" maxlength="12" placeholder="예: 3F9A0C12B4DE"></div>
+        <div style="flex:0"><button id="c-find">찾기</button></div>
+      </div>
+      <div id="c-out" style="margin-top:10px"></div>
+      <div class="msg" id="c-msg"></div>
     </div>
   </section>
 
@@ -255,7 +283,7 @@ th { font-size: 12px; color: var(--muted); }
     api("GET", "/admin/api/me").then(function (me) {
       $("login").classList.add("hidden"); $("app").classList.remove("hidden"); $("logout").classList.remove("hidden");
       $("who").textContent = me.email;
-      loadNotices(); loadMaint(); loadAdmins(); loadAudit(); loadReports(); loadSanctions(); loadWords();
+      loadNotices(); loadMaint(); loadAdmins(); loadAudit(); loadReports(); loadSanctions(); loadWords(); loadPolicy();
     }).catch(function () { showLogin(""); });
   }
   $("logout").onclick = function () { api("POST", "/admin/api/logout").finally(function () { showLogin("로그아웃했어요"); }); };
@@ -356,6 +384,39 @@ th { font-size: 12px; color: var(--muted); }
       .catch(function (e) { guard(e, $("a-msg")); });
   };
 
+  // ---- 운영 정책
+  var PROV = { google: "구글", apple: "Apple", kakao: "카카오" };
+  function loadPolicy() {
+    api("GET", "/admin/api/policy").then(function (d) {
+      var p = d.policy;
+      $("p-phase").value = p.phase; $("p-free").value = p.daily_free; $("p-reward").value = p.ad_reward; $("p-admax").value = p.ad_daily_max;
+      $("p-stats").textContent = "켜진 로그인: " + (d.providers.map(function (x) { return PROV[x]; }).join(", ") || "없음 (서버 환경 변수 필요)") +
+        " · 계정 " + d.stats.accounts + "개 (광고 제거 " + d.stats.ad_free + ") · 오늘 " + d.stats.today.used + "판, 광고 " + d.stats.today.ads + "번";
+    }).catch(function (e) { guard(e, $("p-msg")); });
+  }
+  $("p-save").onclick = function () {
+    var live = $("p-phase").value === "live";
+    if (live && !confirm("정식 출시 단계로 바꾸면 모든 계정에 하루 판수 제한이 적용돼요. 바꿀까요?")) return;
+    api("PUT", "/admin/api/policy", { phase: $("p-phase").value, daily_free: $("p-free").value, ad_reward: $("p-reward").value, ad_daily_max: $("p-admax").value })
+      .then(function () { msg($("p-msg"), "저장했어요", true); loadPolicy(); }).catch(function (e) { guard(e, $("p-msg")); });
+  };
+  var found = null;
+  $("c-find").onclick = function () {
+    var id = $("c-id").value.trim().toUpperCase();
+    api("GET", "/admin/api/accounts/" + encodeURIComponent(id)).then(function (d) {
+      found = d.account; var a = found, pl = a.plays;
+      $("c-out").innerHTML = "<b>" + esc(a.id) + "</b> · " + esc(a.provider_name) + " 로그인 · 가입 " + fmt(a.created_at) + " · 최근 " + fmt(a.last_login_at) +
+        "<br>오늘: " + (pl.unlimited ? "무제한" : pl.used + " / " + pl.limit + "판 (광고 " + pl.ads_today + "번)") +
+        "<div class='act' style='margin-top:8px'><label class='switch'><input type='checkbox' id='c-adfree'" + (a.ad_free ? " checked" : "") + "> 광고 제거</label>" +
+        "<input type='text' id='c-note' placeholder='메모 (예: 결제 확인 2026-12-01)' value='" + esc(a.ad_free_note) + "'><button class='small' id='c-save'>저장</button></div>";
+      $("c-save").onclick = function () {
+        api("PUT", "/admin/api/accounts/" + a.id, { ad_free: $("c-adfree").checked, note: $("c-note").value })
+          .then(function () { msg($("c-msg"), "저장했어요", true); }).catch(function (e) { guard(e, $("c-msg")); });
+      };
+      msg($("c-msg"), "");
+    }).catch(function (e) { $("c-out").innerHTML = ""; guard(e, $("c-msg")); });
+  };
+
   // ---- 신고
   var REASON = { abuse: "욕설·비하", spam: "도배·광고", nickname: "부적절한 닉네임", cheat: "핵·부정 이용", other: "기타" };
   var RSTATE = { open: "처리 전", done: "처리함", dismissed: "문제 없음" };
@@ -372,12 +433,12 @@ th { font-size: 12px; color: var(--muted); }
           ? "<div class='act'><select data-kind='" + r.id + "'><option value='mute'>채팅 금지</option><option value='ban'>접속 차단</option></select>" +
             "<select data-hours='" + r.id + "'><option value='1'>1시간</option><option value='24' selected>1일</option><option value='168'>7일</option><option value='720'>30일</option><option value='0'>영구</option></select>" +
             "<input type='text' data-reason='" + r.id + "' placeholder='사유' value='" + esc(REASON[r.reason]) + "'>" +
-            (r.target_device ? "<button class='small red' data-sanction='" + r.id + "'>제재하고 처리</button>" : "<span class='muted'>기기 ID 없음 (구버전)</span>") +
+            ((r.target_device || r.target_account) ? "<button class='small red' data-sanction='" + r.id + "'>제재하고 처리</button>" : "<span class='muted'>기기 ID 없음 (구버전)</span>") +
             "<button class='small ghost' data-dismiss='" + r.id + "'>문제 없음</button></div>"
           : "<div class='muted'>" + RSTATE[r.status] + " · " + esc(r.handled_by) + " · " + fmt(r.handled_at) + (r.note ? " · " + esc(r.note) : "") +
             " <button class='small ghost' data-reopen='" + r.id + "'>다시 열기</button></div>";
         return "<div class='report'><div><b>#" + r.id + "</b> <span class='tag'>" + (REASON[r.reason] || r.reason) + "</span> " +
-          "<b>" + esc(r.target_nick) + "</b> <span class='muted'>← 신고: " + esc(r.reporter_nick) + " · 방: " + esc(r.room) + " · " + fmt(r.created_at) + "</span></div>" +
+          "<b>" + esc(r.target_nick) + "</b>" + (r.target_account ? " <span class='muted'>(계정 " + esc(r.target_account) + ")</span>" : "") + " <span class='muted'>← 신고: " + esc(r.reporter_nick) + " · 방: " + esc(r.room) + " · " + fmt(r.created_at) + "</span></div>" +
           (r.detail ? "<div>“" + esc(r.detail) + "”</div>" : "") + "<div class='chat'>" + chat + "</div>" + acts + "</div>";
       }).join("") || "<p class='muted'>신고가 없어요</p>";
     }).catch(function (e) { guard(e, $("r-msg")); });
@@ -392,7 +453,7 @@ th { font-size: 12px; color: var(--muted); }
       var hours = Number(document.querySelector("[data-hours='" + id + "']").value);
       var reason = document.querySelector("[data-reason='" + id + "']").value;
       if (!confirm(r.target_nick + " 에게 " + (kind === "ban" ? "접속 차단" : "채팅 금지") + " (" + (hours ? hours + "시간" : "영구") + ") 을 적용할까요?")) return;
-      api("POST", "/admin/api/sanctions", { device: r.target_device, nick: r.target_nick, kind: kind, hours: hours, reason: reason, report_id: r.id })
+      api("POST", "/admin/api/sanctions", { device: r.target_device, account: r.target_account, nick: r.target_nick, kind: kind, hours: hours, reason: reason, report_id: r.id })
         .then(function () { msg($("r-msg"), "제재했어요", true); loadReports(); loadSanctions(); })
         .catch(function (e) { guard(e, $("r-msg")); });
     } else if ((id = t.dataset.dismiss) || (id = t.dataset.reopen)) {
@@ -405,7 +466,7 @@ th { font-size: 12px; color: var(--muted); }
   function loadSanctions() {
     api("GET", "/admin/api/sanctions").then(function (d) {
       $("s-list").innerHTML = d.sanctions.map(function (x) {
-        return "<tr><td>" + esc(x.nick || "?") + "<div class='muted'>" + esc(x.device.slice(0, 10)) + "…</div></td><td>" + (x.kind === "ban" ? "접속 차단" : "채팅 금지") +
+        return "<tr><td>" + esc(x.nick || "?") + "<div class='muted'>" + (x.account ? "계정 " + esc(x.account) : esc(x.device.slice(0, 10)) + "…") + "</div></td><td>" + (x.kind === "ban" ? "접속 차단" : "채팅 금지") +
           "</td><td>" + esc(x.reason) + (x.report_id ? " <span class='muted'>(신고 #" + x.report_id + ")</span>" : "") + "</td><td class='muted'>" + (x.until ? fmt(x.until) + "까지" : "영구") +
           "</td><td class='muted'>" + esc(x.created_by) + "<br>" + fmt(x.created_at) + "</td><td>" +
           (x.active ? "<button class='small ghost' data-revoke='" + x.id + "'>해제</button>" : "<span class='muted'>" + (x.revoked_at ? "해제됨" : "끝남") + "</span>") + "</td></tr>";
@@ -439,7 +500,8 @@ th { font-size: 12px; color: var(--muted); }
   var ACT = { login: "로그인", login_denied: "로그인 거부", notice_create: "공지 작성", notice_update: "공지 수정", notice_delete: "공지 삭제",
     maintenance_on: "점검 켬", maintenance_off: "점검 끔", admin_add: "관리자 추가", admin_remove: "관리자 삭제",
     report_done: "신고 처리", report_dismissed: "신고 문제 없음", report_open: "신고 다시 열기", sanction_mute: "채팅 금지", sanction_ban: "접속 차단",
-    sanction_revoke: "제재 해제", word_add: "금칙어 추가", word_remove: "금칙어 삭제" };
+    sanction_revoke: "제재 해제", word_add: "금칙어 추가", word_remove: "금칙어 삭제",
+    policy_update: "운영 정책 변경", ad_free_on: "광고 제거 켬", ad_free_off: "광고 제거 끔", account_delete: "계정 삭제(본인)" };
   function loadAudit() {
     api("GET", "/admin/api/audit").then(function (d) {
       $("l-list").innerHTML = d.audit.map(function (a) {

@@ -141,3 +141,90 @@ test("30일 지난 신고 삭제", async () => {
     assert.equal(app.purgeOld(), 1);
     assert.equal(db.prepare("SELECT COUNT(*) AS n FROM reports").get().n, 1);
 });
+
+test("소셜 로그인 → 계정·판수·광고 보상·계정 삭제", async () => {
+    const crypto = await import("node:crypto");
+    const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+    const ssvKeys = { "42": publicKey.export({ type: "spki", format: "pem" }) };
+    const providers = {
+        google: { authorizeUrl: (s) => "https://fake-google/auth?state=" + s.id, exchange: async (q) => "sub-" + q.code },
+        kakao: { authorizeUrl: (s) => "https://fake-kakao/auth?state=" + s.id, exchange: async (q) => "k-" + q.code },
+    };
+    const db = openDb(":memory:");
+    const srv = http.createServer(createApp({ db, clientId: "", ownerEmails: ["owner@gmail.com"], verifyGoogle: fakeVerify, secureCookie: false, providers, ssvKeys }));
+    await new Promise((r) => srv.listen(0, r));
+    const base = `http://127.0.0.1:${srv.address().port}`;
+    const req = async (method, path, body, headers = {}) => {
+        const r = await fetch(base + path, { method, redirect: "manual", body: body === undefined ? undefined : (typeof body === "string" ? body : JSON.stringify(body)),
+            headers: { "Content-Type": "application/json", ...headers } });
+        return { status: r.status, headers: r.headers, data: await r.text().then((t) => { try { return JSON.parse(t); } catch { return t; } }) };
+    };
+    async function login(provider, code) {
+        const st = await req("POST", "/api/auth/start", { provider });
+        assert.equal(st.status, 200);
+        const go = await req("GET", new URL(st.data.url).pathname + new URL(st.data.url).search);
+        assert.equal(go.status, 302);
+        const state = new URL(go.headers.get("location")).searchParams.get("state");
+        assert.equal((await req("GET", "/api/auth/poll?id=" + st.data.id)).data.status, "pending");
+        const cb = await req("GET", `/api/auth/callback/${provider}?state=${state}&code=${code}`);
+        assert.match(cb.data, /로그인 완료/);
+        const poll = await req("GET", "/api/auth/poll?id=" + st.data.id);
+        assert.equal(poll.data.status, "done");
+        assert.equal((await req("GET", "/api/auth/poll?id=" + st.data.id)).data.status, "expired");   // 토큰은 한 번만
+        return poll.data;
+    }
+    try {
+        assert.deepEqual((await req("GET", "/api/auth/providers")).data.providers.map((p) => p.id), ["google", "kakao"]);
+        assert.equal((await req("POST", "/api/auth/start", { provider: "apple" })).status, 400);
+        const a = await login("google", "111");
+        const again = await login("google", "111");
+        assert.equal(again.account.id, a.account.id);                 // 같은 사람 = 같은 계정
+        const k = await login("kakao", "111");
+        assert.notEqual(k.account.id, a.account.id);
+        // 저장된 것은 해시뿐 (원래 번호가 DB 에 없음)
+        assert.ok(!JSON.stringify(db.prepare("SELECT * FROM accounts").all()).includes("sub-111"));
+        const auth = { Authorization: "Bearer " + a.token };
+        let me = await req("GET", "/api/account", undefined, auth);
+        assert.equal(me.data.account.plays.phase, "beta");
+        assert.equal(me.data.account.plays.unlimited, true);
+
+        // 게임 서버: 토큰 확인, 베타에는 판수 차감 없음
+        assert.equal((await req("POST", "/internal/account/verify", { token: a.token })).data.account.id, a.account.id);
+        assert.equal((await req("POST", "/internal/account/verify", { token: "x" })).data.account, null);
+        assert.equal((await req("POST", "/internal/plays/start", { accounts: [a.account.id] })).data.ok, true);
+
+        // 정식 출시로 전환 → 하루 3판
+        const adm = await req("POST", "/admin/api/login", { credential: "ok:owner@gmail.com" }, { "X-SPW-Admin": "1" });
+        const cookie = adm.headers.get("set-cookie").split(";")[0];
+        const ah = { "X-SPW-Admin": "1", cookie };
+        assert.equal((await req("PUT", "/admin/api/policy", { phase: "live", daily_free: 3, ad_reward: 1, ad_daily_max: 2 }, ah)).status, 200);
+        for (let i = 0; i < 3; i++) assert.equal((await req("POST", "/internal/plays/start", { accounts: [a.account.id, k.account.id] })).data.ok, true);
+        let blocked = await req("POST", "/internal/plays/start", { accounts: [a.account.id, k.account.id] });
+        assert.equal(blocked.data.ok, false);
+        assert.deepEqual(blocked.data.blocked.sort(), [a.account.id, k.account.id].sort());
+        me = await req("GET", "/api/account", undefined, auth);
+        assert.equal(me.data.account.plays.left, 0);
+
+        // 보상형 광고 (AdMob SSV 서명) → +1판, 같은 거래는 한 번만, 하루 최대 2번
+        const ssv = (tx) => {
+            const msg = `ad_network=1&ad_unit=2&custom_data=${a.account.id}&reward_amount=1&reward_item=play&timestamp=1&transaction_id=${tx}&user_id=${a.account.id}`;
+            const sig = crypto.sign("sha256", Buffer.from(msg), privateKey).toString("base64url");
+            return `/api/ads/ssv?${msg}&signature=${sig}&key_id=42`;
+        };
+        assert.equal((await req("GET", ssv("t1").replace("reward_amount=1", "reward_amount=9"))).status, 403);   // 위조
+        assert.equal((await req("GET", ssv("t1"))).data.ok, true);
+        assert.equal((await req("GET", ssv("t1"))).data.ok, false);
+        assert.equal((await req("POST", "/internal/plays/start", { accounts: [a.account.id] })).data.ok, true);
+        assert.equal((await req("GET", ssv("t2"))).data.ok, true);
+        assert.equal((await req("GET", ssv("t3"))).data.ok, false);     // 하루 최대 2번
+
+        // 광고 제거(관리자 수동 지급) → 무제한
+        assert.equal((await req("PUT", "/admin/api/accounts/" + k.account.id, { ad_free: true, note: "테스트" }, ah)).status, 200);
+        assert.equal((await req("POST", "/internal/plays/start", { accounts: [k.account.id] })).data.ok, true);
+
+        // 계정 삭제 → 토큰 무효
+        assert.equal((await req("DELETE", "/api/account", undefined, auth)).status, 200);
+        assert.equal((await req("GET", "/api/account", undefined, auth)).status, 401);
+        assert.equal(db.prepare("SELECT COUNT(*) AS n FROM accounts").get().n, 1);
+    } finally { srv.close(); }
+});

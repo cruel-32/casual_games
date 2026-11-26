@@ -3,7 +3,7 @@ FROM node:22-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
-COPY server.mjs ./
+COPY server.mjs accounts.mjs ./
 COPY public ./public
 ENV PORT=7780 DATA_DIR=/data NODE_ENV=production
 VOLUME /data

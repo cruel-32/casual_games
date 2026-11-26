@@ -34,6 +34,14 @@ jobs:
         env:
           # 구글 OAuth 웹 클라이언트 ID: GitHub > Settings > Secrets and variables > Actions > Variables
           GOOGLE_CLIENT_ID: ${{ vars.GOOGLE_CLIENT_ID }}
+          # 게임 소셜 로그인 (README "계정·로그인"). 비어 있으면 그 제공자 버튼이 안 보임
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          KAKAO_REST_KEY: ${{ secrets.KAKAO_REST_KEY }}
+          KAKAO_CLIENT_SECRET: ${{ secrets.KAKAO_CLIENT_SECRET }}
+          APPLE_SERVICE_ID: ${{ secrets.APPLE_SERVICE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY: ${{ secrets.APPLE_PRIVATE_KEY }}
         run: docker compose up -d --build small-party-world-admin
 
       - name: 게임 서버 다시 빌드·재시작

@@ -28,6 +28,8 @@ Boot="*res://scripts/core/boot.gd"
 Net="*res://scripts/net/net.gd"
 Sfx="*res://scripts/core/sfx.gd"
 Updater="*res://scripts/core/updater.gd"
+Account="*res://scripts/core/account.gd"
+Ads="*res://scripts/core/ads.gd"
 
 [display]
 

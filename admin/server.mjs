@@ -19,6 +19,7 @@ import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { migrate as migrateAccounts, makeAccounts } from "./accounts.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SESSION_DAYS = 7;
@@ -107,6 +108,7 @@ export function openDb(file) {
             detail TEXT NOT NULL DEFAULT ''
         );
     `);
+    migrateAccounts(db);
     return db;
 }
 
@@ -126,7 +128,7 @@ export function compareVersion(a, b) {
 
 // ---------------------------------------------------------------- 앱
 // verifyGoogle(credential) → { email, email_verified, name, picture } (테스트에서 바꿔 끼움)
-export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secureCookie = true }) {
+export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secureCookie = true, env = {}, providers, fetchImpl, ssvKeys }) {
     const owners = new Set(ownerEmails.map(normEmail).filter(Boolean));
     const customVerifier = !!verifyGoogle;
     for (const e of owners) {
@@ -152,6 +154,9 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
     };
     const setSetting = (key, value) =>
         db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, JSON.stringify(value));
+
+    const accounts = makeAccounts({ db, env: { GOOGLE_CLIENT_ID: clientId, ...env }, getSetting, setSetting, audit, providers, fetchImpl, ssvKeys });
+    const helpers = { json, readJson, readForm };
 
     const isAdmin = (email) => !!db.prepare("SELECT 1 FROM admins WHERE email = ?").get(email);
 
@@ -195,12 +200,13 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
 
     function activeSanctions() {
         const now = nowIso();
-        return db.prepare(`SELECT id, device, nick, kind, reason, until FROM sanctions
+        return db.prepare(`SELECT id, device, account, nick, kind, reason, until FROM sanctions
             WHERE revoked_at = '' AND (until = '' OR until > ?) ORDER BY id`).all(now);
     }
 
     const str = (v, n) => String(v == null ? "" : v).slice(0, n);
     const device = (v) => (/^[A-Za-z0-9_-]{8,64}$/.test(String(v || "")) ? String(v) : "");
+    const account = (v) => (/^[0-9A-F]{12}$/.test(String(v || "")) ? String(v) : "");
 
     function cleanNotice(b) {
         const kind = KINDS.includes(b.kind) ? b.kind : null;
@@ -231,6 +237,9 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
         const p = url.pathname;
         const m = req.method;
 
+        // 계정·로그인·판수 (accounts.mjs)
+        if (p.startsWith("/api/") && await accounts.handlePublic(req, res, url, helpers)) return;
+
         // 공개 API (게임·웹)
         if (p === "/api/notices" && m === "GET") {
             const platform = PLATFORMS.includes(url.searchParams.get("platform")) ? url.searchParams.get("platform") : "";
@@ -244,9 +253,10 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
         // 게임 서버 전용 (같은 도커 네트워크·호스트에서만). 리버스 프록시를 거친 요청은 거절
         if (p.startsWith("/internal/")) {
             if (req.headers["x-forwarded-for"] || req.headers["x-forwarded-host"]) return json(res, 404, { error: "없는 주소예요" });
+            if (await accounts.handleInternal(req, res, url, helpers)) return;
             if (p === "/internal/moderation" && m === "GET") {
                 return json(res, 200, {
-                    sanctions: activeSanctions().map((x) => ({ device: x.device, kind: x.kind, until: x.until, reason: x.reason })),
+                    sanctions: activeSanctions().map((x) => ({ device: x.device, account: x.account, kind: x.kind, until: x.until, reason: x.reason })),
                     words: db.prepare("SELECT word FROM words ORDER BY word").all().map((w) => w.word),
                 });
             }
@@ -259,11 +269,11 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
                 const rep = b.reporter || {}, tgt = b.target || {};
                 if (!str(tgt.nick, 24)) return json(res, 400, { error: "대상이 없어요" });
                 // 같은 사람이 같은 대상을 10분 안에 여러 번 신고하면 하나로
-                const dup = db.prepare(`SELECT id FROM reports WHERE reporter_device = ? AND target_device = ? AND created_at > ? AND status = 'open'`)
-                    .get(device(rep.device), device(tgt.device), new Date(Date.now() - 600e3).toISOString());
-                if (dup && device(rep.device)) return json(res, 200, { id: dup.id, duplicate: true });
-                const r = db.prepare(`INSERT INTO reports (created_at, reporter_nick, reporter_device, target_nick, target_device, room, reason, detail, chat)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nowIso(), str(rep.nick, 24), device(rep.device), str(tgt.nick, 24), device(tgt.device),
+                const dup = db.prepare(`SELECT id FROM reports WHERE reporter_device = ? AND target_device = ? AND reporter_account = ? AND target_account = ? AND created_at > ? AND status = 'open'`)
+                    .get(device(rep.device), device(tgt.device), account(rep.account), account(tgt.account), new Date(Date.now() - 600e3).toISOString());
+                if (dup && (device(rep.device) || account(rep.account))) return json(res, 200, { id: dup.id, duplicate: true });
+                const r = db.prepare(`INSERT INTO reports (created_at, reporter_nick, reporter_device, reporter_account, target_nick, target_device, target_account, room, reason, detail, chat)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(nowIso(), str(rep.nick, 24), device(rep.device), account(rep.account), str(tgt.nick, 24), device(tgt.device), account(tgt.account),
                     str(b.room, 60), reason, str(b.detail, 300), JSON.stringify(chat));
                 return json(res, 200, { id: Number(r.lastInsertRowid) });
             }
@@ -305,6 +315,7 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
 
         const email = sessionEmail(req);
         if (!email) return json(res, 401, { error: "로그인이 필요해요" });
+        if (await accounts.handleAdmin(req, res, url, email, helpers)) return;
 
         if (p === "/admin/api/logout" && m === "POST") {
             const token = parseCookies(req.headers.cookie || "")[COOKIE];
@@ -407,16 +418,17 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
         if (p === "/admin/api/sanctions" && m === "POST") {
             const b = await readJson(req);
             const dev = device(b.device);
-            if (!dev) return json(res, 400, { error: "기기 ID가 올바르지 않아요" });
+            const acc = account(b.account);
+            if (!dev && !acc) return json(res, 400, { error: "기기 ID나 계정 번호가 필요해요" });
             if (!SANCTION_KINDS.includes(b.kind)) return json(res, 400, { error: "제재 종류가 올바르지 않아요" });
             const hours = Number(b.hours) || 0;     // 0 = 영구
             const until = hours > 0 ? new Date(Date.now() + hours * 3600e3).toISOString() : "";
-            const r = db.prepare(`INSERT INTO sanctions (device, nick, kind, reason, until, report_id, created_by, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(dev, str(b.nick, 24), b.kind, str(b.reason, 200), until, Number(b.report_id) || null, email, nowIso());
+            const r = db.prepare(`INSERT INTO sanctions (device, account, nick, kind, reason, until, report_id, created_by, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(dev, acc, str(b.nick, 24), b.kind, str(b.reason, 200), until, Number(b.report_id) || null, email, nowIso());
             if (Number(b.report_id)) {
                 db.prepare("UPDATE reports SET status = 'done', handled_by = ?, handled_at = ? WHERE id = ?").run(email, nowIso(), Number(b.report_id));
             }
-            audit(email, "sanction_" + b.kind, `${str(b.nick, 24)} ${dev.slice(0, 8)} ${hours ? hours + "h" : "영구"} ${str(b.reason, 100)}`);
+            audit(email, "sanction_" + b.kind, `${str(b.nick, 24)} ${acc || dev.slice(0, 8)} ${hours ? hours + "h" : "영구"} ${str(b.reason, 100)}`);
             return json(res, 200, { id: Number(r.lastInsertRowid), until });
         }
         const sm = p.match(/^\/admin\/api\/sanctions\/(\d+)$/);
@@ -461,7 +473,8 @@ export function createApp({ db, clientId, ownerEmails = [], verifyGoogle, secure
             json(res, 500, { error: "서버 오류" });
         }
     };
-    app.purgeOld = purgeOld;
+    app.purgeOld = () => { accounts.purge(); return purgeOld(); };
+    app.accounts = accounts;
     return app;
 }
 
@@ -507,6 +520,17 @@ function parseCookies(header) {
     return out;
 }
 
+// Apple 로그인은 결과를 form_post 로 보낸다
+async function readForm(req) {
+    const raw = await new Promise((resolve, reject) => {
+        let size = 0; const chunks = [];
+        req.on("data", (c) => { size += c.length; if (size > MAX_BODY) { reject(new HttpError(413, "내용이 너무 커요")); req.destroy(); return; } chunks.push(c); });
+        req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+        req.on("error", reject);
+    });
+    return Object.fromEntries(new URLSearchParams(raw));
+}
+
 function readJson(req) {
     return new Promise((resolve, reject) => {
         let size = 0;
@@ -532,7 +556,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     const owners = (process.env.ADMIN_EMAILS || "").split(",");
     const db = openDb(path.join(dataDir, "admin.sqlite"));
     if (!clientId) console.warn("[admin] GOOGLE_CLIENT_ID 가 없어 관리 페이지에 로그인할 수 없습니다");
-    const app = createApp({ db, clientId, ownerEmails: owners });
+    const app = createApp({ db, clientId, ownerEmails: owners, env: process.env });
     app.purgeOld();
     setInterval(() => app.purgeOld(), 3600e3);      // 30일 지난 신고 삭제 (1시간마다)
     http.createServer(app).listen(port, () => {

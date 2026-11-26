@@ -116,6 +116,19 @@ func _ready() -> void:
             _server.select(i)
     server_row.add_child(_server)
 
+    # 계정: 온라인 대전은 구글·Apple·카카오 로그인 필요 (혼자 연습은 로그인 없이)
+    _account_row = UI.hbox(10)
+    cv.add_child(_account_row)
+    Account.changed.connect(_refresh_account)
+    Account.providers_loaded.connect(func(_l): _refresh_account())
+    Account.login_waiting.connect(func(_p): _refresh_account())
+    Account.login_failed.connect(func(m):
+        _set_status(m, UI.DANGER)
+        _refresh_account())
+    _refresh_account()
+    if Account.is_logged_in():
+        Account.refresh()
+
     var entry := UI.hbox(12)
     cv.add_child(entry)
     _nick = UI.line_edit("닉네임 (2~12자)", String(app.load_setting("nickname", "")), Net.NICK_MAX)
@@ -256,6 +269,72 @@ func _build_help() -> void:
     v.add_child(close)
 
 
+# ---- 계정 줄
+var _account_row: HBoxContainer
+const PROVIDER_COLORS := {"google": Color(0.26, 0.52, 0.96), "apple": Color(0.1, 0.1, 0.12), "kakao": Color(1.0, 0.9, 0.0)}
+
+
+func _refresh_account() -> void:
+    if _account_row == null:
+        return
+    for c in _account_row.get_children():
+        c.queue_free()
+    _account_row.add_child(UI.badge("계정", UI.BLUE))
+    if Account.is_logged_in():
+        var name := String(Account.info.get("provider_name", ""))
+        var t := UI.label(("%s 계정으로 로그인됨" % name if name != "" else "로그인됨") + ("  ·  " + Account.plays_text() if Account.plays_text() != "" else ""), 16)
+        t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        t.clip_text = true
+        t.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+        _account_row.add_child(t)
+        var p: Dictionary = Account.info.get("plays", {})
+        if Account.plays_left() == 0 and bool(p.get("ads_enabled", false)):
+            var ad := UI.pill_button("광고 보고 +%d판" % int(p.get("ad_reward", 1)), UI.TEAL)
+            ad.pressed.connect(_on_ad_pressed)
+            _account_row.add_child(ad)
+        var out := UI.pill_button("로그아웃", UI.MUTED)
+        out.pressed.connect(func(): Account.logout())
+        _account_row.add_child(out)
+    elif Account.is_waiting():
+        var t := UI.label("브라우저에서 로그인을 마치고 돌아와 주세요…", 16, UI.MUTED)
+        t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _account_row.add_child(t)
+        var cancel := UI.pill_button("취소", UI.MUTED)
+        cancel.pressed.connect(func():
+            Account.cancel_login()
+            _refresh_account())
+        _account_row.add_child(cancel)
+    elif Account.providers.is_empty():
+        var t := UI.label("로그인 서버에 연결하는 중… (혼자 연습은 로그인 없이 가능)", 15, UI.MUTED)
+        t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _account_row.add_child(t)
+    else:
+        var t := UI.label("온라인 대전 로그인", 16, UI.MUTED)
+        t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _account_row.add_child(t)
+        for pv in Account.providers:
+            var id := String(pv.id)
+            var col: Color = PROVIDER_COLORS.get(id, UI.INK)
+            var b := UI.pill_button(String(pv.name), col, UI.INK if id == "kakao" else Color.WHITE)
+            b.pressed.connect(func():
+                _set_status("", UI.MUTED)
+                Account.start_login(id))
+            _account_row.add_child(b)
+
+
+func _on_ad_pressed() -> void:
+    if not Ads.reward_done.is_connected(_on_ad_done):
+        Ads.reward_done.connect(_on_ad_done, CONNECT_ONE_SHOT)
+    Ads.show_rewarded()
+
+
+func _on_ad_done(ok: bool, message: String) -> void:
+    _set_status(message if message != "" else ("판수가 늘었어요!" if ok else ""), UI.MUTED if ok else UI.DANGER)
+    if ok:
+        await get_tree().create_timer(2.0).timeout      # 서버가 AdMob 확인을 받을 시간
+        Account.refresh()
+
+
 ## 정보: 버전, 문의처, 개인정보처리방침·이용약관 (스토어 심사·법적 고지용)
 const CONTACT_EMAIL := "cshee8508@gmail.com"
 var _info: Control
@@ -273,6 +352,12 @@ func _build_info() -> void:
     var mail := UI.label("문의·신고·데이터 삭제 요청: %s" % CONTACT_EMAIL, 16, UI.MUTED)
     mail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     v.add_child(mail)
+    _info_account = UI.label("", 15, UI.MUTED)
+    _info_account.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    v.add_child(_info_account)
+    _info_delete = UI.secondary_button("계정 삭제")
+    _info_delete.pressed.connect(_on_delete_account)
+    v.add_child(_info_delete)
     var site: String = Updater.site
     var links := [
         ["개인정보처리방침", site + "/privacy/"],
@@ -294,6 +379,38 @@ func _build_info() -> void:
     var close := UI.cta_button("닫기")
     close.pressed.connect(func(): _info.visible = false)
     v.add_child(close)
+    _info.visibility_changed.connect(_update_info_account)
+    Account.changed.connect(_update_info_account)
+
+
+var _info_account: Label
+var _info_delete: Button
+var _delete_armed := false
+
+
+func _update_info_account() -> void:
+    _delete_armed = false
+    if Account.is_logged_in():
+        _info_account.text = "계정 번호 %s (%s 로그인) — 문의·결제 확인 때 알려 주세요" % [String(Account.info.get("id", "…")), String(Account.info.get("provider_name", ""))]
+        _info_delete.visible = true
+        _info_delete.text = "계정 삭제"
+    else:
+        _info_account.text = "로그인하지 않았어요"
+        _info_delete.visible = false
+
+
+## 계정 삭제: 두 번 눌러야 지움 (판수 기록·로그인 정보 삭제, 되돌릴 수 없음)
+func _on_delete_account() -> void:
+    if not _delete_armed:
+        _delete_armed = true
+        _info_delete.text = "정말 삭제할까요? 한 번 더 누르면 삭제돼요"
+        return
+    _delete_armed = false
+    _info_delete.disabled = true
+    var ok := await Account.delete_account()
+    _info_delete.disabled = false
+    _info_account.text = "계정을 삭제했어요" if ok else "삭제하지 못했어요. 잠시 뒤 다시 시도하거나 문의해 주세요"
+    _info_delete.visible = not ok
 
 
 func _show_help() -> void:
@@ -337,6 +454,9 @@ func _check_nick() -> bool:
 
 func _on_connect_pressed() -> void:
     if not _check_nick():
+        return
+    if not Account.is_logged_in():
+        _set_status("온라인 대전은 로그인이 필요해요. 위에서 로그인해 주세요 (혼자 연습은 로그인 없이 할 수 있어요)", UI.DANGER)
         return
     if Updater.required:
         _set_status("새 버전이 나왔어요. 왼쪽 아래 업데이트 버튼을 눌러 주세요 (혼자 연습은 가능)", UI.DANGER)

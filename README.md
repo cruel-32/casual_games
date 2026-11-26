@@ -129,6 +129,30 @@ const SERVER_LIST := [
 | `/internal/reports` (POST) | 게임 서버 → 신고 접수 (방의 최근 채팅 40개 첨부). **Caddy 로 노출하지 않음** (프록시를 거친 요청은 거절) |
 | `/internal/moderation` | 게임 서버가 15초마다 읽는 제재(기기 ID 기준 채팅 금지·접속 차단)와 추가 금칙어 |
 
+#### 계정·로그인 (온라인 대전 필수, 혼자 연습은 로그인 없이)
+- 게임 첫 화면 "계정" 줄의 구글·Apple·카카오 버튼 → 브라우저에서 로그인 → 게임이 `/api/auth/poll` 로 기다렸다가 토큰을 받음 (`user://account.cfg`)
+- 게임 서버는 접속 때 토큰(`y_auth`)을 관리 서버 `/internal/account/verify` 로 확인. **ADMIN_URL 이 없는 로컬 테스트 서버는 로그인 없이 닉네임만**
+- 저장하는 것: 제공자 이름 + 제공자 사용자 번호의 해시(`ACCOUNT_PEPPER`, 없으면 DB 에 자동 생성) + 무작위 계정 번호(12자리, 정보 창에 표시). 이메일·이름은 요청도 저장도 안 함
+- 계정 삭제: 게임 정보 창 → 계정 삭제 (`DELETE /api/account`)
+- 제공자 등록 (값을 넣은 제공자만 버튼이 보임). GitHub > Settings > Secrets and variables > Actions 에 등록 → 배포 때 docker compose 로 전달:
+
+| 제공자 | 콘솔에서 할 일 | 넣을 값 |
+|---|---|---|
+| 구글 | Google Cloud Console > 사용자 인증 정보 > 기존 OAuth 웹 클라이언트(관리 페이지용)에 **승인된 리디렉션 URI** `https://spw.cloudish.cloud/api/auth/callback/google` 추가 | 변수 `GOOGLE_CLIENT_ID`(이미 있음), 비밀 `GOOGLE_CLIENT_SECRET` |
+| 카카오 | developers.kakao.com > 앱 만들기 > 카카오 로그인 활성화, Redirect URI `https://spw.cloudish.cloud/api/auth/callback/kakao`, **동의 항목은 아무것도 켜지 않음**(회원번호만 사용), 보안 > Client Secret(선택) | 비밀 `KAKAO_REST_KEY`, `KAKAO_CLIENT_SECRET` |
+| Apple | Apple Developer(유료) > Identifiers > **Services ID** 만들고 Sign in with Apple 켜기, Return URL `https://spw.cloudish.cloud/api/auth/callback/apple`, Keys 에서 Sign in with Apple 키(.p8) 발급 | 비밀 `APPLE_SERVICE_ID`, `APPLE_TEAM_ID`, `APPLE_KEY_ID`, `APPLE_PRIVATE_KEY`(.p8 내용) |
+
+> iOS 앱을 낼 때 다른 소셜 로그인이 있으면 Apple 로그인도 있어야 함 (App Review 4.8)
+
+#### 운영 단계·하루 판수·광고 (정식 출시부터 적용, 베타는 전부 끔)
+- 관리 페이지 **운영 정책** 탭: 단계(베타/정식 출시), 하루 무료 판수(기본 3), 광고 1번 보상(기본 1판), 하루 광고 보상 최대(기본 5)
+- 판수: 방장이 게임을 시작할 때 게임 서버가 `/internal/plays/start` 로 방 안 모든 사람의 판을 1씩 차감 (1판 = 한 번 시작한 경기, 최대 5라운드). 남은 판이 없는 사람이 있으면 시작 거절. 광고 제거 계정은 제외
+- 광고: 모든 플랫폼 보상형, **모바일 앱에서만** 볼 수 있음 (PC·웹 사용자도 같은 계정이면 모바일에서 보고 판수 +1)
+  - SDK: Google AdMob + Godot 플러그인 **AdMob (Poing Studios, Android·iOS)**. `scripts/core/ads.gd` 의 `REWARDED_UNIT` 에 광고 단위 ID
+  - 보상은 **AdMob 서버 확인(SSV)** 으로만 지급: AdMob 콘솔 > 보상형 광고 단위 > 서버 측 확인 URL `https://spw.cloudish.cloud/api/ads/ssv`, 광고를 띄울 때 `custom_data` = 계정 번호
+  - 아직 할 일: AdMob 계정·앱·광고 단위 만들기 → 플러그인 설치(에디터 AssetLib "AdMob" by Poing Studios, Android 는 Gradle 빌드 사용) → `ads.gd` 연결
+- 광고 제거 결제: 스토어 결제 연동 전까지 관리 페이지 운영 정책 탭 > 계정 찾기(계정 번호) > 광고 제거 켬
+
 #### 채팅 안전 (App Store 1.2 · 이용약관 제6조)
 - **금칙어**: `scripts/core/word_filter.gd` 기본 목록 + 관리 페이지에서 추가한 단어. 서버가 채팅은 `***`로 가리고, 닉네임은 거절, 방 이름은 가림.
   띄어쓰기·숫자·기호를 끼워도 걸러냄(두 글자 단어는 띄어쓰기는 건너뛰지 않음)

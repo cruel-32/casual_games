@@ -41,6 +41,15 @@ services:
     environment:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - ADMIN_EMAILS=${ADMIN_EMAILS:-cshee8508@gmail.com}
+      # 게임 로그인 (소셜 로그인). 값이 있는 제공자만 게임에 버튼이 보임 — README "계정·로그인" 참고
+      - PUBLIC_URL=https://spw.cloudish.cloud
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - KAKAO_REST_KEY=${KAKAO_REST_KEY:-}
+      - KAKAO_CLIENT_SECRET=${KAKAO_CLIENT_SECRET:-}
+      - APPLE_SERVICE_ID=${APPLE_SERVICE_ID:-}
+      - APPLE_TEAM_ID=${APPLE_TEAM_ID:-}
+      - APPLE_KEY_ID=${APPLE_KEY_ID:-}
+      - APPLE_PRIVATE_KEY=${APPLE_PRIVATE_KEY:-}
     ports:
       - "127.0.0.1:7780:7780"
     volumes:
