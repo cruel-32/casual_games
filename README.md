@@ -21,7 +21,7 @@ Godot 4.7.1 (서버·웹 빌더 이미지도 4.7.1 — 4.7.2는 Windows 한글 �
 | 5. 배포 (홈서버 Docker + Caddy) | 설정 파일 준비 완료 (Dockerfile, docker-compose.yml, deploy/Caddyfile.example) |
 
 ### 게임 동기화
-서버가 방마다 경기를 직접 돌린다 (`Net` 아래 SubViewport, 방마다 독립 물리 공간). 아이스딩과 같은 계열의 방식:
+서버가 방마다 경기를 직접 돌린다 (`Net` 아래 SubViewport, 방마다 독립 물리 공간):
 
 | 항목 | 누가 정하나 | 방법 |
 |---|---|---|
