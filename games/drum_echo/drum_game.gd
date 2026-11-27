@@ -23,7 +23,6 @@ const HUD_SCRIPT := preload("res://games/drum_echo/drum_hud.gd")
 const Teams := preload("res://scripts/core/teams.gd")
 const Toon := preload("res://scripts/world/toon.gd")
 
-const LOAD_WAIT_MAX := 10.0
 const START_DELAY := 3.0            ## 모두 준비되고 곡이 시작하기까지
 const BOT_SKILL := 0.55
 const ANNOUNCE_AHEAD := 3.5          ## 차례 노트를 시작 몇 초 전에 알리나 (노트 길 LOOK_AHEAD 2.2초보다 넉넉히)
@@ -123,7 +122,7 @@ func _ready() -> void:
     if is_client():
         Net.game_message.connect(on_server_message)
         Net.disconnected.connect(_on_net_disconnected)
-        send_to_server(["loaded"])
+        send_loaded_when_settled()      # 화면이 부드럽게 그려지기 시작한 뒤에 (PartyGame)
     var layer := CanvasLayer.new()
     add_child(layer)
     var hud: Control = HUD_SCRIPT.new()

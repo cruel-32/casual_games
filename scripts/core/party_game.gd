@@ -131,6 +131,61 @@ func add_common_ui(layer: CanvasLayer) -> void:
         layer.add_child(ROTATE_HINT.new())
 
 
+## 서버가 모두의 "loaded" 를 기다리는 최대 시간 (느린 기기·한 명이 끊겨도 영원히 기다리지 않게)
+const LOAD_WAIT_MAX := 30.0
+const SETTLE_FRAME_MS := 80          ## 이보다 빨리 그려진 프레임이 SETTLE_FRAMES 번 이어지면 '준비됨'
+const SETTLE_FRAMES := 6
+const SETTLE_MAX_MS := 25000
+
+
+## 클라이언트: 경기 화면이 실제로 부드럽게 그려지기 시작한 뒤 서버에 "loaded" 를 보낸다
+##   _ready 직후 첫 몇 프레임은 셰이더 컴파일·텍스처 올리기로 몇 초씩 멈출 수 있다. 그 전에 알리면
+##   서버가 카운트다운을 시작해 버려서, 느린 기기는 멈춰 있다 들어가 보니 다들 한참 달리고 있었다
+##   → 프레임이 SETTLE_FRAMES 번 연속 SETTLE_FRAME_MS 안에 그려질 때(최대 25초)까지 기다린다
+func send_loaded_when_settled() -> void:
+    _settle_and_send.call_deferred()
+
+
+func _settle_and_send() -> void:
+    var t0 := Time.get_ticks_msec()
+    var last := t0
+    var good := 0
+    while good < SETTLE_FRAMES and Time.get_ticks_msec() - t0 < SETTLE_MAX_MS:
+        await get_tree().process_frame
+        if not is_inside_tree():
+            return
+        var now := Time.get_ticks_msec()
+        good = good + 1 if now - last < SETTLE_FRAME_MS else 0
+        last = now
+    if is_inside_tree():
+        send_to_server(["loaded"])
+
+
+## 출발 자리 순서: 팀전이면 팀이 번갈아 서도록 (같은 팀끼리 뭉치지 않게). slot 번호는 그대로 두고 자리만 섞는다
+##   teams_of[slot] = 팀 번호(-1 = 개인전) → 돌려주는 값[slot] = 자리 번호. 모든 PC에서 같은 결과
+static func mixed_spots(teams_of: Array) -> Array:
+    var by_team := {}
+    for slot in teams_of.size():
+        var t := int(teams_of[slot])
+        if not by_team.has(t):
+            by_team[t] = []
+        by_team[t].append(slot)
+    var keys: Array = by_team.keys()
+    keys.sort()
+    var order := []
+    var k := 0
+    while order.size() < teams_of.size():
+        for t in keys:
+            if k < by_team[t].size():
+                order.append(by_team[t][k])
+        k += 1
+    var spot := []
+    spot.resize(teams_of.size())
+    for i in order.size():
+        spot[order[i]] = i
+    return spot
+
+
 ## 서버: 경기가 끝났을 때 순위를 알린다 → 라운드 승점(1등 3·2등 2·3등 1) 계산 (scripts/core/series.gd)
 ##   placements = [{"rank": 1, "members": [participant(f)], "team": ""}, ...]
 ##   팀 게임은 한 항목의 members 에 팀원 전부를 넣고 team 에 팀 이름. 동점은 같은 rank

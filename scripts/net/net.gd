@@ -27,7 +27,7 @@ const Teams := preload("res://scripts/core/teams.gd")
 const WordFilter := preload("res://scripts/core/word_filter.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 27
+const PROTOCOL_VERSION := 28
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
@@ -195,8 +195,15 @@ static func start_block_reason(r: Dictionary) -> String:
 
 
 # ================================================================ 서버
+## 웹소켓 버퍼 (기본 64KB). 경기 화면을 여는 동안 몇 초 멈춘 클라이언트는 그동안 못 읽으므로,
+## 서버가 보내는 상태가 쌓여 버퍼가 넘치면 접속이 끊겼다 → 넉넉하게
+const WS_BUFFER := 1024 * 1024
+
+
 func start_server(port: int) -> Error:
     var peer := WebSocketMultiplayerPeer.new()
+    peer.outbound_buffer_size = WS_BUFFER
+    peer.inbound_buffer_size = WS_BUFFER
     var err := peer.create_server(port)
     if err != OK:
         printerr("[server] 포트 %d 열기 실패 (%s)" % [port, error_string(err)])
@@ -1042,6 +1049,8 @@ func connect_to_server(url: String, display_name: String = "") -> void:
     _reset_client()
     server_name = display_name
     var peer := WebSocketMultiplayerPeer.new()
+    peer.outbound_buffer_size = WS_BUFFER
+    peer.inbound_buffer_size = WS_BUFFER
     var err := peer.create_client(normalize_url(url))
     if err != OK:
         connection_failed.emit("접속을 시작할 수 없습니다 (%s)" % error_string(err))

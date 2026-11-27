@@ -62,7 +62,6 @@ const STYLES := [
 
 const SNAPSHOT_HZ := 20.0
 const SEND_HZ := 30.0
-const LOAD_WAIT_MAX := 10.0
 const HISTORY_SEC := 1.0
 const PUSH_REWIND_MAX := 0.6
 
@@ -120,7 +119,7 @@ func _ready() -> void:
     if is_client():
         Net.game_message.connect(on_server_message)
         Net.disconnected.connect(_on_net_disconnected)
-        send_to_server(["loaded"])
+        send_loaded_when_settled()      # 화면이 부드럽게 그려지기 시작한 뒤에 (PartyGame)
     var layer := CanvasLayer.new()
     add_child(layer)
     var hud: Control = HUD_SCRIPT.new()
@@ -317,6 +316,7 @@ func _spawn_fighters(entries: Array) -> void:
     var my_id := int(online_match.get("my_id", 0))
     var total := entries.size()
     var per_row := mini(total, 8)
+    var spots := mixed_spots(entries.map(func(e): return int(e.get("team", -1))))     # 팀끼리 뭉치지 않게 번갈아
     for i in total:
         var e: Dictionary = entries[i]
         var f := Fighter.new()
@@ -341,8 +341,8 @@ func _spawn_fighters(entries: Array) -> void:
             f.body_color = Color(0.95, 0.95, 0.92) if f.is_human else Fighter.SLOT_COLORS[i % Fighter.SLOT_COLORS.size()]
         f.look = i
         # 출발선 뒤에 한두 줄로 (모든 PC에서 같은 자리)
-        var row := i / per_row
-        var col := i % per_row
+        var row := int(spots[i]) / per_row
+        var col := int(spots[i]) % per_row
         var x := lerpf(-half_w + 1.0, half_w - 1.0, (col + 0.5 + 0.5 * row) / float(per_row)) if per_row > 1 else 0.0
         var z := START_Z + 0.8 + row * 1.6
         f.position = Vector3(x, terrain.get_height(x, z) + 0.2, z)
@@ -742,6 +742,8 @@ func _server_tick(delta: float) -> void:
     for f in fighters:
         if not f.remote:
             _record_history(f, now, f.global_position)
+    if play_start_t < 0.0:
+        return                  # 모두 준비될 때까지는 상태를 보내지 않는다 (화면을 여느라 멈춘 기기에 쌓이지 않게)
     _snap_timer -= delta
     if _snap_timer <= 0.0:
         _snap_timer += 1.0 / SNAPSHOT_HZ

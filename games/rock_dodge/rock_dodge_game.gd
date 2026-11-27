@@ -24,7 +24,6 @@ const Teams := preload("res://scripts/core/teams.gd")
 
 const SNAPSHOT_HZ := 20.0       # 서버 → 클라이언트 상태 전송 빈도
 const SEND_HZ := 30.0           # 클라이언트 → 서버 내 상태 전송 빈도
-const LOAD_WAIT_MAX := 10.0     # 서버: 모두 로딩될 때까지 최대 대기
 const HISTORY_SEC := 1.0        # 서버: 판정 검증용 위치 기록 길이
 const PUSH_REWIND_MAX := 0.6    # 서버: 이보다 오래된 시점의 밀치기는 인정하지 않음
 
@@ -125,7 +124,7 @@ func _ready() -> void:
     if is_client():
         Net.game_message.connect(on_server_message)
         Net.disconnected.connect(_on_net_disconnected)
-        send_to_server(["loaded"])
+        send_loaded_when_settled()      # 화면이 부드럽게 그려지기 시작한 뒤에 (PartyGame)
 
     var layer := CanvasLayer.new()
     add_child(layer)
@@ -327,6 +326,7 @@ func _spawn_fighters() -> void:
     var my_id := int(online_match.get("my_id", 0))
 
     var total := entries.size()
+    var spots := mixed_spots(entries.map(func(e): return int(e.get("team", -1))))     # 팀끼리 뭉치지 않게 번갈아
     for i in total:
         var e: Dictionary = entries[i]
         var f := Fighter.new()
@@ -350,7 +350,7 @@ func _spawn_fighters() -> void:
         else:
             f.body_color = Color(0.95, 0.95, 0.92) if f.is_human else BOT_COLORS[i % BOT_COLORS.size()]
         f.look = i
-        var a := PI * 0.5 + i * TAU / total
+        var a := PI * 0.5 + int(spots[i]) * TAU / total
         var p := Vector3(cos(a), 0, sin(a)) * minf(8.0, arena_half - 2.0)
         f.position = Vector3(p.x, terrain.get_height(p.x, p.z) + 0.2, p.z)
         f.rotation.y = atan2(p.x, p.z)     # 중앙을 바라봄
@@ -784,6 +784,8 @@ func _server_tick(delta: float) -> void:
         if not f.remote:
             _record_history(f, now, f.global_position)
 
+    if play_start_t < 0.0:
+        return                  # 모두 준비될 때까지는 상태를 보내지 않는다 (화면을 여느라 멈춘 기기에 쌓이지 않게)
     _snap_timer -= delta
     if _snap_timer <= 0.0:
         _snap_timer += 1.0 / SNAPSHOT_HZ
