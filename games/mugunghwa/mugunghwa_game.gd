@@ -28,12 +28,12 @@ const FINISH_Z := -23.0
 const HOST_Z := -28.0
 const BACK_Z := -30.5            ## 술래 뒤 벽
 const FRONT_Z := 30.5            ## 출발선 뒤 벽
-const WIDTH_PER_PLAYER := 2.5    ## 운동장 폭 = 인원 × 2.5m (최소 10m, 최대 30m)
+const WIDTH_PER_PLAYER := 2.0    ## 운동장 폭 = 인원 × 2m (최소 8m, 최대 24m). 출발선에 한 줄로 2m 간격
 
 # 규칙
 const TIME_LIMIT := 50.0         ## 경기 제한 시간 (초)
 const FIRST_WAIT := 0.0          ## 시작하자마자 첫 외침 (그 전엔 카운트다운이라 못 움직임)
-const GRACE := 0.2               ## 돌아본 뒤 멈출 여유 (이 시간 뒤의 위치가 기준)
+const GRACE := 0.1               ## 돌아본 뒤 멈출 여유 (이 시간 뒤의 위치가 기준)
 const MOVE_TOL := 0.2            ## 기준 위치에서 이만큼(m) 넘게 움직이면 탈락
 const JUMP_TOL := 0.35           ## 높이 차 (점프)
 const GREEN_MIN := 1.3           ## 외침 길이 (초) — 시간이 갈수록 짧은 외침이 잦아짐 (뜸 들이는 스타일은 더 김)
@@ -109,7 +109,7 @@ func _ready() -> void:
     if is_server():
         countdown_time = 3.0
     var entries := _entries()
-    half_w = clampf(entries.size() * WIDTH_PER_PLAYER * 0.5, 5.0, 15.0)
+    half_w = clampf(entries.size() * WIDTH_PER_PLAYER * 0.5, 4.0, 12.0)
     _build_field()
     _spawn_fighters(entries)
     if is_server():
@@ -315,7 +315,6 @@ func _entries() -> Array:
 func _spawn_fighters(entries: Array) -> void:
     var my_id := int(online_match.get("my_id", 0))
     var total := entries.size()
-    var per_row := mini(total, 8)
     var spots := mixed_spots(entries.map(func(e): return int(e.get("team", -1))))     # 팀끼리 뭉치지 않게 번갈아
     for i in total:
         var e: Dictionary = entries[i]
@@ -340,11 +339,9 @@ func _spawn_fighters(entries: Array) -> void:
         else:
             f.body_color = Color(0.95, 0.95, 0.92) if f.is_human else Fighter.SLOT_COLORS[i % Fighter.SLOT_COLORS.size()]
         f.look = i
-        # 출발선 뒤에 한두 줄로 (모든 PC에서 같은 자리)
-        var row := int(spots[i]) / per_row
-        var col := int(spots[i]) % per_row
-        var x := lerpf(-half_w + 1.0, half_w - 1.0, (col + 0.5 + 0.5 * row) / float(per_row)) if per_row > 1 else 0.0
-        var z := START_Z + 0.8 + row * 1.6
+        # 출발선 뒤에 한 줄로, 폭을 고르게 나눠 (모든 PC에서 같은 자리)
+        var x := -half_w + (int(spots[i]) + 0.5) * (half_w * 2.0 / total)
+        var z := START_Z + 0.8
         f.position = Vector3(x, terrain.get_height(x, z) + 0.2, z)
         f.rotation.y = 0.0                    # 결승선(-z)을 바라봄
         if not f.is_human and not f.remote:

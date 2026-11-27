@@ -53,7 +53,7 @@ func _physics_process(delta: float) -> void:
         _go_at = float(c.t) + randf_range(0.15, 0.6)
         var rs: float = float(c.t) + float(c.green)
         if randf() < slow_chance:
-            _stop_at = rs + randf_range(0.2, 0.5)        # 늦음 → 걸림 (GRACE 0.2 + 멈추는 데 걸리는 시간)
+            _stop_at = rs + randf_range(0.1, 0.4)        # 늦음 → 걸림 (GRACE 0.1 + 멈추는 데 걸리는 시간)
         elif randf() < caution:
             _stop_at = rs - randf_range(0.4, 1.2)        # 겁이 나서 미리 멈춤
         else:
