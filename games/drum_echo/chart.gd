@@ -14,6 +14,18 @@ const SONGS := {
     "disco": {"data": preload("res://audio/drum/songs/disco/song.gd"), "backing": preload("res://audio/drum/songs/disco/backing.ogg")},
     "gugak": {"data": preload("res://audio/drum/songs/gugak/song.gd"), "backing": preload("res://audio/drum/songs/gugak/backing.ogg")},
     "chip": {"data": preload("res://audio/drum/songs/chip/song.gd"), "backing": preload("res://audio/drum/songs/chip/backing.ogg")},
+    "lofi": {"data": preload("res://audio/drum/songs/lofi/song.gd"), "backing": preload("res://audio/drum/songs/lofi/backing.ogg")},
+    "reggae": {"data": preload("res://audio/drum/songs/reggae/song.gd"), "backing": preload("res://audio/drum/songs/reggae/backing.ogg")},
+    "march": {"data": preload("res://audio/drum/songs/march/song.gd"), "backing": preload("res://audio/drum/songs/march/backing.ogg")},
+    "trot": {"data": preload("res://audio/drum/songs/trot/song.gd"), "backing": preload("res://audio/drum/songs/trot/backing.ogg")},
+    "bossa": {"data": preload("res://audio/drum/songs/bossa/song.gd"), "backing": preload("res://audio/drum/songs/bossa/backing.ogg")},
+    "house": {"data": preload("res://audio/drum/songs/house/song.gd"), "backing": preload("res://audio/drum/songs/house/backing.ogg")},
+    "kpop": {"data": preload("res://audio/drum/songs/kpop/song.gd"), "backing": preload("res://audio/drum/songs/kpop/backing.ogg")},
+    "salsa": {"data": preload("res://audio/drum/songs/salsa/song.gd"), "backing": preload("res://audio/drum/songs/salsa/backing.ogg")},
+    "afro": {"data": preload("res://audio/drum/songs/afro/song.gd"), "backing": preload("res://audio/drum/songs/afro/backing.ogg")},
+    "country": {"data": preload("res://audio/drum/songs/country/song.gd"), "backing": preload("res://audio/drum/songs/country/backing.ogg")},
+    "metal": {"data": preload("res://audio/drum/songs/metal/song.gd"), "backing": preload("res://audio/drum/songs/metal/backing.ogg")},
+    "dnb": {"data": preload("res://audio/drum/songs/dnb/song.gd"), "backing": preload("res://audio/drum/songs/dnb/backing.ogg")},
 }
 const DEFAULT_SONG := "funk"
 const TAIL := 1.5                   ## 곡이 끝나고 결과까지
@@ -46,12 +58,27 @@ static func beat_of(id: String = DEFAULT_SONG) -> float:
     return 60.0 / float(song_data(id).bpm)
 
 
-## 곡 고르기: 바로 전 곡(exclude)은 빼고 무작위
-static func pick_song(rng: RandomNumberGenerator, exclude: String = "") -> String:
+## 난이도 1(쉬움) ~ 5(어려움)
+static func song_level(id: String = DEFAULT_SONG) -> int:
+    return int(song_data(id).get("level", 3))
+
+
+const LEVEL_NAMES := ["", "쉬움", "보통", "조금 어려움", "어려움", "매우 어려움"]
+
+
+## "난이도 4/5 어려움" (별 글자는 작게 보면 꽉 찬 별·빈 별 구분이 어려워 글자로)
+static func level_text(id: String = DEFAULT_SONG) -> String:
+    var lv := clampi(song_level(id), 1, 5)
+    return "난이도 %d/5 %s" % [lv, LEVEL_NAMES[lv]]
+
+
+## 곡 고르기: 최근에 나온 곡(exclude)은 빼고 무작위
+static func pick_song(rng: RandomNumberGenerator, exclude: Array = []) -> String:
     var ids: Array = SONGS.keys()
-    if ids.size() > 1:
-        ids.erase(exclude)
-    return String(ids[rng.randi_range(0, ids.size() - 1)])
+    var fresh := ids.filter(func(x): return not exclude.has(x))
+    if fresh.is_empty():
+        fresh = ids
+    return String(fresh[rng.randi_range(0, fresh.size() - 1)])
 
 
 ## 진행표: 곡 노트에서 [{bars, gap, start, notes, beat, bar}] — start = 차례(북 마디 최대 4개) 시작 초

@@ -45,7 +45,7 @@ var teams := 0
 var my_slot := -1
 var t0 := -1.0                      ## 곡 시작 (서버 시계). -1 = 아직
 var song_id := Chart.DEFAULT_SONG  ## 이번 경기 곡 (서버·오프라인이 고르고 "start" 로 알림)
-static var _last_song := ""         ## 바로 전 경기 곡 (연달아 같은 곡이 안 나오게)
+static var _recent_songs: Array = []  ## 최근 경기 곡들 (같은 곡이 금방 또 안 나오게, 최근 6곡)
 var turns: Array = []               ## Chart.build_turns
 var _roll_step := 0.125             ## 피버를 누르고 있는 동안 '드르륵' 간격 (곡의 16분음표)
 var end_time := 0.0
@@ -108,8 +108,10 @@ func _ready() -> void:
     if not is_client():
         var rng := RandomNumberGenerator.new()
         rng.randomize()
-        _set_song(Chart.pick_song(rng, _last_song))
-        _last_song = song_id
+        _set_song(Chart.pick_song(rng, _recent_songs))
+        _recent_songs.append(song_id)
+        if _recent_songs.size() > 6:
+            _recent_songs.pop_front()
     else:
         _set_song(Chart.DEFAULT_SONG)   # 서버가 "start" 로 알려 주면 바꾼다
     _spawn_fighters()
@@ -555,7 +557,7 @@ func press(lane: int) -> void:
         send_to_server(["key", lane, 1])        # 다른 사람 화면에서 내 캐릭터가 치도록 (판정과 별개)
     _strike(my_slot, lane)
     _snd("don" if lane == 0 else "ka", MY_DRUM_DB)
-    _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": ROLL_DB + MY_DRUM_DB, "mine": true})
+    _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": -99.0, "mine": true})   # 피버 '드르륵'은 반주에 들어 있음 → 움직임만
     # 판정은 이 기기에서 한다 (박자에 민감하므로). 서버에는 결과만 보내고, 서버는 그대로 점수에 반영해 다른 사람에게 알린다
     var rt := _response_turn_at(t, lane)
     if rt >= 0 and is_responder(my_slot, rt) and view_final.has(rt):
@@ -636,8 +638,7 @@ func _response_turn_at(t: float, lane: int = -1) -> int:
 func _show_judge(j: String) -> void:
     last_judge = j
     last_judge_time = Time.get_ticks_msec() / 1000.0
-    if j == "miss" or j == "extra":
-        _snd("miss", -8.0)
+    # 판정 소리는 내지 않는다 (연주 중엔 음악과 내 북소리만 — 판정은 글자로)
 
 
 const NO_ANIM := -99                 ## 소리만 내고 인형은 움직이지 않음 (사람의 움직임은 "k" 로 따로 옴)

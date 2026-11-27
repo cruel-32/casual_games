@@ -66,7 +66,7 @@ for bar in B.bars:
 EIGHTHS = [(s * 2, 0.8, 72 if s % 2 == 0 else 62) for s in range(8)]
 BIG = [(0, 6, 98), (6, 2, 84), (8, 6, 98), (14, 2, 84)]
 SONG = {
-    "title": "질주 록", "bpm": 140, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
+    "title": "질주 록", "bpm": 140, "level": 3, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
     "reverb": 0.12,
     "mix": {9: 120},
     "programs": {0: (0, 34), 1: (0, 30), 2: (0, 18), 3: (0, 29), 9: (128, 0)},

@@ -175,8 +175,8 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
     os.makedirs(out_audio_dir, exist_ok=True)
     tmp = os.path.join(out_audio_dir, "_backing.wav")
     R.save_wav(tmp, backing)
-    # 용량: Vorbis q1 (약 80kbps 스테레오)
-    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-c:a", "libvorbis", "-q:a", "1",
+    # 용량: Vorbis q0 (약 64kbps 스테레오) — 곡이 많아서
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-c:a", "libvorbis", "-q:a", str(song.get("quality", 0)),
                     os.path.join(out_audio_dir, "backing.ogg")], check=True)
     os.remove(tmp)
     if preview_path:
@@ -186,13 +186,21 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
         from scipy.io import wavfile
         for name, x in (("don", don), ("ka", ka)):
             wavfile.write(os.path.join(drums_dir, name + ".wav"), R.SR, (np.clip(x[:, 0], -1, 1) * 32767).astype(np.int16))
-    chart = {"title": song["title"], "bpm": bpm, "length": round(n_bars * bar_len, 3), "turns": turns}
+    # 노트 사이가 너무 붙으면 칠 수 없음 (게임의 MIN_NOTE_GAP 0.09초)
+    for tr in turns:
+        ts = sorted(n[0] for n in tr["notes"])
+        for x, y in zip(ts, ts[1:]):
+            assert y - x >= 90, "%s: 노트가 너무 붙어요 (%d ms, 차례 %.2f초)" % (song["title"], y - x, tr["start"])
+        for n in tr["notes"]:
+            if n[2] >= 0:
+                assert n[2] - n[0] >= 300, "%s: 피버가 너무 짧아요 (%d ms)" % (song["title"], n[2] - n[0])
+    chart = {"title": song["title"], "bpm": bpm, "level": int(song.get("level", 3)), "length": round(n_bars * bar_len, 3), "turns": turns}
     # 게임이 읽는 노트: GDScript 상수 파일 (스크립트라서 내보내기에 항상 포함됨, JSON 은 필터에 안 걸리면 빠짐)
     with open(os.path.join(out_audio_dir, "song.gd"), "w") as f:
         f.write("extends RefCounted\n## 자동 생성 (tools/music/song_*.py) — 손으로 고치지 마세요\n")
         f.write("## turns: [{bars, start(차례 시작 초), notes: [[ms(차례 시작부터), 북(0 둥 1 딱), 끝 ms(-1 = 한 번 치기)]]}]\n")
         f.write("const DATA := " + json.dumps(chart, ensure_ascii=False) + "\n")
-    roles = "".join({"intro": "I", "call": "C", "rest": ".", "resp": "R", "outro": "O", "break": "b"}[x["role"]] for x in bars)
+    roles = "".join("D" if x.get("pat") else {"intro": "I", "rest": ".", "outro": "O", "break": "b"}.get(x["role"], "?") for x in bars)
     return chart, roles
 
 
@@ -271,6 +279,9 @@ def generic_arrange(b, bar, ctx, add):
             elif style == "long":
                 add(b, 0, 7.5, c, root + off, hv(vel))
                 add(b, 8, 7.5, c, root + off + L.get("second", 7), hv(vel - 10))
+            elif style == "steps":       # 직접: [(칸, 길이, 근음에서 반음, 세기 차)]
+                for (s, d, iv, dv) in _by_sec(L["steps"], sec):
+                    add(b, s, d, c, root + off + iv, hv(vel + dv))
             elif style == "tumbao":
                 add(b, 6, 2, c, root + off + 7, hv(vel - 8))
                 add(b, 12, 4, c, root + off, hv(vel))
@@ -370,7 +381,60 @@ def main(song: dict, song_id: str, argv):
     root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
     out = os.path.join(root_dir, "audio", "drum", "songs", song_id)
     chart, roles = build(song, out, preview_path=argv[1] if len(argv) > 1 else None)
-    print("%s: bars %d (%.1fs) turns %d notes %d" % (song_id, len(song["bars"]), chart["length"], len(chart["turns"]),
+    print("%s ★%d: bars %d (%.1fs) turns %d notes %d" % (song_id, chart["level"], len(song["bars"]), chart["length"], len(chart["turns"]),
                                                     sum(len(t["notes"]) for t in chart["turns"])))
     print(roles)
     return chart
+
+
+# ================================================================ 북 패턴 글자표기 · 곡 구성
+def P(text: str) -> dict:
+    """북 패턴 한 마디를 16칸 글자로: D = 둥, K = 딱, H = 둥 피버 시작(뒤의 '=' 만큼 이어 누름), . = 쉼
+    예) "D...K...D.D.K..." , "H===K...D...K..." (둥을 4칸 누르고 있다가 뗌)"""
+    t = text.replace(" ", "")
+    assert len(t) == 16, text
+    pat = {"don": [], "ka": [], "hold": {}}
+    i = 0
+    while i < 16:
+        ch = t[i]
+        if ch == "D":
+            pat["don"].append(i)
+        elif ch == "K":
+            pat["ka"].append(i)
+        elif ch == "H":
+            j = i + 1
+            while j < 16 and t[j] == "=":
+                j += 1
+            pat["don"].append(i)
+            pat["hold"][i] = j - i
+            i = j
+            continue
+        i += 1
+    if not pat["hold"]:
+        del pat["hold"]
+    return pat
+
+
+def compose(progressions: dict, form: list):
+    """곡 구성 → 마디 목록
+    form: [(구간, 패턴 이름 목록 | 마디 수, {"lead": [리프...], "lead2": [...]} (선택)), ...]
+      패턴 목록이면 북 마디(role play), 숫자면 밴드만(role = 구간 이름이 intro·break·outro 면 그대로, 아니면 rest)
+      리프는 그 구간 마디들에 차례로 돌려 붙인다 (None = 그 마디 쉼)"""
+    bars = []
+    for item in form:
+        sec, body = item[0], item[1]
+        leads = item[2] if len(item) > 2 else {}
+        prog = progressions[sec]
+        n = len(body) if isinstance(body, (list, tuple)) else int(body)
+        for k in range(n):
+            d = {"sec": sec, "chord": prog[k % len(prog)]}
+            if isinstance(body, (list, tuple)):
+                d["role"] = "play"
+                d["pat"] = body[k]
+            else:
+                d["role"] = sec if sec in ("intro", "break", "outro") else "rest"
+            for key, lst in leads.items():
+                if lst and lst[k % len(lst)]:
+                    d[key] = lst[k % len(lst)]
+            bars.append(d)
+    return bars

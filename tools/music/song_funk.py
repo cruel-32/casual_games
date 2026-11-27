@@ -95,7 +95,7 @@ bars.append({"role": "outro", "chord": "Em9"})
 
 SONG = {
     "title": "펑크 그루브",
-    "bpm": 120,
+    "bpm": 120, "level": 3,
     "chords": CHORDS,
     "patterns": PATTERNS,
     "riffs": RIFFS,

@@ -63,7 +63,7 @@ for bar in B.bars:
         k += 1
 
 SONG = {
-    "title": "반짝 디스코", "bpm": 118, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
+    "title": "반짝 디스코", "bpm": 118, "level": 3, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
     "reverb": 0.18,
     "programs": {0: (0, 38), 1: (0, 48), 2: (0, 28), 3: (0, 61), 9: (128, 0)},
     "layers": [

@@ -218,4 +218,10 @@ func charge_stop() -> void:
 func _on_node_added(n: Node) -> void:
     if n is BaseButton:
         var b := n as BaseButton
-        b.pressed.connect(func(): play("click"))
+        b.pressed.connect(_on_button_pressed.bind(b))
+
+
+## 버튼 딸깍. 메타 no_click 이 있는 버튼은 소리 없음 (리듬 게임 북 버튼 등)
+func _on_button_pressed(b: BaseButton) -> void:
+    if not b.has_meta(&"no_click"):
+        play("click")

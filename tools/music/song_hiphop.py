@@ -57,7 +57,7 @@ for bar in B.bars:
         k += 1
 
 SONG = {
-    "title": "붐뱁 스트리트", "bpm": 92, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
+    "title": "붐뱁 스트리트", "bpm": 92, "level": 2, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
     "reverb": 0.2,
     "mix": {0: 96, 1: 127, 2: 115, 3: 88, 9: 127},
     "programs": {0: (0, 32), 1: (0, 4), 2: (0, 49), 3: (0, 11), 9: (128, 0)},

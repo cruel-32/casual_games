@@ -63,7 +63,7 @@ for bar in B.bars:
         k += 1
 
 SONG = {
-    "title": "신명 장단", "bpm": 104, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
+    "title": "신명 장단", "bpm": 104, "level": 2, "chords": CHORDS, "patterns": PATTERNS, "riffs": RIFFS, "bars": B.bars,
     "reverb": 0.22,
     "mix": {0: 80, 1: 82, 2: 127, 3: 100, 4: 78, 9: 120},
     "programs": {0: (0, 32), 1: (0, 107), 2: (0, 77), 3: (0, 110), 4: (0, 107), 9: (128, 0)},

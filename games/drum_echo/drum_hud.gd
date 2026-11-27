@@ -93,6 +93,7 @@ func _build_drum_buttons() -> void:
         var b := Button.new()
         b.text = ("둥\n[Space]" if lane == 0 else "딱\n[Enter]") if not PartyGame.TOUCH_SCRIPT.should_enable() else ("둥" if lane == 0 else "딱")
         b.focus_mode = Control.FOCUS_NONE
+        b.set_meta(&"no_click", true)       # 누를 때 버튼 딸깍 소리 없이 (음악에 집중)
         b.add_theme_font_size_override("font_size", 30)
         var col := DON if lane == 0 else KA
         for st in ["normal", "hover", "pressed", "focus"]:
@@ -191,7 +192,7 @@ func _update_banner(t: float) -> void:
         return
     if t < 0.0:
         _banner.text = str(ceili(-t))
-        _sub.text = "♪ " + Chart.song_title(game.song_id) + "\n" + ("Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱") + "  ·  피버 = 누르고 있다가 떼기"
+        _sub.text = "♪ " + Chart.song_title(game.song_id) + "  ·  " + Chart.level_text(game.song_id) + "\n" + ("Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱") + "  ·  피버 = 누르고 있다가 떼기"
         return
     var ph: Array = game.phase_at(t)
     var kind: String = ph[1]
@@ -207,7 +208,7 @@ func _update_banner(t: float) -> void:
         _:
             _banner.add_theme_color_override("font_color", UI.CREAM)
             _banner.text = "마무리!" if int(ph[2]) >= game.turns.size() else "반주를 들으며 준비해요"
-            _sub.text = "♪ " + Chart.song_title(game.song_id) if int(ph[2]) == 0 else ""
+            _sub.text = "♪ " + Chart.song_title(game.song_id) + "  ·  " + Chart.level_text(game.song_id) if int(ph[2]) == 0 else ""
 
 
 func _update_scores() -> void:
