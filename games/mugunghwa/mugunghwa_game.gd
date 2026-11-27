@@ -41,7 +41,7 @@ const GREEN_MAX := 3.6
 const RED_MIN := 1.6             ## 빨간불 (다시 외치기까지) — 가끔 아주 길게 뜸 들임 (RED_LONG)
 const RED_MAX := 3.2
 const RED_LONG := Vector2(4.0, 5.5)
-const TURN_TIME := 0.25          ## '다'에서 돌아보기 시작 → 빨간불까지 (화면 연출)
+const TURN_TIME := 0.15          ## '다' 소리가 나는 순간 돌아보기 시작 → 이만큼 뒤 빨간불. '다'부터 판정 기준까지 = TURN_TIME + GRACE = 0.25초
 
 ## 외침 10음절과 높낮이 (반음, C5 기준 — chant.wav)
 const SYLLABLES := ["무", "궁", "화", "꽃", "이", "피", "었", "습", "니", "다"]
@@ -400,12 +400,14 @@ func phase_at(t: float) -> Array:
     return ["red", 1.0, 10]
 
 
-## 음절 시작 시각 (초록불 시작부터). 마지막 '다' 뒤 TURN_TIME 이 지나면 빨간불. 첫 칸은 첫 소리 전 침묵
+## 음절 시작 시각 (초록불 시작부터). 첫 칸은 첫 소리 전 침묵
+##   '다'는 늘 span(= 외침 길이 − TURN_TIME) 끝에 온다 → '다'가 들리는 순간 돌아보기 시작, TURN_TIME 뒤 빨간불
+##   ('다'의 길이 비율은 쓰지 않음 — 예전엔 '다' 소리 길이만큼 더 기다려서 0.1~0.3초 여유가 더 있었다)
 static func syllable_times(c: Dictionary) -> Array:
     var w: Array = STYLES[int(c.style) % STYLES.size()].w
     var total := 0.0
-    for x in w:
-        total += float(x)
+    for k in range(0, w.size() - 1):          # 침묵 + '무'~'니'
+        total += float(w[k])
     var span := maxf(float(c.green) - TURN_TIME, 0.5)
     var out := []
     var acc := float(w[0])
@@ -649,7 +651,7 @@ func _process(_delta: float) -> void:
     var kind: String = ph[0]
     # 술래: 외치는 동안 뒤돌아(-z) 있다가 '다'에서 홱 돌아봄
     var facing_players := kind == "wait" or kind == "turn" or kind == "red" or kind == "over"
-    _host.face(PI if facing_players else 0.0, 14.0 if facing_players else 6.0)
+    _host.face(PI if facing_players else 0.0, 24.0 if facing_players else 6.0)      # 돌아볼 땐 TURN_TIME(0.15초) 안에 거의 다 돎
     _set_lamp(kind == "green")
     # 외침 소리: 음절마다 한 음
     if not cycle.is_empty() and state == State.PLAYING:
