@@ -26,6 +26,18 @@ const SONGS := {
     "country": {"data": preload("res://audio/drum/songs/country/song.gd"), "backing": preload("res://audio/drum/songs/country/backing.ogg")},
     "metal": {"data": preload("res://audio/drum/songs/metal/song.gd"), "backing": preload("res://audio/drum/songs/metal/backing.ogg")},
     "dnb": {"data": preload("res://audio/drum/songs/dnb/song.gd"), "backing": preload("res://audio/drum/songs/dnb/backing.ogg")},
+    "picnic": {"data": preload("res://audio/drum/songs/picnic/song.gd"), "backing": preload("res://audio/drum/songs/picnic/backing.ogg")},
+    "morning": {"data": preload("res://audio/drum/songs/morning/song.gd"), "backing": preload("res://audio/drum/songs/morning/backing.ogg")},
+    "blues": {"data": preload("res://audio/drum/songs/blues/song.gd"), "backing": preload("res://audio/drum/songs/blues/backing.ogg")},
+    "soul": {"data": preload("res://audio/drum/songs/soul/song.gd"), "backing": preload("res://audio/drum/songs/soul/backing.ogg")},
+    "jazz": {"data": preload("res://audio/drum/songs/jazz/song.gd"), "backing": preload("res://audio/drum/songs/jazz/backing.ogg")},
+    "tango": {"data": preload("res://audio/drum/songs/tango/song.gd"), "backing": preload("res://audio/drum/songs/tango/backing.ogg")},
+    "synthwave": {"data": preload("res://audio/drum/songs/synthwave/song.gd"), "backing": preload("res://audio/drum/songs/synthwave/backing.ogg")},
+    "trap": {"data": preload("res://audio/drum/songs/trap/song.gd"), "backing": preload("res://audio/drum/songs/trap/backing.ogg")},
+    "celtic": {"data": preload("res://audio/drum/songs/celtic/song.gd"), "backing": preload("res://audio/drum/songs/celtic/backing.ogg")},
+    "wuxia": {"data": preload("res://audio/drum/songs/wuxia/song.gd"), "backing": preload("res://audio/drum/songs/wuxia/backing.ogg")},
+    "eurobeat": {"data": preload("res://audio/drum/songs/eurobeat/song.gd"), "backing": preload("res://audio/drum/songs/eurobeat/backing.ogg")},
+    "surf": {"data": preload("res://audio/drum/songs/surf/song.gd"), "backing": preload("res://audio/drum/songs/surf/backing.ogg")},
 }
 const DEFAULT_SONG := "funk"
 const TAIL := 1.5                   ## 곡이 끝나고 결과까지
