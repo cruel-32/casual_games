@@ -31,6 +31,7 @@ mkdir -p /tmp/web/assets
 cp "$L/index.html" "$L/links.json" /tmp/web/
 cp /game/fonts/Jua-Regular.ttf /game/ui/portraits/slot_*.png /tmp/web/assets/
 cp /game/icons/icon.png /tmp/web/assets/icon.png
+cp "$L/pager.js" /tmp/web/assets/pager.js        # 소개·약관 페이지 좌우 슬라이드
 # 게임 소개 페이지 (/about/)
 mkdir -p /tmp/web/about
 cp "$L/about/index.html" "$L"/about/*.jpg /tmp/web/about/

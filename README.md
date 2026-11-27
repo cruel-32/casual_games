@@ -67,6 +67,7 @@ const SERVER_LIST := [
 |---|---|
 | `spwsv.cloudish.cloud` | 게임 서버(중계 서버). 게임 접속(wss) + 브라우저로 열면 서버 상태 페이지 |
 | `spw.cloudish.cloud` | 안내 페이지 — PC(Windows)는 PC 버전 다운로드, 모바일은 앱 설치로 유도 (`deploy/web-landing`) |
+| (안내 페이지 공통) | 세로로 긴 페이지는 좌우로 넘기는 슬라이드로 (`deploy/web-landing/pager.js` → `/assets/pager.js`). 소개(`/about/`): `data-slides`(수록 게임·조작법, 게임 안 사진은 `data-slides="dots"`), 좁은 화면에선 카드 줄(`hscroll`)을 옆으로 밀기. 약관·방침·문의: `<main data-pages="all">` → h2 마다 한 쪽 + 탭 + '전체 보기'. `#아이디` 링크는 그 쪽을 열어 줌 (예: `/support/#delete`). 자바스크립트가 없으면 원래대로 모두 펼쳐짐 |
 | `spw.cloudish.cloud/play/` | 웹 체험판 (Godot 웹 빌드). 게임 첫 화면 오른쪽 위에도 PC 버전/앱 안내 카드 |
 주소 칸 입력 규칙: 도메인 → `wss://도메인`, IP/localhost → `ws://IP:포트`(기본 7777), `ws://`·`wss://`는 그대로.
 
