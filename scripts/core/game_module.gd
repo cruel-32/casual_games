@@ -23,6 +23,7 @@ var supports_teams := false     # 팀전(2~4팀) 지원 여부 — 팀 순위로
 var game_script_path := ""      # PartyGame 을 상속한 게임 스크립트 경로
 var thumbnail_path := ""        # 메뉴의 게임 카드 이미지 (16:9 권장, 없으면 색 카드)
 var accent := Color(0.2, 0.55, 0.95)   # 게임 카드 강조 색
+var arena_half := 0.0           # 평평한 경기장 반폭(m). 0 = 월드 기본값 (넓은 경기장이 필요한 게임만)
 
 
 ## 썸네일 텍스처 (없으면 null). 서버(헤드리스)에서도 안전

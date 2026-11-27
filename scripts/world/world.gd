@@ -37,6 +37,12 @@ var _menu_t := 0.0
 
 
 func _ready() -> void:
+	# 게임마다 경기장 크기가 다를 수 있다 (지형의 평평한 구역·풀·나무 배치가 이 값을 씀)
+	if not menu_mode:
+		var cfg: Dictionary = server_config if not server_config.is_empty() else Net.match_config
+		var m = GameRegistry.get_or_default(String(cfg.get("game_id", offline_game_id)))
+		if m != null and float(m.arena_half) > 0.0:
+			arena_half = float(m.arena_half)
 	if not server_config.is_empty():
 		# 서버: 보이는 것 없이 판정에 필요한 지형 충돌만
 		_build_terrain()

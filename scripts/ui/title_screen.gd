@@ -86,7 +86,7 @@ func _ready() -> void:
     var tag_row := UI.hbox(0)
     tag_row.alignment = BoxContainer.ALIGNMENT_CENTER
     col.add_child(tag_row)
-    var tag := UI.badge("돌을 피하고, 북을 치고! 친구들과 한 판씩 파티 게임", UI.INK, UI.CREAM)
+    var tag := UI.badge("피하고, 치고, 멈추고! 친구들과 한 판씩 파티 게임", UI.INK, UI.CREAM)
     (tag.get_child(0) as Label).add_theme_font_size_override("font_size", 19)
     tag_row.add_child(tag)
 
@@ -258,6 +258,8 @@ func _build_help() -> void:
         ["둥", "Space 또는 F  ·  모바일: 화면 왼쪽 아래 큰 버튼 (주황 노트)"],
         ["딱", "Enter 또는 J  ·  모바일: 화면 오른쪽 아래 큰 버튼 (보라 노트)"],
         ["피버", "노란 노트는 누르고 있다가 끝 박자에 떼요"],
+        ["무궁화 꽃이 피었습니다", ""],
+        ["달리기", "돌피하기와 같은 조작. 술래가 외치는 동안(초록불)만 달리고, 돌아보면(빨간불) 손을 떼요"],
     ]
     for r in rows:
         if String(r[1]) == "":          # 게임 이름 (구역 제목)

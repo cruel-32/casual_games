@@ -16,6 +16,7 @@ const MASK_STYLES := ["smile", "dots", "slits", "moon"]
 @export var variant := 0
 @export var body_scale := 1.25          ## 아이들(캐릭터)보다 키가 큼
 @export var turn_body := true           ## 몸도 천천히 바라보는 쪽으로
+@export var turn_speed := 1.5           ## 몸 돌리는 빠르기 (face() 로 바꿀 수 있음)
 
 var visual: Node3D
 var head: Node3D
@@ -190,6 +191,13 @@ func clear_look() -> void:
     _target = Vector3.INF
 
 
+## 몸을 yaw 쪽으로 (speed: 초당 빠르기 배수 — 술래처럼 홱 돌아볼 때 크게)
+func face(yaw: float, speed: float = 1.5) -> void:
+    _target = Vector3.INF
+    _base_yaw = yaw
+    turn_speed = speed
+
+
 func gesture(kind: String) -> void:
     _gesture = kind
     _g_time = 0.0
@@ -210,7 +218,7 @@ func _process(delta: float) -> void:
         if Vector2(d.x, d.z).length() > 0.3:
             want_yaw = atan2(-d.x, -d.z)
     if turn_body:
-        rotation.y = lerp_angle(rotation.y, want_yaw, minf(delta * 1.5, 1.0))
+        rotation.y = lerp_angle(rotation.y, want_yaw, minf(delta * turn_speed, 1.0))
     var rel := clampf(wrapf(want_yaw - rotation.y, -PI, PI), -1.05, 1.05)
     head.rotation.y = lerp_angle(head.rotation.y, rel, minf(delta * 6.0, 1.0))
     var tilt := sin(_phase * 0.9) * 0.05
