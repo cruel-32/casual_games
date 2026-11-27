@@ -12,7 +12,7 @@ extends PartyGame
 ## 메시지 (서버 → 모두)
 ##   ["start", t0, teams]                 곡 시작 시각(서버 시계)
 ##   ["turn", i, -1, notes]               i번째 차례 진행자 리듬 (쉼 전에 미리)
-##   ["j", fighter_slot, judge, lane]     따라 치기 판정 (머리 위 문구 + 그 사람 북소리). lane +2 = 피버 뗌
+##   ["j", fighter_slot, judge, lane]     따라 치기 판정 (머리 위 문구만, 소리 없음). lane +2 = 피버 뗌
 ##   ["k", slot, lane, 1|0]               누름·뗌 — 그 사람 캐릭터가 바로 북을 친다 (판정과 상관없이 누르면 움직임)
 ##   ["tres", i, {slot: [점수, p, g, b, m]}]  차례 결과 (봇·놓친 노트 포함)
 ##   ["score", {slot: 총점}]
@@ -36,7 +36,6 @@ const DON_COLOR := Color(0.96, 0.56, 0.16)
 const KA_COLOR := Color(0.60, 0.36, 0.86)
 const FEVER_COLOR := Color(1.0, 0.82, 0.2)
 const MUSIC_DB := 2.0
-const OTHERS_DB := -5.0             ## 남이 치는 북소리 (내 소리보다 조금 작게)
 const ROLL_STEP := 0.125            ## 피버를 누르고 있는 동안 '드르륵' 간격 (16분음표)
 const ROLL_DB := -9.0
 
@@ -74,6 +73,7 @@ var _drums := {}                    ## slot -> [left mesh, right mesh]
 var _music: AudioStreamPlayer
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _bot_hits: Array = []           ## [[song_time, fighter slot, lane, db, played, roll_until]] 봇·진행자·남의 공격 예약
+var _popups: Array = []             ## [[song_time, fighter slot, judge]] 봇 판정 글자 (노트 시각에 머리 위)
 var _rolls: Array = []              ## [{who, lane, until, next, db}] 피버 '드르륵' (until -1 = 키를 떼면 끝)
 var _attack_mark: Label3D
 var _key_down := [false, false]
@@ -517,17 +517,6 @@ func is_responder(slot: int, turn: int) -> bool:
     return at < 0 or team_of(slot) != at
 
 
-## 따라 치는 소리를 들려줄 팀: 내가 따라 치면 우리 팀만, 아니면(우리 팀 공격) 따라 치는 팀 중 첫 팀만 (여러 팀이 겹치면 시끄러움)
-##   개인전에서 내가 따라 치면 남의 소리는 안 들림 (-2)
-func audible_team(turn: int) -> int:
-    if my_slot >= 0 and is_responder(my_slot, turn):
-        return team_of(my_slot) if teams >= 2 else -2
-    for f in fighters:
-        if is_responder(f.slot, turn):
-            return f.team
-    return -2
-
-
 # ================================================================ 입력
 ## PC·웹: Space = 둥, Enter = 딱 (F·J 도 됨). 버튼보다 먼저 받아서 Space·Enter 가 화면 버튼을 누르지 않게 한다
 func _input(event: InputEvent) -> void:
@@ -703,6 +692,17 @@ func _process(delta: float) -> void:
         else:
             keep.append(hit)
     _bot_hits = keep
+    if not _popups.is_empty():
+        var keep_p: Array = []
+        for pp in _popups:
+            if ht >= float(pp[0]):
+                var s := int(pp[1])
+                if s >= 0 and s < fighters.size():
+                    var j := String(pp[2])
+                    popup_text(fighters[s].global_position + Vector3(0, 2.2, 0), Chart.JUDGE_NAMES.get(j, j), _judge_color(j))
+            else:
+                keep_p.append(pp)
+        _popups = keep_p
     _update_rolls(mt, ht)
     _check_hold_miss(ht)
     # 진행자 머리 위: 선창 중 "선창!"
@@ -946,12 +946,7 @@ func on_server_message(msg: Array) -> void:
                 var j := String(msg[2])
                 if j != "extra":
                     popup_text(fighters[s].global_position + Vector3(0, 2.2, 0), Chart.JUDGE_NAMES.get(j, j), _judge_color(j))
-                if msg.size() > 3 and int(msg[3]) < 2:
-                    var lane := int(msg[3]) & 1
-                    # 따라 치는 소리: 들려줄 팀(우리 팀)만
-                    var rt := _response_turn_at(heard_time())
-                    if rt >= 0 and fighters[s].team == audible_team(rt):
-                        _snd("don" if lane == 0 else "ka", OTHERS_DB)
+                # 남의 북소리는 내지 않음 — 들리는 북은 진행자(반주 안)와 내 북뿐 (여럿이 치면 헷갈림)
         "k":
             # 다른 사람이 북을 누름·뗌 → 그 캐릭터가 바로 친다 (판정과 상관없이 누르면 움직임)
             var s := int(msg[1])
@@ -1000,24 +995,29 @@ func _set_notes(i: int, notes: Array, who: int, attack: bool) -> void:
     _schedule_responders(i, list)
 
 
-## 따라 치는 봇 인형 움직임·소리 예약 (사람은 자기 PC에서 치고, 그 소리는 "j" 로 들림)
-## 소리는 들려줄 팀(audible_team)의 봇 한 명만 (여럿이 겹치면 너무 커짐)
+## 따라 치는 봇 인형 움직임 예약 (소리 없음 — 들리는 북은 진행자와 내 북뿐. 사람의 움직임은 "k" 로 옴)
 func _schedule_responders(i: int, notes: Array) -> void:
-    var hear := audible_team(i)
-    var voiced := false
     for f in fighters:
         if f.slot == my_slot or not is_responder(f.slot, i):
             continue
         if f.peer_id != 0 and is_online_match():
             continue
-        var loud := not voiced and f.team == hear
-        if loud:
-            voiced = true
+        # 판정: 서버가 점수를 매길 때와 같은 씨앗 → 머리 위 판정과 점수가 일치
+        var js := Chart.bot_judgements(Chart.units(notes), BOT_SKILL, i * 1000 + f.slot)
+        var k := 0
         for n in notes:
             var jit := randf_range(-0.03, 0.04)
             var at := Chart.note_time(turns[i], n, true) + jit
-            var until := Chart.note_end_time(turns[i], n, true) + jit if Chart.is_fever(n) else -1.0
-            _bot_hits.append([at, f.slot, int(n[1]), OTHERS_DB if loud else -99.0, false, until])
+            var fever := Chart.is_fever(n)
+            var until := Chart.note_end_time(turns[i], n, true) + jit if fever else -1.0
+            var j: String = js[k] if k < js.size() else "good"
+            k += 1
+            _popups.append([at, f.slot, j])
+            if j != "miss":                     # 놓친 노트는 치지 않음
+                _bot_hits.append([at, f.slot, int(n[1]), -99.0, false, until])
+            if fever:
+                _popups.append([until, f.slot, js[k] if k < js.size() else "good"])
+                k += 1
 
 
 static func _judge_color(j: String) -> Color:
