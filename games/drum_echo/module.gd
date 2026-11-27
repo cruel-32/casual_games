@@ -5,7 +5,7 @@ extends "res://scripts/core/game_module.gd"
 func _init() -> void:
     id = "drum_echo"
     display_name = "뒷북의 달인"
-    description = "가면 쓴 진행자가 북으로 선창하면 다 같이 똑같이 따라 치기! 둥·딱 두 북으로 박자 대결"
+    description = "가면 쓴 진행자와 함께 곡에 맞춰 둥·딱! 노트가 동그라미에 닿을 때 치는 리듬 대결 (18곡, 난이도 1~5)"
     min_players = 2
     max_players = 12
     supports_bots = true

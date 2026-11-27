@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Small Party World — 게임 소개</title>
-<meta name="description" content="친구들과 최대 12명이 함께 즐기는 캐주얼 파티 게임. 떨어지는 돌을 피하고, 친구를 밀쳐내고, 끝까지 살아남으세요!">
+<meta name="description" content="친구들과 최대 12명이 함께 즐기는 캐주얼 파티 게임 모음. 떨어지는 돌을 피해 살아남는 3D 돌피하기, 곡에 맞춰 북을 치는 리듬 게임 뒷북의 달인!">
 <meta property="og:title" content="Small Party World">
-<meta property="og:description" content="떨어지는 돌을 피하고, 밀쳐내고, 살아남자! 친구들과 즐기는 캐주얼 파티 게임">
+<meta property="og:description" content="돌을 피하고, 북을 치고! 친구들과 한 판씩 즐기는 캐주얼 파티 게임 모음">
 <meta property="og:image" content="/about/shot_1.jpg">
 <meta name="theme-color" content="#fff7e8">
 <link rel="icon" href="/assets/icon.png">
@@ -100,6 +100,15 @@ section.dlsec { background: var(--ink); }
 .step { position: relative; padding-top: 38px; }
 .step::before { counter-increment: s; content: counter(s); position: absolute; top: -20px; left: 20px; width: 46px; height: 46px; border-radius: 50%; background: var(--teal); color: #fff; border: 3px solid var(--ink); display: grid; place-items: center; font-family: "Jua", sans-serif; font-size: 24px; }
 .step h3 { margin: 0 0 6px; font-size: 22px; }
+.game { display: grid; grid-template-columns: 1.15fr 1fr; gap: 28px; align-items: center; }
+.game img.cover { width: 100%; display: block; border: 3px solid var(--ink); border-radius: 22px; box-shadow: 8px 8px 0 rgba(29,53,87,.22); }
+.game h3 { margin: 6px 0 10px; font-size: 32px; }
+.game p { margin: 0 0 12px; color: var(--muted); line-height: 1.65; }
+.game .tag { display: inline-block; border-radius: 999px; padding: 3px 12px 4px; font-size: 14px; color: #fff; margin: 0 6px 6px 0; }
+@media (max-width: 860px) { .game { grid-template-columns: 1fr; } }
+.songs { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.songs span { background: #fffdf6; border: 2px solid var(--ink); border-radius: 999px; padding: 5px 14px 6px; font-size: 15px; }
+.songs span b { color: var(--teal); font-weight: 400; margin-left: 6px; }
 .items { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
 @media (max-width: 860px) { .items { grid-template-columns: repeat(2, 1fr); } }
 .item { text-align: center; padding: 18px 12px; }
@@ -129,8 +138,8 @@ footer a { color: var(--cream); }
 <nav class="nav">
   <div class="inner">
     <a class="brand disp" href="/about/"><b style="color:var(--red)">Small</b> <b style="color:var(--blue)">Party</b> <b class="w">World</b></a>
+    <a class="link" href="#games">수록 게임</a>
     <a class="link" href="#play">게임 방법</a>
-    <a class="link" href="#items">아이템</a>
     <a class="link" href="#controls">조작법</a>
     <a class="link" href="#faq">FAQ</a>
     <a class="link" href="/news/">소식</a>
@@ -145,7 +154,7 @@ footer a { color: var(--cream); }
       <img src="/assets/slot_3.png" alt=""><img src="/assets/slot_6.png" alt=""><img src="/assets/slot_5.png" alt=""><img src="/assets/slot_7.png" alt="">
     </div>
     <h1 class="logo disp"><span class="l1"><b>Small</b> <b>Party</b></span><span class="l2">World</span></h1>
-    <p style="margin:18px 0 22px"><span class="ribbon disp">하늘에서 돌이 쏟아진다! 피하고, 밀쳐내고, 끝까지 살아남자!</span></p>
+    <p style="margin:18px 0 22px"><span class="ribbon disp">돌을 피하고, 북을 치고! 친구들과 한 판씩 즐기는 파티 게임</span></p>
     <div class="actions">
       <a class="btn" id="hero-dl" href="#download" style="font-size:26px;min-width:230px">무료 다운로드</a>
       <a class="btn blue" id="hero-play" href="/play/" target="_blank" rel="noopener" style="font-size:26px;min-width:230px">웹에서 해보기</a>
@@ -155,26 +164,69 @@ footer a { color: var(--cream); }
 </header>
 <div class="checker" aria-hidden="true"></div>
 
-<section>
+<section id="games">
   <div class="inner">
     <h2 class="sec-title disp">이런 게임이에요</h2>
-    <p class="sec-sub">Small Party World는 친구들과 모여 한 판씩 즐기는 캐주얼 파티 게임 모음이에요.<br>첫 번째 게임 <b>3D 돌피하기</b>로 시작합니다.</p>
-    <div class="grid g3">
-      <div class="card feat"><div class="chip" style="background:var(--red)">1</div><h3 class="disp">피하고</h3><p>떨어지는 돌의 그림자를 보고 재빨리 피하세요. 시간이 갈수록 돌은 더 크고, 빠르고, 많아져요.</p></div>
-      <div class="card feat"><div class="chip" style="background:var(--blue)">2</div><h3 class="disp">밀쳐내고</h3><p>친구를 밀쳐 돌 밑으로! 꾹 눌러 차징하면 더 멀리 돌진해요. 점프 중에도 밀 수 있어요.</p></div>
-      <div class="card feat"><div class="chip" style="background:var(--yellow);color:var(--ink)">3</div><h3 class="disp">살아남자</h3><p>마지막까지 버틴 한 명이 승리! 빙글빙글 도는 기둥도 점프로 넘으세요.</p></div>
+    <p class="sec-sub">Small Party World는 친구들과 모여 한 판씩 즐기는 캐주얼 파티 게임 모음이에요.<br>지금은 게임 <b>2개</b>를 즐길 수 있어요. 방장이 대기룸에서 라운드마다 게임을 골라요.</p>
+    <div class="grid g2">
+      <a class="card" href="#rock" style="text-decoration:none"><img src="/about/shot_1.jpg" alt="3D 돌피하기" style="width:100%;border-radius:14px;border:3px solid var(--ink);display:block" loading="lazy"><h3 class="disp" style="margin:14px 0 6px;font-size:28px">3D 돌피하기</h3><p class="muted" style="margin:0;line-height:1.6">하늘에서 쏟아지는 돌을 피하고, 친구를 밀쳐내고, 마지막까지 살아남기!</p></a>
+      <a class="card" href="#drum" style="text-decoration:none"><img src="/about/drum_1.jpg" alt="뒷북의 달인" style="width:100%;border-radius:14px;border:3px solid var(--ink);display:block" loading="lazy"><h3 class="disp" style="margin:14px 0 6px;font-size:28px">뒷북의 달인</h3><p class="muted" style="margin:0;line-height:1.6">가면 쓴 진행자와 함께 곡에 맞춰 둥·딱! 박자를 누가 더 잘 맞추나 겨루는 리듬 게임</p></a>
     </div>
   </div>
 </section>
 
-<section class="tint">
+<section class="tint" id="rock">
   <div class="inner">
-    <h2 class="sec-title disp">게임 화면</h2>
-    <p class="sec-sub">넓은 초원 아레나에서 펼쳐지는 대소동</p>
-    <div class="shots">
+    <h2 class="sec-title disp">3D 돌피하기</h2>
+    <p class="sec-sub">넓은 초원 아레나에서 펼쳐지는 대소동 · 2~12명 · 개인전·팀전</p>
+    <div class="grid g3">
+      <div class="card feat"><div class="chip" style="background:var(--red)">1</div><h3 class="disp">피하고</h3><p>떨어지는 돌의 그림자를 보고 재빨리 피하세요. 시간이 갈수록 돌은 더 크고, 빠르고, 많아져요.</p></div>
+      <div class="card feat"><div class="chip" style="background:var(--blue)">2</div><h3 class="disp">밀쳐내고</h3><p>친구를 밀쳐 돌 밑으로! 꾹 눌러 차징하면 더 멀리 돌진해요. 점프 중에도 밀 수 있어요.</p></div>
+      <div class="card feat"><div class="chip" style="background:var(--yellow);color:var(--ink)">3</div><h3 class="disp">살아남자</h3><p>마지막까지 버틴 한 명(팀전은 마지막까지 남은 팀)이 승리! 빙글빙글 도는 기둥도 점프로 넘으세요.</p></div>
+    </div>
+    <div class="shots" style="margin-top:34px">
       <figure><img src="/about/shot_1.jpg" alt="아레나 전경" loading="lazy"><figcaption class="disp">아레나 전경</figcaption></figure>
       <figure><img src="/about/shot_2.jpg" alt="회전 기둥과 아이들" loading="lazy"><figcaption class="disp">회전 기둥 조심!</figcaption></figure>
       <figure><img src="/about/shot_3.jpg" alt="쏟아지는 낙석" loading="lazy"><figcaption class="disp">쏟아지는 낙석</figcaption></figure>
+    </div>
+  </div>
+</section>
+
+<section id="drum">
+  <div class="inner">
+    <h2 class="sec-title disp">뒷북의 달인</h2>
+    <p class="sec-sub">무대 위 가면 쓴 진행자와 함께 북을 쳐요 · 2~12명 · 개인전·팀전</p>
+    <div class="grid g3">
+      <div class="card feat"><div class="chip" style="background:#f39222">둥</div><h3 class="disp">노트가 다가오면</h3><p>화면 아래 길을 따라 주황(둥)·보라(딱) 노트가 다가와요. 왼쪽 동그라미에 닿는 순간 같은 북을 치세요.</p></div>
+      <div class="card feat"><div class="chip" style="background:#9a5bdb">딱</div><h3 class="disp">진행자와 함께</h3><p>진행자는 곡에 맞춰 북을 쳐요. 노트는 진행자가 치는 바로 그 자리! 노란 피버는 누르고 있다가 끝에서 떼요.</p></div>
+      <div class="card feat"><div class="chip" style="background:var(--yellow);color:var(--ink)">★</div><h3 class="disp">점수로 승부</h3><p>PERFECT·GOOD·BAD·MISS로 점수가 쌓여요. 곡이 끝나면 점수(팀전은 팀원 합계)로 순위를 매겨요.</p></div>
+    </div>
+    <div class="shots" style="margin-top:34px">
+      <figure><img src="/about/drum_1.jpg" alt="북 치는 무대" loading="lazy"><figcaption class="disp">다 같이 둥·딱!</figcaption></figure>
+      <figure><img src="/about/drum_2.jpg" alt="노트 길과 판정" loading="lazy"><figcaption class="disp">노트가 닿을 때 쳐요</figcaption></figure>
+      <figure><img src="/about/drum_3.jpg" alt="가면 쓴 진행자" loading="lazy"><figcaption class="disp">가면 쓴 진행자</figcaption></figure>
+    </div>
+    <h3 class="disp" style="text-align:center;font-size:28px;margin:46px 0 8px">수록곡 18곡</h3>
+    <p class="sec-sub" style="margin-bottom:20px">경기마다 곡이 바뀌어요. 난이도 1(쉬움)부터 5(매우 어려움)까지, 레게부터 메탈까지!</p>
+    <div class="songs">
+      <span>한낮의 레게<b>난이도 1</b></span>
+      <span>느긋한 오후<b>난이도 1</b></span>
+      <span>꼬마 행진곡<b>난이도 2</b></span>
+      <span>붐뱁 스트리트<b>난이도 2</b></span>
+      <span>신명 장단<b>난이도 2</b></span>
+      <span>신바람 트로트<b>난이도 2</b></span>
+      <span>반짝 디스코<b>난이도 3</b></span>
+      <span>펑크 그루브<b>난이도 3</b></span>
+      <span>네온 하우스<b>난이도 3</b></span>
+      <span>해변 보사노바<b>난이도 3</b></span>
+      <span>질주 록<b>난이도 3</b></span>
+      <span>살사 열정<b>난이도 4</b></span>
+      <span>아프로 축제<b>난이도 4</b></span>
+      <span>반짝 K팝<b>난이도 4</b></span>
+      <span>픽셀 모험<b>난이도 4</b></span>
+      <span>카우보이 질주<b>난이도 4</b></span>
+      <span>번개 드럼앤베이스<b>난이도 5</b></span>
+      <span>강철 질주<b>난이도 5</b></span>
     </div>
   </div>
 </section>
@@ -187,14 +239,14 @@ footer a { color: var(--cream); }
       <div class="card step"><h3 class="disp">서버 접속</h3><p>닉네임을 입력하고 출발! 회원가입은 필요 없어요.</p></div>
       <div class="card step"><h3 class="disp">방 만들기·참가</h3><p>로비에서 방을 만들거나 친구 방에 들어가세요. 한 방에 최대 12명.</p></div>
       <div class="card step"><h3 class="disp">레디!</h3><p>모두 준비되면 방장이 시작해요. 빈자리는 봇으로 채울 수 있어요.</p></div>
-      <div class="card step"><h3 class="disp">최후의 1인</h3><p>돌에 맞으면 탈락! 헬멧이 있으면 한 번은 버틸 수 있어요.</p></div>
+      <div class="card step"><h3 class="disp">라운드 승점</h3><p>게임마다 1·2·3등이 승점을 받아요. 여러 라운드를 이어서 최종 우승을 가려요.</p></div>
     </div>
   </div>
 </section>
 
 <section class="tint" id="items">
   <div class="inner">
-    <h2 class="sec-title disp">아이템</h2>
+    <h2 class="sec-title disp">아이템 (3D 돌피하기)</h2>
     <p class="sec-sub">아레나에 떨어지는 아이템을 먼저 주워서 유리하게!</p>
     <div class="items">
       <div class="card item"><div class="dot" style="background:#ffd133"></div><h4 class="disp">헬멧</h4><p>돌에 한 번 맞아도 버텨요. 최대 2개</p></div>
@@ -211,6 +263,7 @@ footer a { color: var(--cream); }
   <div class="inner">
     <h2 class="sec-title disp">조작법</h2>
     <p class="sec-sub">PC는 키보드·마우스, 모바일은 화면 터치</p>
+    <h3 class="disp" style="font-size:26px;margin:0 0 14px">3D 돌피하기</h3>
     <div class="grid g2">
       <div class="card">
         <h3 class="disp" style="margin:0 0 10px;font-size:26px">PC</h3>
@@ -229,6 +282,25 @@ footer a { color: var(--cream); }
           <tr><th class="disp">시점</th><td>화면 오른쪽 드래그 (버튼을 누른 채 끌어도 돼요)</td></tr>
           <tr><th class="disp">점프</th><td>점프 버튼</td></tr>
           <tr><th class="disp">밀치기</th><td>밀치기 버튼 — 길게 누르면 차징 돌진</td></tr>
+        </table>
+      </div>
+    </div>
+    <h3 class="disp" style="font-size:26px;margin:36px 0 14px">뒷북의 달인</h3>
+    <div class="grid g2">
+      <div class="card">
+        <h3 class="disp" style="margin:0 0 10px;font-size:26px">PC</h3>
+        <table class="keys">
+          <tr><th class="disp">둥 (주황 북)</th><td><kbd>Space</kbd> 또는 <kbd>F</kbd></td></tr>
+          <tr><th class="disp">딱 (보라 북)</th><td><kbd>Enter</kbd> 또는 <kbd>J</kbd></td></tr>
+          <tr><th class="disp">피버 (노란 노트)</th><td>누르고 있다가 끝 박자에 떼기</td></tr>
+        </table>
+      </div>
+      <div class="card">
+        <h3 class="disp" style="margin:0 0 10px;font-size:26px">모바일</h3>
+        <table class="keys">
+          <tr><th class="disp">둥 (주황 북)</th><td>화면 왼쪽 아래 큰 버튼</td></tr>
+          <tr><th class="disp">딱 (보라 북)</th><td>화면 오른쪽 아래 큰 버튼</td></tr>
+          <tr><th class="disp">피버 (노란 노트)</th><td>버튼을 누르고 있다가 끝 박자에 떼기</td></tr>
         </table>
       </div>
     </div>
@@ -273,6 +345,8 @@ footer a { color: var(--cream); }
     <h2 class="sec-title disp">자주 묻는 질문</h2>
     <p class="sec-sub">궁금한 점이 있나요?</p>
     <details><summary class="disp">무료인가요?</summary><p>네, 무료로 즐길 수 있어요.</p></details>
+    <details><summary class="disp">어떤 게임이 있나요?</summary><p>지금은 <b>3D 돌피하기</b>와 리듬 게임 <b>뒷북의 달인</b> 2개예요. 방장이 대기룸에서 라운드마다 게임을 고르거나 "랜덤"으로 맡길 수 있어요. 게임은 계속 늘어날 예정이에요.</p></details>
+    <details><summary class="disp">뒷북의 달인이 너무 어려워요.</summary><p>곡마다 난이도가 1~5로 달라요. 카운트다운 때 곡 제목과 난이도가 나와요. 쉬운 곡은 노트가 드문드문 나오니 "혼자 연습"으로 박자에 익숙해진 뒤 친구와 겨뤄 보세요.</p></details>
     <details><summary class="disp">혼자서도 할 수 있나요?</summary><p>방을 만들고 빈자리를 봇으로 채우면 혼자서도 바로 시작할 수 있어요. 첫 화면의 "혼자 연습"으로 서버 없이 연습할 수도 있어요.</p></details>
     <details id="faq-apk"><summary class="disp">Android APK는 어떻게 설치하나요?</summary><p>Google Play 출시 전이라 테스트판 APK를 직접 받아 설치할 수 있어요. <b>휴대폰 브라우저</b>로 받은 뒤 <b>내 파일 → 다운로드</b>에서 파일을 눌러 설치하세요. "출처를 알 수 없는 앱" 허용을 물으면 그 브라우저(또는 내 파일 앱)에 허용하고, Play 프로텍트 경고가 뜨면 "무시하고 설치"를 누르세요. PC에서 받은 APK는 PC에서 실행되지 않아요. 나중에 Google Play 버전을 설치하려면 테스트판을 먼저 지워 주세요.</p></details>
     <details><summary class="disp">Mac에서도 되나요?</summary><p>지금은 PC 버전이 Windows 전용이에요. Mac에서는 웹 체험판으로 즐겨 주세요.</p></details>

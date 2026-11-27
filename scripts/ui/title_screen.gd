@@ -86,7 +86,7 @@ func _ready() -> void:
     var tag_row := UI.hbox(0)
     tag_row.alignment = BoxContainer.ALIGNMENT_CENTER
     col.add_child(tag_row)
-    var tag := UI.badge("떨어지는 돌을 피하고, 밀쳐내고, 끝까지 살아남자!", UI.INK, UI.CREAM)
+    var tag := UI.badge("돌을 피하고, 북을 치고! 친구들과 한 판씩 파티 게임", UI.INK, UI.CREAM)
     (tag.get_child(0) as Label).add_theme_font_size_override("font_size", 19)
     tag_row.add_child(tag)
 
@@ -249,12 +249,22 @@ func _build_help() -> void:
     var v := UI.centered_panel(_help, 560)
     v.add_child(UI.heading("조작법", 30))
     var rows := [
+        ["3D 돌피하기", ""],
         ["이동", "WASD  ·  모바일: 왼쪽 화면 스틱. 캐릭터는 움직이는 방향을 바라봐요"],
         ["카메라", "마우스  ·  모바일: 오른쪽 화면 드래그 (버튼을 누른 채 끌어도 됨)"],
         ["점프", "Space  ·  모바일: 점프 버튼"],
         ["밀치기", "좌클릭/E 짧게 = 제자리 밀기, 길게 = 차징 돌진. 바라보는 방향으로 나가요"],
+        ["뒷북의 달인", ""],
+        ["둥", "Space 또는 F  ·  모바일: 화면 왼쪽 아래 큰 버튼 (주황 노트)"],
+        ["딱", "Enter 또는 J  ·  모바일: 화면 오른쪽 아래 큰 버튼 (보라 노트)"],
+        ["피버", "노란 노트는 누르고 있다가 끝 박자에 떼요"],
     ]
     for r in rows:
+        if String(r[1]) == "":          # 게임 이름 (구역 제목)
+            var sec := UI.label(r[0], 20, UI.INK)
+            sec.add_theme_font_override("font", UI.DISPLAY_FONT)
+            v.add_child(sec)
+            continue
         var h := UI.hbox(14)
         var k := UI.badge(r[0], UI.BLUE)
         k.custom_minimum_size.x = 84
