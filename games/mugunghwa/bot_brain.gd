@@ -1,5 +1,6 @@
 extends Node
-## 봇 (무궁화 꽃이 피었습니다): 외치는 동안 결승선 쪽으로 달리고, 술래가 돌아볼 때 멈춘다
+## 봇 (무궁화 꽃이 피었습니다): 외치는 동안 결승선 쪽으로 걷듯 달리고, 술래가 돌아볼 때 멈춘다
+##   사람보다 느리게 (speed 0.5~0.75), 출발도 굼뜨고, 겁 많은 봇은 외침이 끝나기 전에 미리 멈춘다
 ##   멈추는 반응은 사람처럼 들쭉날쭉 — 가끔 늦어서 걸린다 (slow_chance)
 ##   공격적인 봇은 외침이 끝나 갈 때 바로 옆 상대를 툭 밀어 빨간불까지 미끄러지게 한다
 ## Fighter 의 intent_* 만 채운다 (서버·혼자 연습에서만 돈다)
@@ -7,7 +8,8 @@ extends Node
 var f: Fighter
 var game: Node
 
-var speed := 1.0               ## 달리는 세기 (0~1)
+var speed := 0.65              ## 달리는 세기 (0~1, 사람은 1)
+var caution := 0.3             ## 외침이 끝나기 전에 미리 멈추는 정도 (0~1)
 var slow_chance := 0.1         ## 빨간불에 늦게 멈출 확률 (한 번마다)
 var aggression := 0.3
 var _lane_x := 0.0
@@ -20,10 +22,12 @@ var _push_cool := 0.0
 
 func _ready() -> void:
     f = get_parent() as Fighter
-    speed = randf_range(0.82, 1.0)
-    slow_chance = randf_range(0.04, 0.16)
+    speed = randf_range(0.5, 0.75)
+    caution = randf_range(0.0, 0.6)
+    slow_chance = randf_range(0.04, 0.14)
     aggression = randf_range(0.0, 0.7)
-    _lane_x = clampf(f.global_position.x + randf_range(-1.5, 1.5), -9.0, 9.0)
+    var lim: float = float(game.half_w) - 1.0
+    _lane_x = clampf(f.global_position.x + randf_range(-1.5, 1.5), -lim, lim)
 
 
 func _physics_process(delta: float) -> void:
@@ -46,10 +50,12 @@ func _physics_process(delta: float) -> void:
     if int(c.idx) != _cycle:
         # 새 외침: 출발 반응 + 이번에 멈출 시각을 정한다
         _cycle = int(c.idx)
-        _go_at = float(c.t) + randf_range(0.08, 0.4)
+        _go_at = float(c.t) + randf_range(0.15, 0.6)
         var rs: float = float(c.t) + float(c.green)
         if randf() < slow_chance:
-            _stop_at = rs + randf_range(0.3, 0.6)        # 늦음 → 걸림 (GRACE 0.3 + 멈추는 데 걸리는 시간)
+            _stop_at = rs + randf_range(0.2, 0.5)        # 늦음 → 걸림 (GRACE 0.2 + 멈추는 데 걸리는 시간)
+        elif randf() < caution:
+            _stop_at = rs - randf_range(0.4, 1.2)        # 겁이 나서 미리 멈춤
         else:
             _stop_at = rs - randf_range(0.05, 0.3)       # '다'를 듣고 멈춤
     var go := now >= _go_at and now < _stop_at

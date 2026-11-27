@@ -13,7 +13,15 @@ var _d_name: LineEdit
 var _d_max: SpinBox
 var _d_bots: CheckBox
 var _d_game_index := 0
-var _d_game_cards: Array[Button] = []
+var _d_game_cards: Array[Button] = []    ## 게임 고르기 띠의 칸 5개 (가운데 = 고른 게임)
+var _d_strip: HBoxContainer
+var _d_dots: HBoxContainer
+var _d_drag := 0.0
+var _d_dragging := false
+var _d_tween: Tween
+const CARD_W := 150.0
+const CARD_GAP := 12.0
+const CAROUSEL_W := 410.0
 var _d_game_desc: Label
 
 
@@ -187,34 +195,68 @@ func _build_dialog() -> void:
 
     v.add_child(UI.heading("방 만들기", 30))
 
-    # 게임 고르기: 썸네일 카드
-    var games := UI.hbox(10)
-    v.add_child(games)
-    var mods: Array = GameRegistry.all()
-    for i in mods.size():
-        var m = mods[i]
+    # 게임 고르기: 좌우로 넘기는 띠 (끝없이 돎). 가운데 카드가 고른 게임. ◀ ▶·옆 카드 누르기·끌기로 넘김
+    var carousel_row := UI.hbox(6)
+    carousel_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    v.add_child(carousel_row)
+    var prev := UI.pill_button("◀", UI.INK)
+    prev.custom_minimum_size = Vector2(40, 56)
+    prev.focus_mode = Control.FOCUS_NONE
+    prev.pressed.connect(func(): _roll(-1))
+    carousel_row.add_child(prev)
+    var view := Control.new()
+    view.custom_minimum_size = Vector2(CAROUSEL_W, 140)
+    view.clip_contents = true
+    view.mouse_filter = Control.MOUSE_FILTER_PASS
+    view.gui_input.connect(_on_carousel_input)
+    carousel_row.add_child(view)
+    _d_strip = HBoxContainer.new()
+    _d_strip.add_theme_constant_override("separation", int(CARD_GAP))
+    _d_strip.mouse_filter = Control.MOUSE_FILTER_PASS
+    view.add_child(_d_strip)
+    for k in 5:                         # 칸: -2 -1 [0] +1 +2
         var b := Button.new()
-        b.toggle_mode = true
-        b.custom_minimum_size = Vector2(150, 0)
-        b.add_theme_stylebox_override("normal", UI.box(Color.WHITE, 14, 6, UI.INK, 2, 4))
-        b.add_theme_stylebox_override("hover", UI.box(Color(1.0, 0.97, 0.9), 14, 6, UI.INK, 2, 4))
-        b.add_theme_stylebox_override("pressed", UI.box(Color(1.0, 0.9, 0.62), 14, 6, UI.TEAL, 4, 4))
-        b.add_theme_stylebox_override("hover_pressed", UI.box(Color(1.0, 0.9, 0.62), 14, 6, UI.TEAL, 4, 4))
+        b.custom_minimum_size = Vector2(CARD_W, 140)
+        b.focus_mode = Control.FOCUS_NONE
+        b.mouse_filter = Control.MOUSE_FILTER_PASS
+        var center := k == 2
+        var bg := Color(1.0, 0.9, 0.62) if center else Color.WHITE
+        var border := UI.TEAL if center else UI.INK
+        for st in ["normal", "hover", "pressed", "hover_pressed"]:
+            b.add_theme_stylebox_override(st, UI.box(bg if st != "hover" or center else Color(1.0, 0.97, 0.9), 14, 6, border, 4 if center else 2, 4))
         b.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
         var bv := UI.vbox(4)
         bv.mouse_filter = Control.MOUSE_FILTER_IGNORE
         bv.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
         b.add_child(bv)
-        var img := UI.image_card(m.thumbnail(), Vector2(138, 78), m.accent, 10)
+        var img := UI.image_card(null, Vector2(138, 78), UI.SOFT, 10)
         img.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        var tr := TextureRect.new()
+        tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+        tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+        tr.custom_minimum_size = Vector2(138, 78)
+        tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        img.add_child(tr)
         bv.add_child(img)
-        var nl := UI.heading(m.display_name, 17)
+        var nl := UI.heading("", 15)
         nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+        nl.custom_minimum_size = Vector2(136, 40)       # 두 줄 이름도 칸 높이가 같게
         bv.add_child(nl)
-        b.custom_minimum_size.y = 128
-        b.pressed.connect(_select_game.bind(i))
-        games.add_child(b)
+        b.set_meta(&"img", img)
+        b.set_meta(&"tex", tr)
+        b.set_meta(&"name", nl)
+        b.pressed.connect(_on_card_pressed.bind(k))
+        _d_strip.add_child(b)
         _d_game_cards.append(b)
+    var next := UI.pill_button("▶", UI.INK)
+    next.custom_minimum_size = Vector2(40, 56)
+    next.focus_mode = Control.FOCUS_NONE
+    next.pressed.connect(func(): _roll(1))
+    carousel_row.add_child(next)
+    _d_dots = UI.hbox(8)
+    _d_dots.alignment = BoxContainer.ALIGNMENT_CENTER
+    v.add_child(_d_dots)
     _d_game_desc = UI.label("", 15, UI.MUTED)
     _d_game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     v.add_child(_d_game_desc)
@@ -259,15 +301,83 @@ func _dialog_module():
 
 
 func _select_game(i: int) -> void:
-    _d_game_index = i
-    for k in _d_game_cards.size():
-        _d_game_cards[k].set_pressed_no_signal(k == i)
+    var n := GameRegistry.all().size()
+    _d_game_index = posmod(i, n)
+    _fill_cards()
     var m = _dialog_module()
     _d_game_desc.text = m.description
     _d_max.max_value = mini(Net.MAX_PLAYERS_LIMIT, m.max_players)
     _d_bots.disabled = not m.supports_bots
     if not m.supports_bots:
         _d_bots.button_pressed = false
+
+
+## 옆 칸을 누르면 그 게임으로 넘김 (끌다가 놓은 것은 무시)
+func _on_card_pressed(k: int) -> void:
+    if absf(_d_drag) < 8.0 and k != 2:
+        _roll(k - 2)
+
+
+## 띠의 칸 5개를 지금 고른 게임 기준으로 채운다 (앞뒤로 끝없이 이어짐 — 게임 수로 나눈 나머지)
+func _fill_cards() -> void:
+    var mods: Array = GameRegistry.all()
+    var n := mods.size()
+    for k in _d_game_cards.size():
+        var m = mods[posmod(_d_game_index + k - 2, n)]
+        var b := _d_game_cards[k]
+        (b.get_meta(&"tex") as TextureRect).texture = m.thumbnail()
+        var img: PanelContainer = b.get_meta(&"img")
+        img.add_theme_stylebox_override("panel", UI.box(m.accent, 10, 0, UI.INK, UI.OUTLINE))
+        (b.get_meta(&"name") as Label).text = m.display_name
+        b.modulate = Color(1, 1, 1, 1.0 if k == 2 else 0.6)
+    _d_strip.position.x = _strip_x()
+    for c in _d_dots.get_children():
+        c.queue_free()
+    for i in n:
+        var d := ColorRect.new()
+        d.custom_minimum_size = Vector2(10, 10)
+        d.color = UI.INK if i == _d_game_index else Color(UI.INK, 0.25)
+        _d_dots.add_child(d)
+
+
+## 가운데 칸이 띠 가운데 오는 위치
+func _strip_x() -> float:
+    return CAROUSEL_W * 0.5 - CARD_W * 0.5 - 2.0 * (CARD_W + CARD_GAP)
+
+
+## dir 칸만큼 밀어서 넘김 (+ = 오른쪽 게임). 미끄러진 뒤 칸 내용을 바꾸고 제자리로 → 끝없이 도는 것처럼 보임
+func _roll(dir: int) -> void:
+    if dir == 0:
+        return
+    if _d_tween and _d_tween.is_running():
+        _d_tween.kill()
+        _select_game(_d_game_index)
+    _d_tween = create_tween()
+    _d_tween.tween_property(_d_strip, "position:x", _strip_x() - dir * (CARD_W + CARD_GAP), 0.18) \
+            .set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+    _d_tween.tween_callback(func(): _select_game(_d_game_index + dir))
+
+
+## 띠를 손가락·마우스로 끌어서 넘기기
+func _on_carousel_input(event: InputEvent) -> void:
+    var press := event as InputEventMouseButton
+    var touch := event as InputEventScreenTouch
+    if (press and press.button_index == MOUSE_BUTTON_LEFT and press.pressed) or (touch and touch.pressed):
+        _d_dragging = true
+        _d_drag = 0.0
+    elif (press and press.button_index == MOUSE_BUTTON_LEFT and not press.pressed) or (touch and not touch.pressed):
+        if _d_dragging and absf(_d_drag) > 40.0:
+            _roll(-1 if _d_drag > 0.0 else 1)
+        elif _d_dragging:
+            _d_strip.position.x = _strip_x()
+        _d_dragging = false
+        get_tree().create_timer(0.05).timeout.connect(func(): _d_drag = 0.0)
+    var motion := event as InputEventMouseMotion
+    var sdrag := event as InputEventScreenDrag
+    if _d_dragging and (motion or sdrag):
+        var dx: float = motion.relative.x if motion else sdrag.relative.x
+        _d_drag += dx
+        _d_strip.position.x = _strip_x() + clampf(_d_drag, -CARD_W, CARD_W)
 
 
 func _open_dialog() -> void:

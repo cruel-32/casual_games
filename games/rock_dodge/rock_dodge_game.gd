@@ -843,10 +843,13 @@ func on_client_message(pid: int, msg: Array) -> void:
         "loaded":
             _loaded[pid] = true
         "st":
-            if f and not f.dead and msg.size() >= 3:
+        # 이전 라운드 화면이 아직 보내는 상태는 버린다: 이 경기에 "loaded" 를 보낸 뒤의 것, 그리고 경기 시작 시각 이후의 것만
+        #   (다음 라운드가 같은 게임이면 결과 화면에서 보내던 위치 — 예: 다른 자리 — 가 새 경기로 들어오던 버그)
+            if f and not f.dead and msg.size() >= 3 and _loaded.has(pid) and play_start_t > 0.0 \
+                    and float(msg[1]) >= play_start_t - countdown_time:
                 _server_receive_state(f, float(msg[1]), msg[2])
         "push":
-            if f and msg.size() >= 7:
+            if f and msg.size() >= 7 and _loaded.has(pid) and is_playing():
                 _server_receive_push(f, int(msg[1]), msg[2], float(msg[3]), msg[4], msg[5], float(msg[6]))
         "pop":
             if msg.size() >= 4:

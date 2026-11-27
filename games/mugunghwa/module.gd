@@ -13,4 +13,4 @@ func _init() -> void:
     game_script_path = "res://games/mugunghwa/mugunghwa_game.gd"
     thumbnail_path = "res://games/mugunghwa/thumbnail.png"
     accent = Color(0.30, 0.75, 0.45)
-    arena_half = 30.0              # 긴 운동장 (출발선 → 결승선 44m)
+    arena_half = 32.0              # 긴 운동장 (출발선 → 결승선 50m)

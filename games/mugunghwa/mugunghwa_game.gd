@@ -22,35 +22,42 @@ const MaskedHost := preload("res://scripts/world/masked_host.gd")
 const CHANT_SND := preload("res://audio/mugunghwa/chant.wav")
 const TURN_SND := preload("res://audio/drum/don.wav")
 
-# 운동장 (arena_half 30 — module.gd). 출발선은 +z 쪽, 결승선·술래는 -z 쪽
-const HALF_W := 11.0             ## 운동장 반폭 (x)
-const START_Z := 24.0
-const FINISH_Z := -20.0
-const HOST_Z := -25.0
-const BACK_Z := -27.5            ## 술래 뒤 벽
-const FRONT_Z := 27.0            ## 출발선 뒤 벽
+# 운동장 (arena_half 32 — module.gd). 출발선은 +z 쪽, 결승선·술래는 -z 쪽. 길이 50m
+const START_Z := 27.0
+const FINISH_Z := -23.0
+const HOST_Z := -28.0
+const BACK_Z := -30.5            ## 술래 뒤 벽
+const FRONT_Z := 30.5            ## 출발선 뒤 벽
+const WIDTH_PER_PLAYER := 2.5    ## 운동장 폭 = 인원 × 2.5m (최소 10m, 최대 30m)
 
 # 규칙
 const TIME_LIMIT := 50.0         ## 경기 제한 시간 (초)
 const FIRST_WAIT := 0.0          ## 시작하자마자 첫 외침 (그 전엔 카운트다운이라 못 움직임)
-const GRACE := 0.3               ## 돌아본 뒤 멈출 여유 (이 시간 뒤의 위치가 기준)
+const GRACE := 0.2               ## 돌아본 뒤 멈출 여유 (이 시간 뒤의 위치가 기준)
 const MOVE_TOL := 0.2            ## 기준 위치에서 이만큼(m) 넘게 움직이면 탈락
 const JUMP_TOL := 0.35           ## 높이 차 (점프)
-const GREEN_MIN := 1.3           ## 외침 길이 (초) — 시간이 갈수록 짧은 외침이 잦아짐
+const GREEN_MIN := 1.3           ## 외침 길이 (초) — 시간이 갈수록 짧은 외침이 잦아짐 (뜸 들이는 스타일은 더 김)
 const GREEN_MAX := 3.6
-const RED_MIN := 2.0
-const RED_MAX := 3.4
+const RED_MIN := 1.6             ## 빨간불 (다시 외치기까지) — 가끔 아주 길게 뜸 들임 (RED_LONG)
+const RED_MAX := 3.2
+const RED_LONG := Vector2(4.0, 5.5)
 const TURN_TIME := 0.25          ## '다'에서 돌아보기 시작 → 빨간불까지 (화면 연출)
 
 ## 외침 10음절과 높낮이 (반음, C5 기준 — chant.wav)
 const SYLLABLES := ["무", "궁", "화", "꽃", "이", "피", "었", "습", "니", "다"]
 const CHANT_PITCH := [7, 7, 4, 7, 7, 9, 7, 4, 2, 0]
-## 외침 스타일: 음절별 길이 비율
+## 외침 스타일: [첫 소리 전 침묵, 음절 10개의 길이 비율] + 최소 외침 길이
+##   침묵(첫 칸)은 술래가 이미 뒤돌았지만 아직 말을 안 하는 때 — 초록불이라 움직여도 됨
 const STYLES := [
-    [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],                              # 고르게
-    [1.6, 1.6, 1.6, 1.6, 1.6, 0.45, 0.45, 0.45, 0.45, 0.6],      # 앞은 느리고 끝은 빠르게
-    [0.7, 0.7, 2.6, 0.7, 0.7, 0.6, 0.6, 0.6, 0.6, 0.7],          # '화'에서 뜸 들이기
-    [0.55, 0.55, 0.55, 0.55, 0.55, 1.4, 1.4, 1.4, 1.4, 1.2],     # 앞은 빠르고 끝은 느리게
+    {"w": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "min": 0.0, "name": "고르게"},
+    {"w": [0, 1.6, 1.6, 1.6, 1.6, 1.6, 0.45, 0.45, 0.45, 0.45, 0.6], "min": 2.0, "name": "끝을 몰아치기"},
+    {"w": [0, 0.7, 0.7, 2.6, 0.7, 0.7, 0.6, 0.6, 0.6, 0.6, 0.7], "min": 2.4, "name": "'화'에서 뜸"},
+    {"w": [0, 0.55, 0.55, 0.55, 0.55, 0.55, 1.4, 1.4, 1.4, 1.4, 1.2], "min": 2.0, "name": "끝을 늘이기"},
+    {"w": [0, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 3.2, 0.6], "min": 2.8, "name": "'니'에서 뜸"},
+    {"w": [2.2, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55, 0.55, 0.6], "min": 2.8, "name": "한참 침묵 뒤 빠르게"},
+    {"w": [0, 0.6, 0.6, 0.6, 2.0, 0.6, 0.6, 0.6, 0.6, 2.0, 0.6], "min": 3.0, "name": "두 번 뜸"},
+    {"w": [0, 2.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6, 0.6], "min": 2.4, "name": "무~ 길게"},
+    {"w": [0.8, 1.2, 1.2, 1.2, 0.5, 0.5, 0.5, 0.5, 0.5, 2.4, 0.5], "min": 3.0, "name": "침묵·느리게·빠르게·뜸"},
 ]
 
 const SNAPSHOT_HZ := 20.0
@@ -63,6 +70,7 @@ const PUSH_REWIND_MAX := 0.6
 var no_out := false               ## 개발용 (사진 찍기): 탈락 판정 끄기
 
 var teams := 0
+var half_w := 11.0                ## 운동장 반폭 (x) — 인원 × WIDTH_PER_PLAYER / 2
 var play_start_t := -1.0          ## 경기 시작 (서버 시계)
 var elapsed := 0.0
 ## 외침 주기: {idx, t (초록불 시작, 서버 시계), green (외침 길이), red (빨간불 길이), style}
@@ -101,8 +109,10 @@ func _ready() -> void:
     _rng.randomize()
     if is_server():
         countdown_time = 3.0
+    var entries := _entries()
+    half_w = clampf(entries.size() * WIDTH_PER_PLAYER * 0.5, 5.0, 15.0)
     _build_field()
-    _spawn_fighters()
+    _spawn_fighters(entries)
     if is_server():
         return
     _build_host()
@@ -127,10 +137,10 @@ func _build_field() -> void:
     mat.shader = WALL_SHADER
     var len_z := FRONT_Z - BACK_Z
     var mid_z := (FRONT_Z + BACK_Z) * 0.5
-    _wall(Vector3(-HALF_W, h, mid_z), Vector3(1.0, 16.0, len_z + 1.0), Vector3(0.02, 6.0, len_z), mat)
-    _wall(Vector3(HALF_W, h, mid_z), Vector3(1.0, 16.0, len_z + 1.0), Vector3(0.02, 6.0, len_z), mat)
-    _wall(Vector3(0, h, FRONT_Z), Vector3(HALF_W * 2.0 + 1.0, 16.0, 1.0), Vector3(HALF_W * 2.0, 6.0, 0.02), mat)
-    _wall(Vector3(0, h, BACK_Z), Vector3(HALF_W * 2.0 + 1.0, 16.0, 1.0), Vector3(HALF_W * 2.0, 6.0, 0.02), mat)
+    _wall(Vector3(-half_w, h, mid_z), Vector3(1.0, 16.0, len_z + 1.0), Vector3(0.02, 6.0, len_z), mat)
+    _wall(Vector3(half_w, h, mid_z), Vector3(1.0, 16.0, len_z + 1.0), Vector3(0.02, 6.0, len_z), mat)
+    _wall(Vector3(0, h, FRONT_Z), Vector3(half_w * 2.0 + 1.0, 16.0, 1.0), Vector3(half_w * 2.0, 6.0, 0.02), mat)
+    _wall(Vector3(0, h, BACK_Z), Vector3(half_w * 2.0 + 1.0, 16.0, 1.0), Vector3(half_w * 2.0, 6.0, 0.02), mat)
     if is_server():
         return
     # 출발선(흰색)·결승선(빨강) 띠와 글자
@@ -176,7 +186,7 @@ func _wall(pos: Vector3, shape_size: Vector3, mesh_size: Vector3, mat: Material)
 func _stripe(z: float, color: Color, h: float) -> void:
     var mi := MeshInstance3D.new()
     var m := BoxMesh.new()
-    m.size = Vector3(HALF_W * 2.0, 0.04, 0.7)
+    m.size = Vector3(half_w * 2.0, 0.04, 0.7)
     mi.mesh = m
     mi.material_override = Toon.make(color, {"rim_strength": 0.0})
     mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -240,7 +250,7 @@ func _build_host() -> void:
         g.scale = Vector3.ONE * 1.3
         g.rotation.y = side * PI * 0.5           # 운동장 가운데를 봄 (얼굴 = -Z)
         add_child(g)
-        g.global_position = Vector3(side * (HALF_W + 1.6), terrain.get_height(side * (HALF_W + 1.6), z), z)
+        g.global_position = Vector3(side * (half_w + 1.6), terrain.get_height(side * (half_w + 1.6), z), z)
         _guards.append(g)
 
 
@@ -273,7 +283,8 @@ func _snd(stream: AudioStream, db: float = 0.0, pitch: float = 1.0) -> void:
 
 
 # ================================================================ 참가자
-func _spawn_fighters() -> void:
+## 참가자 목록 (모든 PC에서 같은 순서 = 같은 slot·자리) [{peer, name, team}]
+func _entries() -> Array:
     var entries: Array = []
     teams = int(online_match.get("teams", 0)) if is_online_match() else 0
     if is_online_match() and teams >= 2:
@@ -299,6 +310,10 @@ func _spawn_fighters() -> void:
         entries.append({"peer": 0, "name": "나"})
         for b in bot_count:
             entries.append({"peer": 0, "name": "Bot %d" % (b + 1)})
+    return entries
+
+
+func _spawn_fighters(entries: Array) -> void:
     var my_id := int(online_match.get("my_id", 0))
     var total := entries.size()
     var per_row := mini(total, 8)
@@ -328,7 +343,7 @@ func _spawn_fighters() -> void:
         # 출발선 뒤에 한두 줄로 (모든 PC에서 같은 자리)
         var row := i / per_row
         var col := i % per_row
-        var x := lerpf(-HALF_W + 1.5, HALF_W - 1.5, (col + 0.5 + 0.5 * row) / float(per_row)) if per_row > 1 else 0.0
+        var x := lerpf(-half_w + 1.0, half_w - 1.0, (col + 0.5 + 0.5 * row) / float(per_row)) if per_row > 1 else 0.0
         var z := START_Z + 0.8 + row * 1.6
         f.position = Vector3(x, terrain.get_height(x, z) + 0.2, z)
         f.rotation.y = 0.0                    # 결승선(-z)을 바라봄
@@ -388,18 +403,18 @@ func phase_at(t: float) -> Array:
     return ["red", 1.0, 10]
 
 
-## 음절 시작 시각 (초록불 시작부터). 마지막 '다' 뒤 TURN_TIME 이 지나면 빨간불
+## 음절 시작 시각 (초록불 시작부터). 마지막 '다' 뒤 TURN_TIME 이 지나면 빨간불. 첫 칸은 첫 소리 전 침묵
 static func syllable_times(c: Dictionary) -> Array:
-    var w: Array = STYLES[int(c.style) % STYLES.size()]
+    var w: Array = STYLES[int(c.style) % STYLES.size()].w
     var total := 0.0
     for x in w:
         total += float(x)
     var span := maxf(float(c.green) - TURN_TIME, 0.5)
     var out := []
-    var acc := 0.0
-    for x in w:
+    var acc := float(w[0])
+    for k in range(1, w.size()):
         out.append(acc / total * span)
-        acc += float(x)
+        acc += float(w[k])
     return out
 
 
@@ -411,14 +426,20 @@ func red_end() -> float:
     return red_start() + float(cycle.red) if not cycle.is_empty() else INF
 
 
-## 서버·오프라인: 다음 외침 정하기
+## 서버·오프라인: 다음 외침 정하기 — 스타일마다 최소 길이가 있어 뜸이 너무 짧아지지 않게
 func _new_cycle(t: float) -> void:
     var late := clampf(elapsed / TIME_LIMIT, 0.0, 1.0)
+    var style := _rng.randi() % STYLES.size()
+    if _next_cycle_idx == 0:
+        style = 0                                                  # 첫 외침은 고르게 (규칙 익히기)
     var green := _rng.randf_range(GREEN_MIN, lerpf(GREEN_MAX, 2.6, late))
-    if _rng.randf() < 0.2 + late * 0.2:
+    if style == 0 and _rng.randf() < 0.2 + late * 0.2:
         green = _rng.randf_range(GREEN_MIN, GREEN_MIN + 0.5)     # 가끔 아주 빠른 외침
-    cycle = {"idx": _next_cycle_idx, "t": t, "green": green, "red": _rng.randf_range(RED_MIN, RED_MAX),
-            "style": _rng.randi() % STYLES.size()}
+    green = maxf(green, float(STYLES[style].min) + _rng.randf_range(0.0, 0.8))
+    var red := _rng.randf_range(RED_MIN, RED_MAX)
+    if _rng.randf() < 0.18:
+        red = _rng.randf_range(RED_LONG.x, RED_LONG.y)           # 다시 외치기까지 한참 뜸 들이기
+    cycle = {"idx": _next_cycle_idx, "t": t, "green": green, "red": red, "style": style}
     _next_cycle_idx += 1
     _ref.clear()
     if is_server():
@@ -428,7 +449,7 @@ func _new_cycle(t: float) -> void:
 # ================================================================ 판정 (서버·오프라인)
 ## 위치 하나로 판정: 통과·빨간불 움직임. t = 그 위치의 시각(서버 시계), flags = 차징·밀치기 중인지
 func _judge_sample(f: Fighter, t: float, pos: Vector3, busy: bool) -> void:
-    if f.dead or finished.has(f.slot) or _ended:
+    if f.dead or finished.has(f.slot) or _ended or play_start_t < 0.0 or t < play_start_t:
         return
     if pos.z <= FINISH_Z:
         _finish(f, t)
@@ -701,6 +722,8 @@ func _server_tick(delta: float) -> void:
             elif now >= play_start_t:
                 state = State.PLAYING
                 state_time = 0.0
+                for f in fighters:
+                    f.net_pending.clear()
         State.PLAYING:
             elapsed = now - play_start_t
             state_time += delta
@@ -751,10 +774,12 @@ func on_client_message(pid: int, msg: Array) -> void:
         "loaded":
             _loaded[pid] = true
         "st":
-            if f and not f.dead and msg.size() >= 3:
+        # 이전 라운드 화면이 아직 보내는 상태는 버린다: 이 경기에 "loaded" 를 보낸 뒤의 것, 그리고 경기 시작 시각 이후의 것만
+        #   (다음 라운드가 같은 게임이면 결과 화면에서 보내던 위치 — 예: 결승선 너머 — 가 새 경기로 들어오던 버그)
+            if f and not f.dead and msg.size() >= 3 and _loaded.has(pid) and play_start_t > 0.0 and float(msg[1]) >= play_start_t:
                 _server_receive_state(f, float(msg[1]), msg[2])
         "push":
-            if f and msg.size() >= 7:
+            if f and msg.size() >= 7 and _loaded.has(pid) and is_playing():
                 _server_receive_push(f, int(msg[1]), msg[2], float(msg[3]), msg[4], msg[5], float(msg[6]))
         "pop":
             if msg.size() >= 4:

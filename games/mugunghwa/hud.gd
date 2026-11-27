@@ -86,7 +86,9 @@ func _process(delta: float) -> void:
                 var parts := PackedStringArray()
                 for k in said:
                     parts.append(game.SYLLABLES[k])
-                chant = "".join(parts.slice(0, mini(said, 3))) + (" " + "".join(parts.slice(3, mini(said, 5))) if said > 3 else "") \
+                if said == 0:
+                    chant = "…"                 # 뒤돌았지만 아직 말이 없음 (움직여도 됨)
+                chant += "".join(parts.slice(0, mini(said, 3))) + (" " + "".join(parts.slice(3, mini(said, 5))) if said > 3 else "") \
                         + (" " + "".join(parts.slice(5, said)) if said > 5 else "")
                 sub = "달려요!" if kind == "green" else "곧 돌아봐요!"
             elif kind == "red":

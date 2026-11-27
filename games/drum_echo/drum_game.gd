@@ -1137,11 +1137,12 @@ func on_client_message(pid: int, msg: Array) -> void:
         "loaded":
             _loaded[pid] = true
         "res", "resrel":
-            if _slot_of_peer.has(pid):
+            # 이전 라운드 화면에서 늦게 온 결과는 버림 (이 경기에 "loaded" 를 보낸 뒤의 것만)
+            if _slot_of_peer.has(pid) and _loaded.has(pid):
                 _apply_result(int(_slot_of_peer[pid]), msg)
         "key":
             # 누름·뗌을 모두에게 그대로 전달 (캐릭터 움직임용)
-            if _slot_of_peer.has(pid) and msg.size() >= 3:
+            if _slot_of_peer.has(pid) and _loaded.has(pid) and msg.size() >= 3:
                 broadcast(["k", int(_slot_of_peer[pid]), int(msg[1]) & 1, 1 if int(msg[2]) == 1 else 0])
 
 
