@@ -30,7 +30,6 @@ const BOT_SKILL := 0.55
 const BOT_COLORS := Fighter.SLOT_COLORS
 const SND := {"don": preload("res://audio/drum/don.wav"), "ka": preload("res://audio/drum/ka.wav"),
         "cue": preload("res://audio/drum/cue.wav"), "miss": preload("res://audio/drum/miss.wav")}
-const SONG := preload("res://audio/drum/groove.ogg")
 const MaskedHost := preload("res://scripts/world/masked_host.gd")
 ## 북 색: 팀 색(빨강·파랑·초록·노랑)과 헷갈리지 않게 주황(둥)·보라(딱)
 const DON_COLOR := Color(0.96, 0.56, 0.16)
@@ -76,7 +75,6 @@ var _music: AudioStreamPlayer
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _bot_hits: Array = []           ## [[song_time, fighter slot, lane, db, played, roll_until]] 봇·진행자·남의 공격 예약
 var _rolls: Array = []              ## [{who, lane, until, next, db}] 피버 '드르륵' (until -1 = 키를 떼면 끝)
-var _cue_beat := -999
 var _attack_mark: Label3D
 var _key_down := [false, false]
 var _press_t := [0.0, 0.0]
@@ -442,8 +440,8 @@ func _host_gesture(kind: String) -> void:
 func _build_audio() -> void:
     _music = AudioStreamPlayer.new()
     _music.bus = "Music"
-    var st: AudioStreamOggVorbis = SONG.duplicate()
-    st.loop = true
+    var st: AudioStreamOggVorbis = Chart.song_backing().duplicate()
+    st.loop = false                 # 완성곡 한 번 (반복 없음)
     _music.stream = st
     _music.volume_db = MUSIC_DB
     add_child(_music)
@@ -691,8 +689,6 @@ func _process(delta: float) -> void:
         state = State.PLAYING
     var mt := mix_time()
     var ht := heard_time()
-    if t0 >= 0.0 and state != State.ENDED and mt > -900.0:
-        _cues(mt)
     # 예약된 북: 소리는 섞이는 시각에, 인형 움직임은 들리는 시각에
     var keep: Array = []
     for hit in _bot_hits:
@@ -717,25 +713,6 @@ func _process(delta: float) -> void:
         _attack_mark.text = "선창!"
         _attack_mark.modulate = Color(1.0, 0.85, 0.2)
     _update_camera(delta, ht, cur, -1)
-
-
-## 박자 신호: 공격·따라 치기 시작 직전 쉼의 박마다 '띵' (마지막 박이 가장 큼), 쉼 시작에 작게
-func _cues(mt: float) -> void:
-    var beat := int(floor(mt / Chart.BEAT + 0.001))
-    if beat == _cue_beat:
-        return
-    _cue_beat = beat
-    var bt := beat * Chart.BEAT
-    for tr in turns:
-        for k in 2:
-            var target: float = float(tr.attack_t) if k == 0 else float(tr.response_t)
-            var room: int = int(tr.gap) if k == 0 else int(tr.get("rgap", tr.gap))
-            var d := int(round((target - bt) / Chart.BEAT))
-            if absf(target - bt - d * Chart.BEAT) > 0.01:
-                continue
-            if d >= 1 and d <= mini(room, 3):
-                _snd("cue", -3.0 if d == 1 else -9.0, 1.0 if d == 1 else 0.9)
-                return
 
 
 ## 피버 '드르륵': 누르고 있는 동안 16분음표마다 작은 북소리 + 살짝 두드리는 움직임
@@ -914,10 +891,9 @@ func _sync_music(_delta: float) -> void:
     var real_dt := 0.0 if _real_prev < 0 else (now_us - _real_prev) / 1000000.0
     _real_prev = now_us
     var t := song_time()
-    var loop_len := 8.0 * Chart.BAR
-    if t < 0.0 or state == State.ENDED or _mix_clock >= end_time:
-        if _music.playing and (state == State.ENDED or _mix_clock >= end_time) and state != State.ENDED:
-            _music.stop()
+    var loop_len := 100000.0                    # 곡은 반복하지 않음 (한 바퀴 = 곡 전체)
+    var song_len := float(Chart.song_data().length)
+    if t < 0.0 or state == State.ENDED or _mix_clock >= song_len or t >= song_len:
         if _mix_clock > -900.0 and (t >= 0.0 or state == State.ENDED):
             _mix_clock += real_dt
         else:
@@ -1020,7 +996,7 @@ func _set_notes(i: int, notes: Array, who: int, attack: bool) -> void:
             var at := Chart.note_time(turns[i], n, false)
             if at > now - 0.05:
                 var until := Chart.note_end_time(turns[i], n, false) if Chart.is_fever(n) else -1.0
-                _bot_hits.append([at, who, int(n[1]), -2.0, false, until])
+                _bot_hits.append([at, who, int(n[1]), -99.0, false, until])     # 소리는 반주에 들어 있음 → 움직임만
     _schedule_responders(i, list)
 
 
@@ -1107,7 +1083,7 @@ func _difficulty(i: int) -> float:
 ## 차례 발표: 진행자가 칠 리듬 (모두가 따라 친다)
 func _announce(i: int) -> void:
     var tr: Dictionary = turns[i]
-    var notes := Chart.host_pattern(int(tr.bars), _difficulty(i), i * 131 + 7 + int(t0 * 10.0) % 997)
+    var notes: Array = tr.notes
     _auth[i] = {"attacker": -1, "notes": notes, "rhold": {}, "taken": {}, "fixed": true}
     _emit(["turn", i, -1, notes])
 

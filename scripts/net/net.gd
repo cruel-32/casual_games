@@ -27,7 +27,7 @@ const Teams := preload("res://scripts/core/teams.gd")
 const WordFilter := preload("res://scripts/core/word_filter.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 21
+const PROTOCOL_VERSION := 22
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
