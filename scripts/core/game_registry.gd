@@ -5,6 +5,7 @@ const MODULES := [
     preload("res://games/rock_dodge/module.gd"),
     preload("res://games/drum_echo/module.gd"),
     preload("res://games/mugunghwa/module.gd"),
+    preload("res://games/bomber/module.gd"),
 ]
 
 static var _cache: Array = []

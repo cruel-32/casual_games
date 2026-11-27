@@ -86,7 +86,7 @@ func _ready() -> void:
     var tag_row := UI.hbox(0)
     tag_row.alignment = BoxContainer.ALIGNMENT_CENTER
     col.add_child(tag_row)
-    var tag := UI.badge("피하고, 치고, 멈추고! 친구들과 한 판씩 파티 게임", UI.INK, UI.CREAM)
+    var tag := UI.badge("피하고, 치고, 멈추고, 터뜨리고! 친구들과 한 판씩 파티 게임", UI.INK, UI.CREAM)
     (tag.get_child(0) as Label).add_theme_font_size_override("font_size", 19)
     tag_row.add_child(tag)
 
@@ -260,6 +260,11 @@ func _build_help() -> void:
         ["피버", "노란 노트는 누르고 있다가 끝 박자에 떼요"],
         ["무궁화 꽃이 피었습니다", ""],
         ["달리기", "돌피하기와 같은 조작. 술래가 외치는 동안(초록불)만 달리고, 돌아보면(빨간불) 손을 떼요"],
+        ["연쇄폭탄마", ""],
+        ["폭탄", "Space  ·  모바일: 폭탄 버튼. 내 칸에 놓으면 잠시 뒤 십자로 펑! 다른 폭탄에 닿으면 연쇄 폭발"],
+        ["차기", "좌클릭/E  ·  모바일: 차기 버튼. 바로 앞 폭탄을 차서 미끄러뜨려요"],
+        ["카메라", "기본은 멀리서 내려다봐요. 마우스로 돌리고 휠로 당기거나 밀어요"],
+        ["유령", "탈락하면 바깥 테두리를 돌며 폭탄 키로 안쪽에 폭탄을 던져요"],
     ]
     for r in rows:
         if String(r[1]) == "":          # 게임 이름 (구역 제목)

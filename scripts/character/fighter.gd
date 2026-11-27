@@ -185,6 +185,10 @@ var pitch_pivot: Node3D
 var spectating: Fighter = null       # 죽은 뒤 관전 중인 캐릭터 (사람만)
 var spring_arm: SpringArm3D
 var camera: Camera3D
+var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 바꿀 수 있음)
+var cam_max_len := 9.0               ## 〃 축소 한계
+var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 연쇄폭탄마 유령)
+var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
 
 
 func _ready() -> void:
@@ -685,11 +689,16 @@ func _unhandled_input(event: InputEvent) -> void:
             Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
             get_viewport().set_input_as_handled()
         elif mb.button_index == MOUSE_BUTTON_WHEEL_UP:
-            spring_arm.spring_length = clampf(spring_arm.spring_length - 0.4, 1.5, 9.0)
+            spring_arm.spring_length = clampf(spring_arm.spring_length - _wheel_step(), cam_min_len, cam_max_len)
         elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-            spring_arm.spring_length = clampf(spring_arm.spring_length + 0.4, 1.5, 9.0)
+            spring_arm.spring_length = clampf(spring_arm.spring_length + _wheel_step(), cam_min_len, cam_max_len)
     elif event.is_action_pressed(&"ui_cancel"):
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## 휠 한 칸에 당기는 거리 (멀리 있을수록 크게)
+func _wheel_step() -> float:
+    return maxf(0.4, spring_arm.spring_length * 0.1)
 
 
 ## 휴대폰·태블릿인가 (모바일 앱, 안드로이드/iOS 웹, iPad 웹)
@@ -785,7 +794,11 @@ func _physics_process(delta: float) -> void:
 
     # 점프 (코요테 타임 + 입력 버퍼)
     _coyote = COYOTE if on_floor else _coyote - delta
-    if controllable and intent_jump:
+    if controllable and intent_jump and not can_jump:
+        if game and game.has_method(&"on_action"):
+            game.on_action(self)
+        _jump_buffer = 0.0
+    elif controllable and intent_jump:
         _jump_buffer = JUMP_BUFFER
     else:
         _jump_buffer -= delta
@@ -816,6 +829,8 @@ func _physics_process(delta: float) -> void:
 
     # 수평 이동 = 조작 속도 + 넉백
     var desired := Vector3.ZERO
+    if controllable and game and game.has_method(&"adjust_move"):
+        intent_move = game.adjust_move(self, intent_move)      # 예: 격자 모퉁이 미끄러짐 보정
     if controllable:
         desired = intent_move.limit_length(1.0) * move_speed * (charge_move_mult if charging else 1.0)
     var accel := ground_accel if on_floor else air_accel
@@ -859,7 +874,9 @@ func _process(delta: float) -> void:
         camera.v_offset = randf_range(-1.0, 1.0) * shake * 0.15
     if pitch_pivot and pitch_pivot.top_level:
         # 관전: 카메라 받침대가 다른 캐릭터를 부드럽게 따라간다 (시점 회전은 그대로 내 마우스·터치)
-        var who: Fighter = spectating if is_instance_valid(spectating) else self
+        var who: Node3D = spectating if is_instance_valid(spectating) else self
+        if is_instance_valid(cam_follow):
+            who = cam_follow
         var goal := who.global_position + Vector3(0, 1.3, 0)
         pitch_pivot.global_position = pitch_pivot.global_position.lerp(goal, 1.0 - exp(-10.0 * delta))
 
@@ -970,6 +987,8 @@ func _release_push() -> void:
     lock_timer = dash_time + lock_after
     push_window = dash_time + 0.12
     cooldown_timer = cooldown_total
+    if game and game.has_method(&"on_push_released"):
+        game.on_push_released(self)            # 예: 연쇄폭탄마 폭탄 차기
 
 
 func _check_push_hits() -> void:

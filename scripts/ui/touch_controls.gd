@@ -162,7 +162,7 @@ func _process(_delta: float) -> void:
 
 
 func _draw() -> void:
-    if game.state == PartyGame.State.ENDED or fighter.dead:
+    if game.state == PartyGame.State.ENDED or (fighter.dead and not game.get("touch_when_dead")):
         return
     var s := _scr()
     # 이동 스틱 (누르지 않을 땐 기본 위치에 흐리게)
@@ -186,7 +186,7 @@ func _draw() -> void:
     elif not cd_ready:
         var f := 1.0 - fighter.cooldown_timer / maxf(fighter.cooldown_total, 0.01)
         draw_arc(pc, _push_radius() + 7, -PI * 0.5, -PI * 0.5 + TAU * f, 48, Color(1, 1, 1, 0.6), 5.0, true)
-    _draw_label(pc, "밀치기", 22)
+    _draw_label(pc, String(game.get("touch_push_label")) if game.get("touch_push_label") != null else "밀치기", 22)
 
     # 점프 버튼
     var jc := _jump_center()
@@ -194,7 +194,7 @@ func _draw() -> void:
     jcol.a = 0.85 if _jump_index != -1 else 0.6
     draw_circle(jc, _jump_radius(), jcol)
     draw_arc(jc, _jump_radius(), 0, TAU, 48, Color(UI.INK, 0.8), 4.0, true)
-    _draw_label(jc, "점프", 20)
+    _draw_label(jc, String(game.get("touch_jump_label")) if game.get("touch_jump_label") != null else "점프", 20)
 
 
 func _draw_label(center: Vector2, text: String, size: int) -> void:

@@ -23,6 +23,8 @@ const MIX := {
     "pickup": [-4.0, 0.03], "pickup_helmet": [-4.0, 0.0], "pickup_charge": [-4.0, 0.0],
     "pickup_cooldown": [-4.0, 0.0], "pickup_glove": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
     "shield_off": [-6.0, 0.0], "ready_ping": [-12.0, 0.0], "wind": [-10.0, 0.08],
+    # 연쇄폭탄마 (tools/audio/gen_bomber.py)
+    "bomb_place": [-8.0, 0.06], "boom": [-3.0, 0.08], "kick": [-6.0, 0.06], "crate_break": [-8.0, 0.1], "ghost_throw": [-8.0, 0.05],
     # 캐릭터 목소리 (tools/audio/gen_voice.py) — 음높이는 캐릭터마다 다르게 Fighter.voice_pitch()
     "voice_push_1": [-5.0, 0.04], "voice_push_2": [-5.0, 0.04], "voice_push_3": [-5.0, 0.04],
     "voice_hit_1": [-3.0, 0.04], "voice_hit_2": [-3.0, 0.04], "voice_hit_3": [-3.0, 0.04],
