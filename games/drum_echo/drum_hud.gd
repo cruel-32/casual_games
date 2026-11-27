@@ -1,5 +1,5 @@
 extends Control
-## 뒷북의 달인 화면: 위 = 지금 상황(공격·따라 치기) · 박자 점 · 점수, 아래 = 노트 길 + 북 버튼 두 개
+## 뒷북의 달인 화면: 위 = 지금 상황 · 점수, 아래 = 노트 길 + 북 버튼 두 개
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
 const Chart := preload("res://games/drum_echo/chart.gd")
@@ -196,22 +196,14 @@ func _update_banner(t: float) -> void:
     var ph: Array = game.phase_at(t)
     var kind: String = ph[1]
     match kind:
-        "ready_attack":
-            _banner.add_theme_color_override("font_color", UI.CREAM)
-            _banner.text = "진행자가 선창해요"
-            _sub.text = "잘 듣고 다 같이 똑같이 따라 쳐요"
-        "attack":
-            _banner.add_theme_color_override("font_color", UI.CREAM)
-            _banner.text = "잘 들어요!"
-            _sub.text = "진행자가 치는 리듬 — 곧 똑같이 따라 쳐요"
-        "ready_response":
+        "ready":
             _banner.add_theme_color_override("font_color", UI.YELLOW)
-            _banner.text = "따라 칠 준비!"
-            _sub.text = "같은 타이밍, 같은 북으로 · 피버는 끝 박자에 떼요"
-        "response":
+            _banner.text = "준비!"
+            _sub.text = "진행자와 같이 쳐요 · 노트가 동그라미에 닿을 때"
+        "play":
             _banner.add_theme_color_override("font_color", UI.YELLOW)
-            _banner.text = "다 같이 따라 쳐요!"
-            _sub.text = "같은 타이밍, 같은 북으로 · 피버는 끝 박자에 떼요"
+            _banner.text = "다 같이 쳐요!"
+            _sub.text = "진행자가 치는 그 자리에서 · 피버는 끝 박자에 떼요"
         _:
             _banner.add_theme_color_override("font_color", UI.CREAM)
             _banner.text = "마무리!" if int(ph[2]) >= game.turns.size() else "반주를 들으며 준비해요"
@@ -278,16 +270,14 @@ func _highway_rect() -> Rect2:
     return Rect2(Vector2((sc.x - w) * 0.5, sc.y - h - 26.0), Vector2(w, h))
 
 
-## 트랙 하나 (내가 칠 것):
-##   진행자 선창: 소리가 난 노트가 판정선에서 테두리 원으로 생겨 왼쪽으로 흘러가고, 그와 동시에 내가 따라 칠 노트(꽉 찬 원)가 오른쪽에서 들어와 다가온다
-##   따라 치기 구간만 밝게, 그 앞뒤는 어둡게
+## 트랙 하나 (내가 칠 것): 노트(꽉 찬 원)가 오른쪽에서 다가와 판정선에 닿을 때 친다. 진행자도 같은 순간에 친다
+##   북 마디(차례) 구간만 밝게, 북을 쉬는 구간은 어둡게
 func track_mode(t: float) -> Array:
     var ph: Array = game.phase_at(t)
     var i := int(ph[0])
     if i < 0:
         return ["idle", -1]
-    var kind: String = ph[1]
-    return ["listen" if kind == "ready_attack" or kind == "attack" else "respond", i]
+    return ["respond" if String(ph[1]) == "play" else "ready", i]
 
 
 func _hit_x(r: Rect2) -> float:
@@ -306,7 +296,6 @@ func _draw() -> void:
     var r := _highway_rect()
     var mode_i := track_mode(t)
     var mode: String = mode_i[0]
-    var i: int = mode_i[1]
     var font := get_theme_default_font()
     var bg := Color(0.1, 0.12, 0.2, 0.85) if mode != "respond" else Color(0.3, 0.25, 0.06, 0.9)
     draw_style_box(UI.box(bg, 16, 0, UI.INK, 4, 0), r)
@@ -318,32 +307,47 @@ func _draw() -> void:
         draw_arc(Vector2(hit_x, lane_y[lane]), 22, 0, TAU, 32, Color(1, 1, 1, 0.85), 3.0)
     draw_string(font, Vector2(r.position.x + 10, lane_y[0] + 7), "둥", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, DON.lightened(0.3))
     draw_string(font, Vector2(r.position.x + 10, lane_y[1] + 7), "딱", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, KA.lightened(0.3))
-    if i < 0:
-        return
-    var tr: Dictionary = game.turns[i]
-    # 따라 치기 구간만 밝게
-    var r0 := float(tr.response_t)
-    var r1 := r0 + int(tr.bars) * float(tr.bar)
-    var beat := float(tr.beat)
-    var xs := clampf(hit_x + (r0 - t) * px, r.position.x + 4, r.end.x - 4)
-    var xe := clampf(hit_x + (r1 - t) * px, r.position.x + 4, r.end.x - 4)
-    if xs > r.position.x + 4:
-        draw_rect(Rect2(Vector2(r.position.x + 4, r.position.y + 4), Vector2(xs - r.position.x - 4, r.size.y - 8)), Color(0, 0, 0, 0.35))
-    if xe < r.end.x - 4:
-        draw_rect(Rect2(Vector2(xe, r.position.y + 4), Vector2(r.end.x - 4 - xe, r.size.y - 8)), Color(0, 0, 0, 0.35))
-    if xe - xs > 1.0:
-        draw_rect(Rect2(Vector2(xs, r.position.y + 4), Vector2(xe - xs, r.size.y - 8)), Color(1, 0.9, 0.4, 0.1))
-    # 박 선 (따라 치기 구간 안, 시작·끝 굵게)
-    var first := int(floor((t - LOOK_BACK - r0) / beat))
-    for k in range(first, first + int((LOOK_AHEAD + LOOK_BACK) / beat) + 2):
-        var bt := r0 + k * beat
-        if bt < r0 - 0.01 or bt > r1 + 0.01:
+    var x0 := r.position.x + 4
+    var x1 := r.end.x - 4
+    var lo := t - LOOK_BACK - 0.3
+    var hi := t + LOOK_AHEAD + 0.3
+    # 북 마디 구간 밖은 어둡게: 화면에 걸친 차례 구간을 모아 그 사이를 칠한다
+    var spans := []
+    for k in game.turns.size():
+        var tr: Dictionary = game.turns[k]
+        if Chart.turn_end(tr) < lo or float(tr.start) > hi:
             continue
+        spans.append([k, clampf(hit_x + (float(tr.start) - t) * px, x0, x1), clampf(hit_x + (Chart.turn_end(tr) - t) * px, x0, x1)])
+    var cur_x := x0
+    for sp in spans:
+        if float(sp[1]) > cur_x + 1.0:
+            draw_rect(Rect2(Vector2(cur_x, r.position.y + 4), Vector2(float(sp[1]) - cur_x, r.size.y - 8)), Color(0, 0, 0, 0.35))
+        if float(sp[2]) - float(sp[1]) > 1.0:
+            draw_rect(Rect2(Vector2(float(sp[1]), r.position.y + 4), Vector2(float(sp[2]) - float(sp[1]), r.size.y - 8)), Color(1, 0.9, 0.4, 0.08))
+        cur_x = maxf(cur_x, float(sp[2]))
+    if cur_x < x1 - 1.0:
+        draw_rect(Rect2(Vector2(cur_x, r.position.y + 4), Vector2(x1 - cur_x, r.size.y - 8)), Color(0, 0, 0, 0.35))
+    for sp in spans:
+        var tr: Dictionary = game.turns[int(sp[0])]
+        _draw_turn(int(sp[0]), tr, t, r, hit_x, px, lane_y)
+
+
+## 차례 하나의 박 선·노트
+func _draw_turn(i: int, tr: Dictionary, t: float, r: Rect2, hit_x: float, px: float, lane_y: Array) -> void:
+    var r0 := float(tr.start)
+    var r1 := Chart.turn_end(tr)
+    var beat := float(tr.beat)
+    # 박 선 (마디 첫 박 굵게)
+    var first := int(floor((t - LOOK_BACK - r0) / beat))
+    for k in range(maxi(first, 0), first + int((LOOK_AHEAD + LOOK_BACK) / beat) + 2):
+        var bt := r0 + k * beat
+        if bt > r1 - 0.01:
+            break
         var x := hit_x + (bt - t) * px
         if x < r.position.x or x > r.end.x:
             continue
-        var edge := k == 0 or absf(bt - r1) < 0.01
-        draw_line(Vector2(x, r.position.y + 4), Vector2(x, r.end.y - 4), Color(1, 1, 1, 0.6 if edge else 0.15), 3.0 if edge else 1.5)
+        var edge := k % 4 == 0
+        draw_line(Vector2(x, r.position.y + 4), Vector2(x, r.end.y - 4), Color(1, 1, 1, 0.4 if edge else 0.13), 2.5 if edge else 1.5)
     var notes: Array = game.view_notes.get(i, [])
     var taken: Dictionary = game.view_taken.get(i, {})
     for n_i in notes.size():
@@ -352,22 +356,11 @@ func _draw() -> void:
         var col := DON if lane == 0 else KA
         var rad := 17.0 if lane == 0 else 13.0
         var y: float = lane_y[lane]
-        var ta := Chart.note_time(tr, n, false)
-        if ta > t:
-            continue                        # 아직 진행자가 안 친 노트는 안 보임
-        # 진행자 선창 (들은 리듬): 테두리 원, 판정선에서 생겨 왼쪽으로
-        var xa := hit_x + (ta - t) * px
-        if xa > r.position.x and xa < r.end.x:
-            var pop := clampf((t - ta) / 0.12, 0.0, 1.0)
-            if Chart.is_fever(n):
-                _capsule(xa, hit_x + (minf(Chart.note_end_time(tr, n, false), t) - t) * px, y, rad * 0.8, r, Color(col, 0.0), Color(FEVER, 0.6), 2.0)
-            draw_arc(Vector2(xa, y), rad * (1.5 - 0.5 * pop), 0, TAU, 24, Color(col, 0.8), 3.0)
-        # 내가 따라 칠 노트: 꽉 찬 원, 오른쪽에서 다가옴
-        var tb := Chart.note_time(tr, n, true)
+        var tb := Chart.note_time(tr, n)
         var xb := hit_x + (tb - t) * px
         var c := col
         if Chart.is_fever(n):
-            var tbe := Chart.note_end_time(tr, n, true)
+            var tbe := Chart.note_end_time(tr, n)
             if taken.has(-(n_i + 1)) or tbe < t - Chart.BAD:
                 continue
             var holding := false

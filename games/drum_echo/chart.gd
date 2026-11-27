@@ -1,10 +1,10 @@
 extends RefCounted
 ## 뒷북의 달인 — 곡 진행표·진행자 리듬·박자 판정 (서버·클라이언트·오프라인 공용, 화면 없음)
 ##
-## 곡: tools/music/song_*.py 로 만든 완성곡. 북 파트를 뺀 반주(backing.ogg)를 틀고, 북 파트가 곧 노트(song.gd)
-##   선창 구간은 반주에 진행자 북이 들어 있고, 따라 치기 구간은 반주에서 북이 빠져 있어 플레이어가 채워야 곡이 완성된다
+## 곡: tools/music/song_*.py 로 만든 완성곡. 반주(backing.ogg)에 북 파트까지 들어 있고(진행자가 치는 모습), 그 북 파트가 곧 노트(song.gd)
+##   선창·따라 치기는 없다: 진행자가 치는 바로 그 자리에서 모두가 함께 친다
 ## 시간 단위: 곡 시작(반주 0초)부터의 초. 4/4. BPM 은 곡마다 다름 (차례마다 beat·bar 초를 실어 둔다)
-## 노트: [시각 ms, 북, 끝 ms]  시각 = 선창(또는 따라 치기) 시작부터 ms, 북 0 = 둥(왼쪽) 1 = 딱(오른쪽), 끝 = -1 이면 한 번 치기, 아니면 피버
+## 노트: [시각 ms, 북, 끝 ms]  시각 = 차례(북 마디 묶음) 시작부터 ms, 북 0 = 둥(왼쪽) 1 = 딱(오른쪽), 끝 = -1 이면 한 번 치기, 아니면 피버
 
 ## 곡 목록. 곡마다 반주와 노트 (tools/music/song_<id>.py 로 만듦). 경기마다 서버가 하나를 골라 "start" 로 알린다
 const SONGS := {
@@ -18,7 +18,7 @@ const SONGS := {
 const DEFAULT_SONG := "funk"
 const TAIL := 1.5                   ## 곡이 끝나고 결과까지
 
-## 판정 (초): 따라 치기
+## 판정 (초)
 const PERFECT := 0.045
 const GOOD := 0.09
 const BAD := 0.14
@@ -54,8 +54,8 @@ static func pick_song(rng: RandomNumberGenerator, exclude: String = "") -> Strin
     return String(ids[rng.randi_range(0, ids.size() - 1)])
 
 
-## 진행표: 곡 노트에서 [{bars, gap, rgap, attack_t, response_t, notes}] — attack_t = 선창 시작, response_t = 따라 치기 시작
-##   gap = 선창 앞 '준비' 안내를 띄울 박 수 (앞 차례가 끝난 뒤부터, 최대 4박), rgap = 선창 끝 → 따라 치기 사이 박 수
+## 진행표: 곡 노트에서 [{bars, gap, start, notes, beat, bar}] — start = 차례(북 마디 최대 4개) 시작 초
+##   gap = 앞 차례가 끝난 뒤 '준비' 안내를 띄울 박 수 (최대 4박, 이어지면 0)
 static func build_turns(_teams: int = 0, id: String = DEFAULT_SONG) -> Array:
     var data := song_data(id)
     var beat := 60.0 / float(data.bpm)
@@ -63,16 +63,14 @@ static func build_turns(_teams: int = 0, id: String = DEFAULT_SONG) -> Array:
     var turns := []
     var prev_end := 0.0
     for td in data.turns:
-        var a := float(td.attack_t)
-        var r := float(td.response_t)
+        var a := float(td.start)
         var n := int(td.bars)
         var notes := []
         for nn in td.notes:
             notes.append([int(nn[0]), int(nn[1]), int(nn[2])])
-        turns.append({"attack_team": -1, "bars": n, "gap": clampi(int(round((a - prev_end) / beat)), 0, 4),
-                "rgap": int(round((r - (a + n * bar)) / beat)), "attack_t": a, "response_t": r, "notes": notes, "host": true,
+        turns.append({"bars": n, "gap": clampi(int(round((a - prev_end) / beat)), 0, 4), "start": a, "notes": notes,
                 "beat": beat, "bar": bar})
-        prev_end = r + n * bar
+        prev_end = a + n * bar
     return turns
 
 
@@ -80,26 +78,22 @@ static func end_time(_turns: Array = [], id: String = DEFAULT_SONG) -> float:
     return float(song_data(id).length) + TAIL
 
 
-static func attack_end(turn: Dictionary) -> float:
-    return float(turn.attack_t) + int(turn.bars) * float(turn.bar)
+static func turn_end(turn: Dictionary) -> float:
+    return float(turn.start) + int(turn.bars) * float(turn.bar)
 
 
-static func response_end(turn: Dictionary) -> float:
-    return float(turn.response_t) + int(turn.bars) * float(turn.bar)
-
-
-## 쉼 시작 (선창 앞)
+## 준비 안내 시작 (차례 앞)
 static func ready_t(turn: Dictionary) -> float:
-    return float(turn.attack_t) - int(turn.gap) * float(turn.beat)
+    return float(turn.start) - int(turn.gap) * float(turn.beat)
 
 
-## 노트 시각 (선창이면 선창 시작 기준, 따라 치기면 따라 치기 시작 기준)
-static func note_time(turn: Dictionary, n: Array, response: bool) -> float:
-    return float(turn.response_t if response else turn.attack_t) + int(n[0]) / 1000.0
+## 노트 시각 (진행자·플레이어 같은 자리)
+static func note_time(turn: Dictionary, n: Array) -> float:
+    return float(turn.start) + int(n[0]) / 1000.0
 
 
-static func note_end_time(turn: Dictionary, n: Array, response: bool) -> float:
-    return float(turn.response_t if response else turn.attack_t) + int(n[2]) / 1000.0
+static func note_end_time(turn: Dictionary, n: Array) -> float:
+    return float(turn.start) + int(n[2]) / 1000.0
 
 
 static func is_fever(n: Array) -> bool:
@@ -114,7 +108,7 @@ static func units(notes: Array) -> int:
     return u
 
 
-## 따라 치기 판정 (누름): 아직 안 맞힌 노트(한 번 치기·피버 시작) 중 같은 북·가장 가까운 것 → [노트 번호, 판정, 어긋난 초(+ = 늦음)]
+## 판정 (누름): 아직 안 맞힌 노트(한 번 치기·피버 시작) 중 같은 북·가장 가까운 것 → [노트 번호, 판정, 어긋난 초(+ = 늦음)]
 ## notes: [[ms, lane, end], ...], taken: 맞힌 노트 번호 Dictionary (피버 끝은 -(번호+1))
 static func judge_response(turn: Dictionary, notes: Array, taken: Dictionary, lane: int, t: float) -> Array:
     var best := -1
@@ -122,7 +116,7 @@ static func judge_response(turn: Dictionary, notes: Array, taken: Dictionary, la
     for i in notes.size():
         if taken.has(i) or int(notes[i][1]) != lane:
             continue
-        var off := t - note_time(turn, notes[i], true)
+        var off := t - note_time(turn, notes[i])
         if absf(off) < absf(best_off):
             best_off = off
             best = i
@@ -135,12 +129,12 @@ static func timing_judge(off: float) -> String:
     return "perfect" if off <= PERFECT else ("good" if off <= GOOD else ("bad" if off <= BAD else "miss"))
 
 
-## 따라 치기 판정 (피버 뗌): 끝 시각과 비교. 너무 일찍·늦게 떼면 MISS
+## 판정 (피버 뗌): 끝 시각과 비교. 너무 일찍·늦게 떼면 MISS
 static func judge_release(turn: Dictionary, note: Array, t: float) -> String:
-    return timing_judge(absf(t - note_end_time(turn, note, true)))
+    return timing_judge(absf(t - note_end_time(turn, note)))
 
 
-## 봇이 따라 치기: 노트마다 판정을 무작위로 (실력 skill 0~1). count = 노트 수 (피버 = 2)
+## 봇: 노트마다 판정을 무작위로 (실력 skill 0~1). count = 노트 수 (피버 = 2)
 static func bot_judgements(count: int, skill: float, seed_value: int) -> Array:
     var rng := RandomNumberGenerator.new()
     rng.seed = seed_value

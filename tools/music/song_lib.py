@@ -1,9 +1,9 @@
 """뒷북의 달인 곡 만들기 도구 — 곡 정의(마디 목록) → 반주 ogg + 노트 json + 북 소리
 
 곡 하나를 통째로 쓰고, 북 파트(둥 = 킥 역할, 딱 = 스네어 역할)가 곧 게임 노트가 된다.
-  call 마디: 진행자가 치므로 반주에 북소리가 들어 있음
-  resp 마디: 반주에서 북을 비움 → 플레이어가 채워야 곡이 완성됨
-  그 밖(intro·rest·break·outro): 밴드만
+  북 마디(call·resp, 패턴 pat 이 있는 마디): 반주에 북 파트가 들어 있고(진행자가 치는 모습), 플레이어도 같은 자리에서 함께 친다
+    (call·resp 이름은 예전 선창·따라 치기 구성에서 온 것. 지금은 둘 다 그냥 '북 마디')
+  그 밖(intro·rest·break·outro): 밴드만 (북 쉼)
 
 마디 하나 = dict: role, chord, pat(북 패턴 이름, call/resp 만), brass(후렴 브라스 여부), sax(색소폰 리프 이름)
 북 패턴 = {"don": [칸...], "ka": [칸...], "hold": {칸: 길이}}   칸 = 16분음표 (0~15), hold = 둥 피버(누르고 있는 칸 수)
@@ -21,6 +21,7 @@ import sfrender as R
 CH_BASS, CH_CLAV, CH_EP, CH_SAX, CH_BRASS, CH_DRUM = 0, 1, 2, 3, 4, 9
 PROGRAMS = {CH_BASS: (0, 33), CH_CLAV: (0, 7), CH_EP: (0, 4), CH_SAX: (0, 65), CH_BRASS: (0, 61), CH_DRUM: (128, 0)}
 DRUM_GAIN = 0.75
+MAX_TURN_BARS = 4                    # 차례 하나 = 북 마디 최대 4개 (점수 정산·노트 발표 단위)
 ROLL_STEP_16 = 1                     # 피버 '드르륵' 간격 = 16분음표 (게임의 ROLL_STEP 0.125초와 같음, 120 BPM)
 
 
@@ -133,22 +134,18 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
                     cc={ch: [(7, v)] for ch, v in song.get("mix", {}).items()})      # mix: 채널 볼륨 (CC7, 기본 100)
     band = band / (np.abs(band).max() + 1e-9) * song.get("band_level", 0.55)
     host = np.zeros_like(band)
-    player = np.zeros_like(band)
-    # 선창·따라 치기 짝: call 이 이어진 마디들 → 같은 패턴의 resp 마디들
+    # 북 마디(pat 이 있는 마디)가 이어진 구간 = 차례 (최대 MAX_TURN_BARS 마디씩). 진행자와 플레이어가 같은 자리에서 함께 친다
+    #   반주에 북 파트가 그대로 들어 있음 (진행자 북) → 내가 치는 소리는 그 위에 겹친다
     turns = []
     b = 0
     while b < n_bars:
-        if bars[b]["role"] != "call":
+        if not bars[b].get("pat"):
             b += 1
             continue
         c0 = b
-        while b < n_bars and bars[b]["role"] == "call":
+        while b < n_bars and bars[b].get("pat") and b - c0 < MAX_TURN_BARS:
             b += 1
         n = b - c0
-        while b < n_bars and bars[b]["role"] != "resp":
-            b += 1
-        r0 = b
-        assert [bars[c0 + k]["pat"] for k in range(n)] == [bars[r0 + k]["pat"] for k in range(n)], "선창과 따라 치기 패턴이 달라요 (마디 %d)" % c0
         tnotes = []
         for k in range(n):
             p = patterns[bars[c0 + k]["pat"]]
@@ -161,23 +158,19 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
                     tnotes.append([ms, lane, e])
         tnotes.sort()
         a = c0 * bar_len
-        r = r0 * bar_len
         for (ms, lane, e) in tnotes:
             smp = don if lane == 0 else ka
-            for base, buf in ((a, host), (r, player)):
-                place(buf, smp, base + ms / 1000.0)
-                if e >= 0:                                   # 피버: 누르는 동안 16분음표마다 작게
-                    t = ms + step * 1000 * ROLL_STEP_16
-                    while t < e - 20:
-                        place(buf, smp, base + t / 1000.0, 0.35)
-                        t += step * 1000 * ROLL_STEP_16
-        turns.append({"bars": n, "attack_t": round(a, 4), "response_t": round(r, 4), "notes": tnotes})
-        b = r0 + n
+            place(host, smp, a + ms / 1000.0)
+            if e >= 0:                                   # 피버: 누르는 동안 16분음표마다 작게
+                t = ms + step * 1000 * ROLL_STEP_16
+                while t < e - 20:
+                    place(host, smp, a + t / 1000.0, 0.35)
+                    t += step * 1000 * ROLL_STEP_16
+        turns.append({"bars": n, "start": round(a, 4), "notes": tnotes})
 
     wet = song.get("reverb", 0.16)
     mix_b = R.reverb(band + host * DRUM_GAIN, wet=wet)
-    mix_p = R.reverb(band + host * DRUM_GAIN + player * DRUM_GAIN, wet=wet)
-    scale = 1.0 / (np.abs(mix_p).max() + 1e-9)
+    scale = 1.0 / (np.abs(mix_b).max() + 1e-9)
     backing = R.soft_limit_fixed(mix_b * scale)
     os.makedirs(out_audio_dir, exist_ok=True)
     tmp = os.path.join(out_audio_dir, "_backing.wav")
@@ -187,7 +180,7 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
                     os.path.join(out_audio_dir, "backing.ogg")], check=True)
     os.remove(tmp)
     if preview_path:
-        R.save_wav(preview_path, R.soft_limit_fixed(mix_p * scale))
+        R.save_wav(preview_path, backing)
     if drums_dir:
         # 게임의 북 소리 (모노, 짧게). 진행자 북(반주 안)과 같은 소리
         from scipy.io import wavfile
@@ -197,7 +190,7 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
     # 게임이 읽는 노트: GDScript 상수 파일 (스크립트라서 내보내기에 항상 포함됨, JSON 은 필터에 안 걸리면 빠짐)
     with open(os.path.join(out_audio_dir, "song.gd"), "w") as f:
         f.write("extends RefCounted\n## 자동 생성 (tools/music/song_*.py) — 손으로 고치지 마세요\n")
-        f.write("## turns: [{bars, attack_t(선창 시작 초), response_t(따라 치기 시작 초), notes: [[ms, 북(0 둥 1 딱), 끝 ms(-1 = 한 번 치기)]]}]\n")
+        f.write("## turns: [{bars, start(차례 시작 초), notes: [[ms(차례 시작부터), 북(0 둥 1 딱), 끝 ms(-1 = 한 번 치기)]]}]\n")
         f.write("const DATA := " + json.dumps(chart, ensure_ascii=False) + "\n")
     roles = "".join({"intro": "I", "call": "C", "rest": ".", "resp": "R", "outro": "O", "break": "b"}[x["role"]] for x in bars)
     return chart, roles
@@ -357,15 +350,15 @@ class Bars:
             self.bar(role, lead=leads[i % len(leads)] if leads else None)
 
     def echo(self, pats, rest=False, rest_leads=(), **kw):
-        """1마디 선창 → (쉼 1마디) → 1마디 따라 치기"""
+        """같은 1마디 패턴을 2번 (rest 면 3번) — 예전 선창·(쉼)·따라 치기 자리"""
         for i, p in enumerate(pats):
             self.bar("call", p, **kw)
-            if rest:
-                self.bar("rest", lead=rest_leads[i % len(rest_leads)] if rest_leads else None)
+            if rest:   # 예전 '쉬는 마디' 자리: 지금은 같은 패턴을 한 번 더 (북이 끊기지 않게), 멜로디 리프는 그대로
+                self.bar("rest", p, lead=rest_leads[i % len(rest_leads)] if rest_leads else None, **kw)
             self.bar("resp", p, **kw)
 
     def echo2(self, pairs, **kw):
-        """2마디 선창 → 2마디 따라 치기"""
+        """2마디 패턴을 2번 — 예전 선창·따라 치기 자리"""
         for pair in pairs:
             for role in ("call", "resp"):
                 for p in pair:

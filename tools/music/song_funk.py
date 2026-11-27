@@ -66,7 +66,7 @@ for k in range(4):
 # 1절: 선창 → 쉼 1마디 → 따라 치기 (×3), 그다음 바로 이어서 (×2)
 for p in ("A", "B", "B2"):
     bars.append(verse_bar(len(bars), "call", p))
-    bars.append(verse_bar(len(bars), "rest", sax="b" if len(bars) % 2 else "a"))
+    bars.append(verse_bar(len(bars), "rest", p, sax="b" if len(bars) % 2 else "a"))   # 같은 패턴 한 번 더 (북이 끊기지 않게)
     bars.append(verse_bar(len(bars), "resp", p))
 for p in ("C", "D"):
     bars.append(verse_bar(len(bars), "call", p))
