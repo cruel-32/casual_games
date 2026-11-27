@@ -3,17 +3,17 @@ extends RefCounted
 ##
 ## 곡: tools/music/song_*.py 로 만든 완성곡. 북 파트를 뺀 반주(backing.ogg)를 틀고, 북 파트가 곧 노트(song.gd)
 ##   선창 구간은 반주에 진행자 북이 들어 있고, 따라 치기 구간은 반주에서 북이 빠져 있어 플레이어가 채워야 곡이 완성된다
-## 시간 단위: 곡 시작(반주 0초)부터의 초. 120 BPM, 4/4, 한 박 = 0.5초, 한 마디 = 2초
+## 시간 단위: 곡 시작(반주 0초)부터의 초. 4/4. BPM 은 곡마다 다름 (차례마다 beat·bar 초를 실어 둔다)
 ## 노트: [시각 ms, 북, 끝 ms]  시각 = 선창(또는 따라 치기) 시작부터 ms, 북 0 = 둥(왼쪽) 1 = 딱(오른쪽), 끝 = -1 이면 한 번 치기, 아니면 피버
 
-const BPM := 120.0
-const BEAT := 60.0 / BPM
-const BAR := BEAT * 4.0
-const STEP := BEAT / 4.0            ## 16분음표 (리듬 모음의 칸)
-
-## 곡 목록 (지금은 하나). 곡마다 반주와 노트. 곡의 BPM 은 BPM 과 같아야 함
+## 곡 목록. 곡마다 반주와 노트 (tools/music/song_<id>.py 로 만듦). 경기마다 서버가 하나를 골라 "start" 로 알린다
 const SONGS := {
     "funk": {"data": preload("res://audio/drum/songs/funk/song.gd"), "backing": preload("res://audio/drum/songs/funk/backing.ogg")},
+    "rock": {"data": preload("res://audio/drum/songs/rock/song.gd"), "backing": preload("res://audio/drum/songs/rock/backing.ogg")},
+    "hiphop": {"data": preload("res://audio/drum/songs/hiphop/song.gd"), "backing": preload("res://audio/drum/songs/hiphop/backing.ogg")},
+    "disco": {"data": preload("res://audio/drum/songs/disco/song.gd"), "backing": preload("res://audio/drum/songs/disco/backing.ogg")},
+    "gugak": {"data": preload("res://audio/drum/songs/gugak/song.gd"), "backing": preload("res://audio/drum/songs/gugak/backing.ogg")},
+    "chip": {"data": preload("res://audio/drum/songs/chip/song.gd"), "backing": preload("res://audio/drum/songs/chip/backing.ogg")},
 }
 const DEFAULT_SONG := "funk"
 const TAIL := 1.5                   ## 곡이 끝나고 결과까지
@@ -37,11 +37,29 @@ static func song_backing(id: String = DEFAULT_SONG) -> AudioStream:
     return SONGS.get(id, SONGS[DEFAULT_SONG]).backing
 
 
+static func song_title(id: String = DEFAULT_SONG) -> String:
+    return String(song_data(id).title)
+
+
+## 한 박 (초)
+static func beat_of(id: String = DEFAULT_SONG) -> float:
+    return 60.0 / float(song_data(id).bpm)
+
+
+## 곡 고르기: 바로 전 곡(exclude)은 빼고 무작위
+static func pick_song(rng: RandomNumberGenerator, exclude: String = "") -> String:
+    var ids: Array = SONGS.keys()
+    if ids.size() > 1:
+        ids.erase(exclude)
+    return String(ids[rng.randi_range(0, ids.size() - 1)])
+
+
 ## 진행표: 곡 노트에서 [{bars, gap, rgap, attack_t, response_t, notes}] — attack_t = 선창 시작, response_t = 따라 치기 시작
 ##   gap = 선창 앞 '준비' 안내를 띄울 박 수 (앞 차례가 끝난 뒤부터, 최대 4박), rgap = 선창 끝 → 따라 치기 사이 박 수
 static func build_turns(_teams: int = 0, id: String = DEFAULT_SONG) -> Array:
     var data := song_data(id)
-    assert(absf(float(data.bpm) - BPM) < 0.01, "곡 BPM 이 Chart.BPM 과 달라요")
+    var beat := 60.0 / float(data.bpm)
+    var bar := beat * 4.0
     var turns := []
     var prev_end := 0.0
     for td in data.turns:
@@ -51,9 +69,10 @@ static func build_turns(_teams: int = 0, id: String = DEFAULT_SONG) -> Array:
         var notes := []
         for nn in td.notes:
             notes.append([int(nn[0]), int(nn[1]), int(nn[2])])
-        turns.append({"attack_team": -1, "bars": n, "gap": clampi(int(round((a - prev_end) / BEAT)), 0, 4),
-                "rgap": int(round((r - (a + n * BAR)) / BEAT)), "attack_t": a, "response_t": r, "notes": notes, "host": true})
-        prev_end = r + n * BAR
+        turns.append({"attack_team": -1, "bars": n, "gap": clampi(int(round((a - prev_end) / beat)), 0, 4),
+                "rgap": int(round((r - (a + n * bar)) / beat)), "attack_t": a, "response_t": r, "notes": notes, "host": true,
+                "beat": beat, "bar": bar})
+        prev_end = r + n * bar
     return turns
 
 
@@ -62,16 +81,16 @@ static func end_time(_turns: Array = [], id: String = DEFAULT_SONG) -> float:
 
 
 static func attack_end(turn: Dictionary) -> float:
-    return float(turn.attack_t) + int(turn.bars) * BAR
+    return float(turn.attack_t) + int(turn.bars) * float(turn.bar)
 
 
 static func response_end(turn: Dictionary) -> float:
-    return float(turn.response_t) + int(turn.bars) * BAR
+    return float(turn.response_t) + int(turn.bars) * float(turn.bar)
 
 
 ## 쉼 시작 (선창 앞)
 static func ready_t(turn: Dictionary) -> float:
-    return float(turn.attack_t) - int(turn.gap) * BEAT
+    return float(turn.attack_t) - int(turn.gap) * float(turn.beat)
 
 
 ## 노트 시각 (선창이면 선창 시작 기준, 따라 치기면 따라 치기 시작 기준)

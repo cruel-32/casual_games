@@ -191,7 +191,7 @@ func _update_banner(t: float) -> void:
         return
     if t < 0.0:
         _banner.text = str(ceili(-t))
-        _sub.text = ("Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱") + "  ·  피버 = 누르고 있다가 떼기"
+        _sub.text = "♪ " + Chart.song_title(game.song_id) + "\n" + ("Space = 둥,  Enter = 딱" if not PartyGame.TOUCH_SCRIPT.should_enable() else "왼쪽 버튼 = 둥,  오른쪽 버튼 = 딱") + "  ·  피버 = 누르고 있다가 떼기"
         return
     var ph: Array = game.phase_at(t)
     var kind: String = ph[1]
@@ -215,7 +215,7 @@ func _update_banner(t: float) -> void:
         _:
             _banner.add_theme_color_override("font_color", UI.CREAM)
             _banner.text = "마무리!" if int(ph[2]) >= game.turns.size() else "반주를 들으며 준비해요"
-            _sub.text = ""
+            _sub.text = "♪ " + Chart.song_title(game.song_id) if int(ph[2]) == 0 else ""
 
 
 func _update_scores() -> void:
@@ -323,7 +323,8 @@ func _draw() -> void:
     var tr: Dictionary = game.turns[i]
     # 따라 치기 구간만 밝게
     var r0 := float(tr.response_t)
-    var r1 := r0 + int(tr.bars) * Chart.BAR
+    var r1 := r0 + int(tr.bars) * float(tr.bar)
+    var beat := float(tr.beat)
     var xs := clampf(hit_x + (r0 - t) * px, r.position.x + 4, r.end.x - 4)
     var xe := clampf(hit_x + (r1 - t) * px, r.position.x + 4, r.end.x - 4)
     if xs > r.position.x + 4:
@@ -333,9 +334,9 @@ func _draw() -> void:
     if xe - xs > 1.0:
         draw_rect(Rect2(Vector2(xs, r.position.y + 4), Vector2(xe - xs, r.size.y - 8)), Color(1, 0.9, 0.4, 0.1))
     # 박 선 (따라 치기 구간 안, 시작·끝 굵게)
-    var first := int(floor((t - LOOK_BACK - r0) / Chart.BEAT))
-    for k in range(first, first + int((LOOK_AHEAD + LOOK_BACK) / Chart.BEAT) + 2):
-        var bt := r0 + k * Chart.BEAT
+    var first := int(floor((t - LOOK_BACK - r0) / beat))
+    for k in range(first, first + int((LOOK_AHEAD + LOOK_BACK) / beat) + 2):
+        var bt := r0 + k * beat
         if bt < r0 - 0.01 or bt > r1 + 0.01:
             continue
         var x := hit_x + (bt - t) * px

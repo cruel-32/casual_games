@@ -10,7 +10,7 @@ extends PartyGame
 ## 시간: 화면(노트 길)·판정은 '귀에 들리는 반주 시각'(heard_time) 하나로 맞춘다 — 반주를 기준 시계로 쓰고 소리 출력 지연을 뺀다.
 ##   효과음 예약은 '지금 섞이는 시각'(mix_time) 기준.
 ## 메시지 (서버 → 모두)
-##   ["start", t0, teams]                 곡 시작 시각(서버 시계)
+##   ["start", t0, teams, song_id]        곡 시작 시각(서버 시계)·곡 (Chart.SONGS)
 ##   ["turn", i, -1, notes]               i번째 차례 진행자 리듬 (쉼 전에 미리)
 ##   ["j", fighter_slot, judge, lane]     따라 치기 판정 (머리 위 문구만, 소리 없음). lane +2 = 피버 뗌
 ##   ["k", slot, lane, 1|0]               누름·뗌 — 그 사람 캐릭터가 바로 북을 친다 (판정과 상관없이 누르면 움직임)
@@ -36,7 +36,6 @@ const DON_COLOR := Color(0.96, 0.56, 0.16)
 const KA_COLOR := Color(0.60, 0.36, 0.86)
 const FEVER_COLOR := Color(1.0, 0.82, 0.2)
 const MUSIC_DB := 2.0
-const ROLL_STEP := 0.125            ## 피버를 누르고 있는 동안 '드르륵' 간격 (16분음표)
 const ROLL_DB := -9.0
 
 @export var bot_count := 3          ## 혼자 연습: 나 + 봇 3 (2팀)
@@ -44,7 +43,10 @@ const ROLL_DB := -9.0
 var teams := 0
 var my_slot := -1
 var t0 := -1.0                      ## 곡 시작 (서버 시계). -1 = 아직
+var song_id := Chart.DEFAULT_SONG  ## 이번 경기 곡 (서버·오프라인이 고르고 "start" 로 알림)
+static var _last_song := ""         ## 바로 전 경기 곡 (연달아 같은 곡이 안 나오게)
 var turns: Array = []               ## Chart.build_turns
+var _roll_step := 0.125             ## 피버를 누르고 있는 동안 '드르륵' 간격 (곡의 16분음표)
 var end_time := 0.0
 ## 화면용 (모든 PC)
 var view_notes := {}                ## turn -> [[slot, lane, end], ...]
@@ -73,6 +75,7 @@ var _drums := {}                    ## slot -> [left mesh, right mesh]
 var _music: AudioStreamPlayer
 var _sfx_pool: Array[AudioStreamPlayer] = []
 var _bot_hits: Array = []           ## [[song_time, fighter slot, lane, db, played, roll_until]] 봇·진행자·남의 공격 예약
+var _pop_labels := {}               ## slot -> Label3D 머리 위 판정 글자 (한 사람에 하나)
 var _popups: Array = []             ## [[song_time, fighter slot, judge]] 봇 판정 글자 (노트 시각에 머리 위)
 var _rolls: Array = []              ## [{who, lane, until, next, db}] 피버 '드르륵' (until -1 = 키를 떼면 끝)
 var _attack_mark: Label3D
@@ -102,8 +105,13 @@ var _focus_since := 0.0
 func _ready() -> void:
     Sfx.bgm("")                     # 메뉴 음악 끄고 이 게임 반주를 직접 튼다 (박자를 맞춰야 해서)
     teams = int(online_match.get("teams", 0)) if is_online_match() else 2
-    turns = Chart.build_turns(teams)
-    end_time = Chart.end_time(turns)
+    if not is_client():
+        var rng := RandomNumberGenerator.new()
+        rng.randomize()
+        _set_song(Chart.pick_song(rng, _last_song))
+        _last_song = song_id
+    else:
+        _set_song(Chart.DEFAULT_SONG)   # 서버가 "start" 로 알려 주면 바꾼다
     _spawn_fighters()
     if is_server():
         return
@@ -437,14 +445,25 @@ func _host_gesture(kind: String) -> void:
         _hosts[i].gesture(kind)
 
 
+## 곡 정하기: 진행표·끝 시각·반주를 그 곡으로
+func _set_song(id: String) -> void:
+    song_id = id if Chart.SONGS.has(id) else Chart.DEFAULT_SONG
+    turns = Chart.build_turns(teams, song_id)
+    end_time = Chart.end_time(turns, song_id)
+    _roll_step = Chart.beat_of(song_id) / 4.0
+    if _music:
+        _music.stop()
+        var st: AudioStreamOggVorbis = Chart.song_backing(song_id).duplicate()
+        st.loop = false             # 완성곡 한 번 (반복 없음)
+        _music.stream = st
+
+
 func _build_audio() -> void:
     _music = AudioStreamPlayer.new()
     _music.bus = "Music"
-    var st: AudioStreamOggVorbis = Chart.song_backing().duplicate()
-    st.loop = false                 # 완성곡 한 번 (반복 없음)
-    _music.stream = st
     _music.volume_db = MUSIC_DB
     add_child(_music)
+    _set_song(song_id)
     for i in 10:
         var p := AudioStreamPlayer.new()
         p.bus = "Sfx"
@@ -686,7 +705,7 @@ func _process(delta: float) -> void:
             if float(hit[3]) > -90.0:
                 _snd("don" if int(hit[2]) == 0 else "ka", float(hit[3]))
             if float(hit[5]) > float(hit[0]):
-                _rolls.append({"who": int(hit[1]), "lane": int(hit[2]), "until": float(hit[5]), "next": float(hit[0]) + ROLL_STEP, "db": float(hit[3]) + ROLL_DB})
+                _rolls.append({"who": int(hit[1]), "lane": int(hit[2]), "until": float(hit[5]), "next": float(hit[0]) + _roll_step, "db": float(hit[3]) + ROLL_DB})
         if ht >= float(hit[0]):
             _strike(int(hit[1]), int(hit[2]))
         else:
@@ -699,7 +718,7 @@ func _process(delta: float) -> void:
                 var s := int(pp[1])
                 if s >= 0 and s < fighters.size():
                     var j := String(pp[2])
-                    popup_text(fighters[s].global_position + Vector3(0, 2.2, 0), Chart.JUDGE_NAMES.get(j, j), _judge_color(j))
+                    _judge_pop(s, j)
             else:
                 keep_p.append(pp)
         _popups = keep_p
@@ -730,7 +749,7 @@ func _update_rolls(mt: float, ht: float) -> void:
             if float(r.db) > -90.0:
                 _snd("don" if int(r.lane) == 0 else "ka", float(r.db), 1.05)
             _strike(int(r.who), int(r.lane), true)
-            r.next = float(r.next) + ROLL_STEP
+            r.next = float(r.next) + _roll_step
         if not mine and clock >= float(r.until):
             continue
         keep.append(r)
@@ -892,7 +911,7 @@ func _sync_music(_delta: float) -> void:
     _real_prev = now_us
     var t := song_time()
     var loop_len := 100000.0                    # 곡은 반복하지 않음 (한 바퀴 = 곡 전체)
-    var song_len := float(Chart.song_data().length)
+    var song_len := float(Chart.song_data(song_id).length)
     if t < 0.0 or state == State.ENDED or _mix_clock >= song_len or t >= song_len:
         if _mix_clock > -900.0 and (t >= 0.0 or state == State.ENDED):
             _mix_clock += real_dt
@@ -934,6 +953,8 @@ func on_server_message(msg: Array) -> void:
         return
     match String(msg[0]):
         "start":
+            if msg.size() > 3 and String(msg[3]) != song_id:
+                _set_song(String(msg[3]))
             t0 = float(msg[1])
         "turn":
             var i := int(msg[1])
@@ -945,7 +966,7 @@ func on_server_message(msg: Array) -> void:
             if s != my_slot and s >= 0 and s < fighters.size():
                 var j := String(msg[2])
                 if j != "extra":
-                    popup_text(fighters[s].global_position + Vector3(0, 2.2, 0), Chart.JUDGE_NAMES.get(j, j), _judge_color(j))
+                    _judge_pop(s, j)
                 # 남의 북소리는 내지 않음 — 들리는 북은 진행자(반주 안)와 내 북뿐 (여럿이 치면 헷갈림)
         "k":
             # 다른 사람이 북을 누름·뗌 → 그 캐릭터가 바로 친다 (판정과 상관없이 누르면 움직임)
@@ -1020,6 +1041,30 @@ func _schedule_responders(i: int, notes: Array) -> void:
                 k += 1
 
 
+## 다른 연주자 머리 위 판정 글자. 한 사람 위에는 하나만 (빠른 곡에서 겹쳐 읽기 어려움 → 새 판정이 앞 판정을 바꿈)
+func _judge_pop(slot: int, j: String) -> void:
+    var old = _pop_labels.get(slot)
+    if is_instance_valid(old):
+        (old as Node).queue_free()
+    var pos: Vector3 = fighters[slot].global_position + Vector3(0, 2.2, 0)
+    var l := Label3D.new()
+    l.text = Chart.JUDGE_NAMES.get(j, j)
+    l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+    l.font_size = 52
+    l.outline_size = 12
+    l.pixel_size = 0.006
+    l.modulate = _judge_color(j)
+    l.no_depth_test = true
+    add_child(l)
+    l.global_position = pos
+    _pop_labels[slot] = l
+    var tw := l.create_tween()
+    tw.set_parallel(true)
+    tw.tween_property(l, "global_position", pos + Vector3(0, 0.6, 0), 0.6)
+    tw.tween_property(l, "modulate:a", 0.0, 0.3).set_delay(0.35)
+    tw.chain().tween_callback(l.queue_free)
+
+
 static func _judge_color(j: String) -> Color:
     if j == "off":
         return Color(1.0, 0.65, 0.35)       # 엇박 (점수 절반)
@@ -1053,11 +1098,11 @@ func _physics_process(delta: float) -> void:
                 all_loaded = false
         if all_loaded or _wait_time > LOAD_WAIT_MAX:
             t0 = net_now() + START_DELAY
-            _emit(["start", t0, teams])
+            _emit(["start", t0, teams, song_id])
         return
     if t0 < 0.0:
         t0 = net_now() + START_DELAY
-        _emit(["start", t0, teams])
+        _emit(["start", t0, teams, song_id])
         return
     var t := song_time()
     if t >= 0.0 and state == State.COUNTDOWN and is_server():
