@@ -131,7 +131,9 @@ var push_power := 0.0
 var push_tap := true
 var net_prev_flags := 0               ## 온라인: 지난번 받은 상태 표시 (새로 켜진 것만 소리 내려고)
 var _voice_last := {}
-var _cheered := false                ## 경기가 끝났을 때 환호했나                ## 목소리 종류 -> 마지막으로 낸 시각
+var _cheered := false
+var _press_pending := false          ## 쿨타임 중에 밀치기(던지기) 키를 눌렀음
+var net_charge_voiced := false        ## 온라인: 다른 캐릭터 차징 목소리를 이번 차징에 냈나                ## 경기가 끝났을 때 환호했나                ## 목소리 종류 -> 마지막으로 낸 시각
 var push_anim := 0.0
 var bump_cooldown := 0.0
 var shake := 0.0
@@ -191,9 +193,9 @@ var spring_arm: SpringArm3D
 var camera: Camera3D
 var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 바꿀 수 있음)
 var cam_max_len := 9.0               ## 〃 축소 한계
-var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 크레이지 봄버맨 유령)
+var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 크레이지 봄버 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
-var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 크레이지 봄버맨 1.3)
+var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 크레이지 봄버 1.3)
 var throw_mode := false              ## true 면 밀치기 키 = 탭: game.on_throw(self, -1) / 차징: game.on_throw(self, 0~1)
 
 
@@ -1037,19 +1039,27 @@ func _update_push(delta: float, pressed: bool) -> void:
         if not can_act() or is_stunned():
             _cancel_charge()
         else:
+            var was := charge_time
             charge_time += delta
+            # 차징 소리 = 캐릭터 목소리 ("흐으으읍~") — 탭이 아니라 차징이 된 순간 한 번
+            if was < tap_threshold and charge_time >= tap_threshold:
+                _voice("charge")
             if is_human:
                 var r := get_charge_ratio()
-                Sfx.charge(r if charge_time >= tap_threshold else 0.0)
                 if r >= 1.0 and not _full_sfx:
                     _full_sfx = true
                     Sfx.play("charge_full")
             if not pressed:
                 _release_push()
-    elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0:
+    elif pressed and (not _charge_was_pressed or _press_pending) and cooldown_timer <= 0.0 and dash_timer <= 0.0:
         charging = true
         charge_time = 0.0
         _full_sfx = false
+        _press_pending = false
+    elif pressed and not _charge_was_pressed:
+        _press_pending = true          # 쿨타임 중에 눌렀으면 쿨타임이 끝나는 순간 (계속 누르고 있으면) 차징 시작
+    if not pressed:
+        _press_pending = false
     _charge_was_pressed = pressed
 
 
@@ -1065,18 +1075,25 @@ func _cancel_charge(penalty: bool = true) -> void:
 
 func _release_push() -> void:
     if throw_mode:
-        # 던지기 모드 (예: 크레이지 봄버맨): 밀치기 대신 — 탭 = r -1 (발밑에 놓기), 차징 = 차징한 만큼 0~1 (멀리·높이 던지기)
+        # 던지기 모드 (예: 크레이지 봄버): 밀치기 대신 — 탭 = r -1 (발밑에 놓기), 차징 = 차징한 만큼 0~1 (멀리·높이 던지기)
         var r := -1.0 if charge_time < tap_threshold else get_charge_ratio()
         charging = false
         if is_human:
             Sfx.charge_stop()
+        var thrown := true
+        if game and game.has_method(&"on_throw"):
+            thrown = bool(game.on_throw(self, r))
+        if not thrown:
+            cooldown_total = 0.15          # 폭탄이 없어서 못 던짐: 잠깐만 쉬고 다시 누를 수 있게
+            cooldown_timer = cooldown_total
+            return
         if r >= 0.0:
             push_anim = 0.35
             _voice("push", 3)          # 차징해서 던질 때 기합 (탭으로 발밑에 놓을 때는 조용히)
-        cooldown_total = 0.3
+        # 쿨타임: 이 동안은 아무것도 못 함 (움직임·점프·다음 던지기)
+        cooldown_total = float(game.throw_cooldown(self)) if game and game.has_method(&"throw_cooldown") else 0.3
         cooldown_timer = cooldown_total
-        if game and game.has_method(&"on_throw"):
-            game.on_throw(self, r)
+        lock_timer = maxf(lock_timer, cooldown_total)
         return
     var tap := charge_time < tap_threshold
     var c := 0.0 if tap else get_charge_ratio()
@@ -1336,7 +1353,7 @@ func _check_wall_slam() -> void:
 ## 목소리: 캐릭터마다 목소리 종류(VOICE_TYPES 개) 하나 + 같은 종류 안에서 음높이를 조금씩 다르게
 ##   파일 audio/sfx/voice_<종류>_<목소리>_<번호>.wav (tools/audio/gen_voice.py)
 const VOICE_TYPES := 9
-const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2}
+const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2, "charge": 2}
 ## 대사 (TTS, tools/audio/gen_tts_lines.py): audio/sfx/line_<종류>_<목소리>_<번호>.wav — "야호!", "이겼다!", "아이씨!", "짜증나!", "우하하!" …
 ##   목소리를 낼 때 LINE_CHANCE 확률로 합성 감탄사 대신 대사를 고른다
 const LINE_COUNT := {"win": 4, "die": 4, "hit": 3, "pickup": 3, "laugh": 3, "push": 3, "surprise": 3}

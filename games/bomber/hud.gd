@@ -1,5 +1,5 @@
 extends "res://games/rock_dodge/hud.gd"
-## 크레이지 봄버맨 화면
+## 크레이지 봄버 화면
 ##   위: 남은 시간·생존 / 가운데: 카운트다운·결과 / 아래: 내 폭탄·불꽃·신발 개수, 유령이면 던지기 안내
 ##   오른쪽 위 메뉴·결과 버튼은 돌피하기 화면 것을 그대로 씀. 탈락해도 관전 대신 유령으로 계속 참여
 
@@ -99,7 +99,7 @@ func _process(delta: float) -> void:
     var bottom := scr.y - (250.0 if _touch else 70.0)
     if human and not human.dead and game.state != PartyGame.State.ENDED:
         var s := human.slot
-        _stats.text = "💣 폭탄 %d   🔥 불꽃 %d   ⚡ 속도 %d" % [game.stat(s, 0), game.stat(s, 1), game.stat(s, 2)]
+        _stats.text = "💣 폭탄 %d   🔥 범위 %d×%d   ⚡ 속도 %d   ⏱ 쿨타임 %.2f초" % [game.stat(s, 0), 2 * game.stat(s, 1) + 1, 2 * game.stat(s, 1) + 1, game.stat(s, 2), game.throw_cooldown(human)]
         _stats.visible = true
         _place_centered(_stats, bottom)
     else:

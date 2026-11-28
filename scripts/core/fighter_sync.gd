@@ -136,6 +136,12 @@ static func apply_flags(f: Fighter, fl: int, charge_time: float) -> void:
             f.voice("push")
         if rise & F_STUN:
             f.voice("hit")
+        if fl & F_CHARGING:
+            if charge_time >= f.tap_threshold and not f.net_charge_voiced:
+                f.net_charge_voiced = true
+                f.voice("charge")
+        else:
+            f.net_charge_voiced = false
         if (fall & F_FLOOR) and f.velocity.y > 4.0 and randf() < 0.45:
             f.voice("jump")
     f.net_on_floor = (fl & F_FLOOR) != 0

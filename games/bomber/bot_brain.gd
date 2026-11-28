@@ -1,9 +1,9 @@
 extends Node
-## 봇 (크레이지 봄버맨): 블록 탑 격자 위에서 생각한다
+## 봇 (크레이지 봄버): 블록 탑 격자 위에서 생각한다
 ##   1. 지금 칸이 곧 터질 자리면 → 안전한 칸으로 도망 (구멍은 피하고, 2층까지는 점프로 오름)
-##   2. 던질 폭탄이 있고 상대가 3~18m 안이면 → 상대 쪽으로 몸을 돌리고, 거리만큼 눌렀다가 던짐 (내가 맞을 자리는 안 던짐)
+##   2. 던질 폭탄이 있고 상대가 4.5~11m 안이면 → 상대 쪽으로 몸을 돌리고, 거리만큼 눌렀다가 던짐 (내가 맞을 자리는 안 던짐)
 ##   3. 가까운 아이템 줍기
-##   4. 상대에게서 3~5칸 떨어진 자리로 이동
+##   4. 상대에게서 2~4칸(던질 수 있는 거리) 떨어진 자리로 이동
 ## 생각은 0.2~0.4초마다. Fighter 의 intent_* 만 채운다 (서버·혼자 연습에서만 돈다)
 
 const Board := preload("res://games/bomber/board.gd")
@@ -223,12 +223,15 @@ func _decide() -> void:
     if target:
         var tc := b.cell_at(target.global_position)
         var md := absi(tc.x - c.x) + absi(tc.y - c.y)
-        if md >= 3 and md <= 6:
+        # 던질 수 있는 거리(대각선 포함 약 4.5~11m)에 서 있기: 가로·세로 칸 차이가 각각 4칸 이내, 합이 2~5
+        var dx := absi(tc.x - c.x)
+        var dy := absi(tc.y - c.y)
+        if md >= 2 and md <= 5 and dx <= 4 and dy <= 4 and randf() < 0.8:
             _path.clear()
             return
         _path = _bfs(c, func(n: Vector2i) -> bool:
             var m := absi(n.x - tc.x) + absi(n.y - tc.y)
-            return m >= 3 and m <= 5 and not danger.has(b.idx(n)), danger, 20)
+            return m >= 2 and m <= 4 and absi(n.x - tc.x) <= 3 and absi(n.y - tc.y) <= 3 and not danger.has(b.idx(n)), danger, 24)
 
 
 func _follow() -> void:

@@ -1,7 +1,7 @@
 extends RefCounted
-## 크레이지 봄버맨 격자 (판정·봇이 쓰는 순수 데이터. 화면은 bomber_game.gd 가 그린다)
+## 크레이지 봄버 격자 (판정·봇이 쓰는 순수 데이터. 화면은 bomber_game.gd 가 그린다)
 ##   블록은 2m 정육면체. 칸마다 LAYERS 층 쌓여 있고, 모두 그 꼭대기(평평)에서 시작한다
-##   바깥 테두리와 (짝수, 짝수) 칸은 부서지지 않는 블록(기둥) — 처음엔 다른 블록과 높이가 같아 위에 설 수 있다
+##   바깥 테두리와 (짝수, 짝수) 칸 중 절반(엇갈리게)은 부서지지 않는 블록(기둥) — 처음엔 다른 블록과 높이가 같아 위에 설 수 있다
 ##   폭발로 블록이 깎여 높이가 0 이 된 칸은 구멍 → 아래 용암으로 떨어진다. 경기장 가장자리 밖으로 떨어져도 탈락
 
 const TILE := 2.0
@@ -14,6 +14,7 @@ const DIRS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), 
 const ITEM_FIRE := 0
 const ITEM_BOMB := 1
 const ITEM_SPEED := 2
+const ITEM_COOL := 3            ## 던진 뒤 쿨타임 줄임
 
 var w := 13
 var h := 11
@@ -26,13 +27,13 @@ var z0 := 0.0
 
 ## 인원에 맞는 크기 (정사각형, 홀수)
 static func size_for(n: int) -> Vector2i:
-    if n <= 4:
-        return Vector2i(11, 11)
-    if n <= 6:
+    if n <= 3:
         return Vector2i(13, 13)
-    if n <= 10:
+    if n <= 5:
         return Vector2i(15, 15)
-    return Vector2i(17, 17)
+    if n <= 8:
+        return Vector2i(17, 17)
+    return Vector2i(19, 19)
 
 
 func generate(n_players: int) -> void:
@@ -47,7 +48,7 @@ func generate(n_players: int) -> void:
     hgt.fill(LAYERS)
     for y in h:
         for x in w:
-            if x == 0 or y == 0 or x == w - 1 or y == h - 1 or (x % 2 == 0 and y % 2 == 0):
+            if x == 0 or y == 0 or x == w - 1 or y == h - 1 or (x % 2 == 0 and y % 2 == 0 and (x / 2 + y / 2) % 2 == 0):
                 cells[idx(Vector2i(x, y))] = PILLAR
     # 출발 자리: 안쪽 테두리 한 바퀴(1번째 줄)에 고르게, (홀수, 홀수) 칸에
     var ring := _ring()

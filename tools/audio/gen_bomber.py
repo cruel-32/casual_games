@@ -1,4 +1,4 @@
-"""크레이지 봄버맨 효과음: python3 tools/audio/gen_bomber.py → audio/sfx/{bomb_place,boom,kick,crate_break,ghost_throw}.wav"""
+"""크레이지 봄버 효과음: python3 tools/audio/gen_bomber.py → audio/sfx/{bomb_place,boom,kick,crate_break,ghost_throw}.wav"""
 import os, sys
 import numpy as np
 from scipy.io import wavfile

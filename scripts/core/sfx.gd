@@ -23,11 +23,11 @@ const MIX := {
     "pickup": [-4.0, 0.03], "pickup_helmet": [-4.0, 0.0], "pickup_charge": [-4.0, 0.0],
     "pickup_cooldown": [-4.0, 0.0], "pickup_glove": [-4.0, 0.0], "shield_on": [-4.0, 0.0],
     "shield_off": [-6.0, 0.0], "ready_ping": [-12.0, 0.0], "wind": [-10.0, 0.08],
-    # 크레이지 봄버맨 (tools/audio/gen_bomber.py)
+    # 크레이지 봄버 (tools/audio/gen_bomber.py)
     "bomb_place": [-8.0, 0.06], "boom": [-3.0, 0.08], "kick": [-6.0, 0.06], "crate_break": [-8.0, 0.1], "ghost_throw": [-8.0, 0.05],
     # 캐릭터 목소리 (tools/audio/gen_voice.py) — 음높이는 캐릭터마다 다르게 Fighter.voice_pitch()
     "voice_push": [-5.0, 0.04], "voice_hit": [-3.0, 0.04], "voice_die": [-2.0, 0.03], "voice_jump": [-9.0, 0.05],
-    "voice_pickup": [-5.0, 0.04], "voice_win": [-4.0, 0.03], "voice_laugh": [-5.0, 0.04], "voice_surprise": [-4.0, 0.04],
+    "voice_pickup": [-5.0, 0.04], "voice_win": [-4.0, 0.03], "voice_laugh": [-5.0, 0.04], "voice_surprise": [-4.0, 0.04], "voice_charge": [-6.0, 0.03],
 }
 const BGM_DB := {"menu": -11.0, "match": -13.0}
 
