@@ -914,6 +914,7 @@ func _apply_item(f: Fighter, kind: int) -> void:
             Sfx.play("pickup")
         else:
             Sfx.play_at("pickup", f.global_position, self, -6.0)
+        f.voice("pickup", 0.1)
 
 
 # ================================================================ 판정 (서버·오프라인)
@@ -953,6 +954,8 @@ func _on_out(f: Fighter, killer: int) -> void:
         kname = "자폭"
     elif killer >= 0 and killer < fighters.size():
         kname = fighters[killer].display_name + "의 폭탄"
+        if not is_server() and not fighters[killer].dead:
+            fighters[killer].voice("laugh", 0.4)      # 맞힌 사람이 웃음
     _feed("%s 탈락 (%s)" % [f.display_name, kname], Color(1.0, 0.5, 0.45) if f == human else Color(0.9, 0.9, 0.9))
     if f == human:
         human_result = "탈락 — " + kname + " · 유령이 되어 밖에서 폭탄을 던질 수 있어요"
@@ -1272,6 +1275,7 @@ func _process(delta: float) -> void:
         if not b.landed:
             b.landed = true
             Sfx.play_at("kick", p, self, -6.0)
+            _surprise_near(b)
         var left := float(b.t) - t
         var rate := lerpf(16.0, 4.0, clampf(left / LAND_FUSE, 0.0, 1.0))
         vis.scale = Vector3.ONE * (1.0 + 0.1 * sin(Time.get_ticks_msec() * 0.001 * rate) + clampf(0.6 - left, 0.0, 0.6) * 0.35)
@@ -1297,6 +1301,18 @@ func _process(delta: float) -> void:
             var area: Node3D = _aim.get_node("Area")
             area.scale = Vector3.ONE * (2 * stat(human.slot, 1) + 1)
             _aim.scale = Vector3.ONE * (1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.012))
+
+
+## 폭탄이 바로 옆(터질 범위 안)에 떨어지면 그 캐릭터가 "헉!" (던진 사람 빼고)
+func _surprise_near(b: Dictionary) -> void:
+    var c := board.cell(int(b.cell))
+    var r := int(b.power)
+    for f in fighters:
+        if f.dead or f.slot == int(b.owner):
+            continue
+        var fc := board.cell_at(f.global_position)
+        if absi(fc.x - c.x) <= r and absi(fc.y - c.y) <= r:
+            f.voice("surprise", randf_range(0.0, 0.12))
 
 
 ## 밀치기는 이 게임에 없음 (밀치기 키 = 던지기)

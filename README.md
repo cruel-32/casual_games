@@ -104,8 +104,10 @@ const SERVER_LIST := [
 - 새 게임은 경기가 끝날 때 서버에서 `report_result(placements)` 를 부르기만 하면 된다 (`scripts/core/party_game.gd`)
 
 ### 캐릭터 목소리
-- `tools/audio/gen_voice.py` 로 만든 아이 목소리: 밀치기·차징 던지기 기합(`voice_push_*`), 밀려서 맞음(`voice_hit_*`), 탈락(`voice_die_*`). 캐릭터마다 음높이가 다름(`Fighter.voice_pitch`)
-- 온라인에서는 다른 사람 캐릭터의 상태 표시(밀치기·경직)가 새로 켜질 때 내 PC 에서도 목소리를 낸다(`FighterSync.apply_flags`). 같은 종류는 0.4초 안에 두 번 안 냄(`Fighter._voice`)
+- `tools/audio/gen_voice.py` 로 코드만으로 합성한 아이 목소리 감탄사 (녹음·샘플 없음). 파일 `audio/sfx/voice_<종류>_<목소리>_<번호>.wav` (22kHz, 모두 96개 약 1.6MB)
+- 목소리 4가지(0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 높은 목소리) — 캐릭터마다 하나(`Fighter.voice_type`), 같은 목소리 안에서도 음높이를 조금씩 다르게(`voice_pitch`)
+- 종류: push 밀칠 때·차징 던지기 기합(4) / hit 맞았을 때(4) / die 탈락(3) / jump 점프(3, 45% 확률) / pickup 아이템 먹음(3) / win 경기 끝에 살아남은 캐릭터 환호(3) / laugh 상대를 떨어뜨리거나 폭탄으로 맞혔을 때(2) / surprise 크레이지 봄버맨에서 폭탄이 내 폭발 범위 안에 떨어질 때 "헉!"(2)
+- 온라인에서는 다른 사람 캐릭터의 상태 표시(밀치기·경직·바닥에서 뜸)가 바뀔 때 내 PC 에서도 목소리를 낸다(`FighterSync.apply_flags`). 같은 종류는 0.4초 안에 두 번 안 냄(`Fighter._voice`). 음량은 종류별(`Sfx.MIX` 의 `voice_<종류>`)
 
 ### 불러오는 중 표시
 - 게임 시작을 누르거나(방장), 서버가 경기 시작을 알리거나, 다음 라운드·혼자 연습으로 넘어갈 때 `scripts/ui/loading_overlay.gd` 가 화면을 살짝 어둡게 하고 가운데에 도는 표시와 "게임 불러오는 중…" 을 띄운다. 씬을 바꾸기 전에 두 프레임 기다려 표시가 먼저 그려지게 함

@@ -129,7 +129,8 @@ var push_window := 0.0
 var push_power := 0.0
 var push_tap := true
 var net_prev_flags := 0               ## 온라인: 지난번 받은 상태 표시 (새로 켜진 것만 소리 내려고)
-var _voice_last := {}                ## 목소리 종류 -> 마지막으로 낸 시각
+var _voice_last := {}
+var _cheered := false                ## 경기가 끝났을 때 환호했나                ## 목소리 종류 -> 마지막으로 낸 시각
 var push_anim := 0.0
 var bump_cooldown := 0.0
 var shake := 0.0
@@ -815,6 +816,8 @@ func _physics_process(delta: float) -> void:
         _jump_arc = false
     if _jump_buffer > 0.0 and _coyote > 0.0 and controllable and lock_timer <= 0.0:
         velocity.y = jump_velocity
+        if randf() < 0.45:
+            _voice("jump")             # 점프 기합 (매번 내면 시끄러워 가끔)
         _jump_arc = true
         _jump_buffer = 0.0
         _coyote = 0.0
@@ -877,6 +880,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+    _check_cheer()
     if camera:
         camera.h_offset = randf_range(-1.0, 1.0) * shake * 0.15
         camera.v_offset = randf_range(-1.0, 1.0) * shake * 0.15
@@ -1234,7 +1238,15 @@ func _check_wall_slam() -> void:
 
 
 ## 캐릭터 목소리: 외형 번호마다 음높이가 달라서 누가 소리 냈는지 구분된다
-const VOICE_PITCH: Array[float] = [1.0, 1.14, 0.9, 1.07, 0.86, 1.2, 0.95, 1.1]
+## 목소리: 캐릭터마다 목소리 종류(VOICE_TYPES 개) 하나 + 같은 종류 안에서 음높이를 조금씩 다르게
+##   파일 audio/sfx/voice_<종류>_<목소리>_<번호>.wav (tools/audio/gen_voice.py)
+const VOICE_TYPES := 4
+const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2}
+const VOICE_PITCH: Array[float] = [1.0, 1.06, 0.95, 1.1, 0.92, 1.03, 0.97, 1.08, 0.94, 1.12, 0.99, 0.9]
+
+
+func voice_type() -> int:
+    return (look if look >= 0 else maxi(slot, 0)) % VOICE_TYPES
 
 
 func voice_pitch() -> float:
@@ -1242,19 +1254,34 @@ func voice_pitch() -> float:
     return VOICE_PITCH[lk]
 
 
-## kind: "push" / "hit" / "die", n: 변형 개수 (audio/sfx/voice_<kind>_<1..n>.wav)
-##   같은 종류는 0.4초 안에 두 번 내지 않음 (내 PC 의 판정과 온라인 상태(경직·밀치기 표시)로 같은 일이 두 번 들어와도 한 번만)
-func _voice(kind: String, n: int) -> void:
+## kind: VOICE_COUNT 의 종류. 같은 종류는 0.4초 안에 두 번 내지 않음
+##   (내 PC 의 판정과 온라인 상태(경직·밀치기 표시)로 같은 일이 두 번 들어와도 한 번만)
+func _voice(kind: String, _n: int = 0) -> void:
     var now := Time.get_ticks_msec() * 0.001
     if now - float(_voice_last.get(kind, -10.0)) < 0.4:
         return
     _voice_last[kind] = now
-    _sfx("voice_%s_%d" % [kind, randi() % n + 1], 0.0, voice_pitch())
+    var n: int = VOICE_COUNT.get(kind, 1)
+    _sfx("voice_%s_%d_%d" % [kind, voice_type(), randi() % n + 1], 0.0, voice_pitch())
 
 
-## 다른 스크립트(온라인 동기화·게임 모듈)가 목소리를 낼 때
-func voice(kind: String) -> void:
-    _voice(kind, 2 if kind == "die" else 3)
+## 경기가 끝나면 살아남은 캐릭터가 환호 (조금씩 다른 때에, 다 같이 내면 시끄러워 일부만)
+func _check_cheer() -> void:
+    if _cheered or game == null or int(game.get("state")) != PartyGame.State.ENDED:
+        return
+    _cheered = true
+    if not dead and (is_human or randf() < 0.6):
+        voice("win", randf_range(0.15, 0.9))
+
+
+## 다른 스크립트(온라인 동기화·게임 모듈)가 목소리를 낼 때. delay 초 뒤에 (여럿이 동시에 내면 겹치지 않게)
+func voice(kind: String, delay: float = 0.0) -> void:
+    if delay <= 0.0:
+        _voice(kind)
+        return
+    get_tree().create_timer(delay).timeout.connect(func():
+        if is_instance_valid(self) and is_inside_tree():
+            _voice(kind))
 
 
 ## 소리: 내 캐릭터는 화면 전체로, 다른 캐릭터는 그 위치에서 (멀면 작게)

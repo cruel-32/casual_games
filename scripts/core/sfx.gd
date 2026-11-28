@@ -26,9 +26,8 @@ const MIX := {
     # 크레이지 봄버맨 (tools/audio/gen_bomber.py)
     "bomb_place": [-8.0, 0.06], "boom": [-3.0, 0.08], "kick": [-6.0, 0.06], "crate_break": [-8.0, 0.1], "ghost_throw": [-8.0, 0.05],
     # 캐릭터 목소리 (tools/audio/gen_voice.py) — 음높이는 캐릭터마다 다르게 Fighter.voice_pitch()
-    "voice_push_1": [-5.0, 0.04], "voice_push_2": [-5.0, 0.04], "voice_push_3": [-5.0, 0.04],
-    "voice_hit_1": [-3.0, 0.04], "voice_hit_2": [-3.0, 0.04], "voice_hit_3": [-3.0, 0.04],
-    "voice_die_1": [-2.0, 0.03], "voice_die_2": [-2.0, 0.03],
+    "voice_push": [-5.0, 0.04], "voice_hit": [-3.0, 0.04], "voice_die": [-2.0, 0.03], "voice_jump": [-9.0, 0.05],
+    "voice_pickup": [-5.0, 0.04], "voice_win": [-4.0, 0.03], "voice_laugh": [-5.0, 0.04], "voice_surprise": [-4.0, 0.04],
 }
 const BGM_DB := {"menu": -11.0, "match": -13.0}
 
@@ -128,11 +127,20 @@ func play(sound: String, db: float = 0.0, pitch: float = 1.0) -> void:
     if p == null:
         p = _pool[0]
         _pool.push_back(_pool.pop_front())
-    var mix: Array = MIX.get(sound, [0.0, 0.0])
+    var mix := _mix(sound)
     p.stream = s
     p.volume_db = mix[0] + db
     p.pitch_scale = pitch * (1.0 + randf_range(-mix[1], mix[1]))
     p.play()
+
+
+## [음량 dB, 음높이 흔들림]. 목소리는 파일마다가 아니라 종류마다 (voice_hit_2_3 → voice_hit)
+func _mix(sound: String) -> Array:
+    if MIX.has(sound):
+        return MIX[sound]
+    if sound.begins_with("voice_"):
+        return MIX.get("voice_" + sound.get_slice("_", 1), [-4.0, 0.03])
+    return [0.0, 0.0]
 
 
 ## 3D 위치 소리. near 가 같은 월드의 노드여야 한다 (그 노드의 Viewport 에 붙인다)
@@ -142,7 +150,7 @@ func play_at(sound: String, pos: Vector3, near: Node, db: float = 0.0, pitch: fl
     var s := _stream(sound)
     if s == null:
         return
-    var mix: Array = MIX.get(sound, [0.0, 0.0])
+    var mix := _mix(sound)
     var p := AudioStreamPlayer3D.new()
     p.bus = "Sfx"
     p.stream = s

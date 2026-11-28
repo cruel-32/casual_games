@@ -129,12 +129,15 @@ static func apply_flags(f: Fighter, fl: int, charge_time: float) -> void:
     # 다른 사람 캐릭터의 목소리: 밀치기(던지기)를 시작하면 기합, 경직(밀려서 맞음)이 시작되면 비명
     #   그 사람 PC 에서만 나던 소리를 내 PC 에서도 (같은 일로 두 번 나는 건 Fighter._voice 가 막음)
     var rise := fl & ~f.net_prev_flags          # 이번에 새로 켜진 표시
+    var fall := f.net_prev_flags & ~fl          # 이번에 꺼진 표시 (바닥에서 떨어짐 = 점프)
     f.net_prev_flags = fl
     if f.remote and not f.dead and f.game and not f.game.is_server():
         if rise & F_PUSH_ANIM:
             f.voice("push")
         if rise & F_STUN:
             f.voice("hit")
+        if (fall & F_FLOOR) and f.velocity.y > 4.0 and randf() < 0.45:
+            f.voice("jump")
     f.net_on_floor = (fl & F_FLOOR) != 0
     f.charging = (fl & F_CHARGING) != 0
     f.charge_time = charge_time
