@@ -1242,6 +1242,10 @@ func _check_wall_slam() -> void:
 ##   파일 audio/sfx/voice_<종류>_<목소리>_<번호>.wav (tools/audio/gen_voice.py)
 const VOICE_TYPES := 5
 const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2}
+## 대사 (TTS, tools/audio/gen_tts_lines.py): audio/sfx/line_<종류>_<목소리>_<번호>.wav — "야호!", "이겼다!", "아이씨!", "짜증나!", "우하하!" …
+##   목소리를 낼 때 LINE_CHANCE 확률로 합성 감탄사 대신 대사를 고른다
+const LINE_COUNT := {"win": 4, "die": 4, "hit": 3, "pickup": 3, "laugh": 3, "push": 3, "surprise": 3}
+const LINE_CHANCE := {"win": 0.6, "die": 0.5, "hit": 0.35, "pickup": 0.6, "laugh": 0.6, "push": 0.3, "surprise": 0.5}
 const VOICE_PITCH: Array[float] = [1.0, 1.06, 0.95, 1.1, 0.92, 1.03, 0.97, 1.08, 0.94, 1.12, 0.99, 0.9]
 
 
@@ -1261,6 +1265,9 @@ func _voice(kind: String, _n: int = 0) -> void:
     if now - float(_voice_last.get(kind, -10.0)) < 0.4:
         return
     _voice_last[kind] = now
+    if LINE_COUNT.has(kind) and randf() < float(LINE_CHANCE.get(kind, 0.0)):
+        _sfx("line_%s_%d_%d" % [kind, voice_type(), randi() % int(LINE_COUNT[kind]) + 1], 0.0, voice_pitch())
+        return
     var n: int = VOICE_COUNT.get(kind, 1)
     _sfx("voice_%s_%d_%d" % [kind, voice_type(), randi() % n + 1], 0.0, voice_pitch())
 

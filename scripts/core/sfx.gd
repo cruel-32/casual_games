@@ -138,8 +138,8 @@ func play(sound: String, db: float = 0.0, pitch: float = 1.0) -> void:
 func _mix(sound: String) -> Array:
     if MIX.has(sound):
         return MIX[sound]
-    if sound.begins_with("voice_"):
-        return MIX.get("voice_" + sound.get_slice("_", 1), [-4.0, 0.03])
+    if sound.begins_with("voice_") or sound.begins_with("line_"):
+        return MIX.get("voice_" + sound.get_slice("_", 1), [-4.0, 0.03])     # 대사(line_)도 같은 종류 음량
     return [0.0, 0.0]
 
 
