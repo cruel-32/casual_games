@@ -192,7 +192,18 @@ func _decide() -> void:
                 # 조금 빗나가게 (실력이 낮을수록)
                 var dist := to.length() + randf_range(-1.2, 1.2) * (1.0 - skill)
                 _aim_dir = to.normalized().rotated(Vector3.UP, randf_range(-0.12, 0.12) * (1.0 - skill))
-                var r := clampf((dist - game.THROW_MIN) / (game.THROW_MAX - game.THROW_MIN), 0.0, 1.0)
+                # 물리 계산으로 떨어질 자리가 목표에 가장 가까운 차징 비율을 찾음 (높이 차이도 반영)
+                var goal := f.global_position + to.normalized() * dist
+                var r := 0.0
+                var best_e := INF
+                for k in 21:
+                    var rr := k / 20.0
+                    var lc: Vector2i = game.throw_plan(f, rr, _aim_dir)[0]
+                    var lp: Vector3 = b.center(lc)
+                    var e := Vector2(lp.x - goal.x, lp.z - goal.z).length()
+                    if e < best_e:
+                        best_e = e
+                        r = rr
                 _aim_time = f.tap_threshold + 0.02 + r * (f.charge_full_time() - f.tap_threshold)
                 _aim_timeout = 2.5
                 _path.clear()

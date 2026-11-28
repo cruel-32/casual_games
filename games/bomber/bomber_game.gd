@@ -26,10 +26,16 @@ const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 const TIME_LIMIT := 150.0
 const LAND_FUSE := 1.6            ## 떨어진 뒤 터지기까지 (초)
 const FLAME_TIME := 0.4           ## 불길이 남아 있는 시간
-const THROW_MIN := 2.0            ## 던지는 거리 (m): 살짝 누름 ~ 끝까지 누름
+const THROW_MIN := 2.0            ## 서서 평평한 곳에 던질 때 거리 (m): 살짝 누름 ~ 끝까지 누름 (봇 판단용, 실제는 물리 계산)
 const THROW_MAX := 11.0
-const FLIGHT_BASE := 0.18         ## 날아가는 시간 = 기본 + 거리 비례 (빠르게)
-const FLIGHT_PER_M := 0.014
+const BOMB_GRAVITY := 30.0        ## 폭탄 중력 (빠르고 낮게 날아가게 캐릭터 중력보다 셈)
+const THROW_VH_MIN := 4.3         ## 발사 속도: 수평 (m/s) 살짝 ~ 끝까지
+const THROW_VH_MAX := 19.0
+const THROW_VY_MIN := 3.0         ##   위쪽 (m/s) — 꼭대기가 던진 높이보다 0.15~0.5m 위 (낮게)
+const THROW_VY_MAX := 5.5
+const INHERIT_H := 0.6            ## 던질 때 내 몸 속도를 이만큼 더함 (달리며 던지면 더 멀리)
+const INHERIT_V := 0.6            ##   위아래 (점프해 올라가는 중이면 더 높이·멀리)
+const TAP_TIME := 0.28            ## 탭(발밑에 놓기) 떨어지는 시간
 const HIT_BELOW := 2.3            ## 불길 판정 높이 (발 기준): 폭발 층 꼭대기보다 이만큼 아래 ~ (한 층 아래 칸까지)
 const HIT_ABOVE := 1.5            ##   이만큼 위까지. 점프해서 더 높이 떠 있으면 안 맞음
 const LAVA_OUT := 0.4             ## 발이 용암(바닥) 위 이 높이보다 낮으면 탈락 — 경기장 밖으로 떨어져도
@@ -473,6 +479,7 @@ func _setup_camera(f: Fighter) -> void:
     f.cam_min_len = 2.5
     f.cam_max_len = 24.0
     f.spring_arm.spring_length = CAM_DIST
+    f.cam_default_len = CAM_DIST
 
 
 func stat(slot: int, k: int) -> int:
@@ -494,21 +501,64 @@ func active_bombs_of(slot: int, ghost: bool = false) -> int:
 
 
 # ================================================================ 던지기
-## 던지기 비율(0~1) → 거리
-static func throw_dist(r: float) -> float:
-    return lerpf(THROW_MIN, THROW_MAX, clampf(r, 0.0, 1.0))
+## 던지기는 물리로 계산: 발사 속도(차징 비율) + 내 몸의 속도 일부(점프 중이면 위로 더, 달리면 앞으로 더) + 중력.
+##   궤적이 처음 닿는 블록 칸을 찾아 그 칸 가운데 꼭대기로 보정해 떨어뜨린다 (부서지지 않는 블록 위도 OK).
+##   보여 주는 비행은 같은 중력·같은 시간으로 시작점 → 그 칸까지 다시 맞춘 포물선 (arc = 중력 × 시간² / 8)
+static func throw_velocity(dir: Vector3, r: float, body_vel: Vector3) -> Vector3:
+    var k := clampf(r, 0.0, 1.0)
+    var d := Vector3(dir.x, 0.0, dir.z)
+    d = d.normalized() if d.length() > 0.01 else Vector3(0, 0, -1)
+    var v := d * lerpf(THROW_VH_MIN, THROW_VH_MAX, k) + Vector3(0, lerpf(THROW_VY_MIN, THROW_VY_MAX, k), 0)
+    return v + Vector3(body_vel.x, 0.0, body_vel.z) * INHERIT_H + Vector3(0, body_vel.y * INHERIT_V, 0)
 
 
-## 지금 손을 떼면 떨어질 칸 (조준 표시·봇용). r < 0 = 탭 → 발밑
-func aim_cell(f: Fighter, r: float) -> Vector2i:
+## from 에서 v 로 던졌을 때 떨어질 칸과 걸리는 시간 [칸, 시간]
+func simulate_throw(from: Vector3, v: Vector3) -> Array:
+    var p := from
+    var t := 0.0
+    var dt := 1.0 / 120.0
+    var prev := board.cell_at(from)
+    var last_in := prev if board.in_bounds(prev) else Vector2i(board.w / 2, board.h / 2)
+    var top_level := floor_y + Board.LAYERS * Board.BLOCK
+    while t < 4.0:
+        var np := p + v * dt
+        v.y -= BOMB_GRAVITY * dt
+        t += dt
+        var c := board.cell_at(np)
+        if board.in_bounds(c):
+            var surf := top_y(c) if board.height(c) > 0 else floor_y
+            if np.y <= surf:
+                # 옆으로 더 높은 칸 벽에 부딪혔으면 그 앞 칸에 떨어짐, 위에서 내려왔으면 그 칸
+                if c != prev and p.y < surf - 0.05 and board.in_bounds(prev):
+                    return [prev, t]
+                return [c, t]
+            last_in = c
+        elif np.y < top_level:
+            return [last_in, t]            # 경기장 밖으로 넘어가 떨어지면 마지막으로 지난 안쪽 칸 (보정)
+        prev = c
+        p = np
+    return [last_in, t]
+
+
+## 시간 → 보여 줄 포물선 높이 (같은 중력으로 그 시간에 맞춤)
+static func arc_for_time(tm: float) -> float:
+    return BOMB_GRAVITY * tm * tm / 8.0
+
+
+## 지금 손을 떼면 [떨어질 칸, 비행 시간] (조준 표시·봇용). r < 0 = 탭 → 발밑
+func throw_plan(f: Fighter, r: float, dir: Vector3 = Vector3.ZERO) -> Array:
+    var from := f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)
     if r < 0.0:
-        return board.cell_at(f.global_position)
-    return board.throw_target(f.global_position, f.facing(), throw_dist(r))
+        var fc := board.cell_at(f.global_position)
+        return [Vector2i(clampi(fc.x, 0, board.w - 1), clampi(fc.y, 0, board.h - 1)), TAP_TIME]     # 가장자리 밖(떨어지는 중)이어도 경기장 안 칸
+    if dir == Vector3.ZERO:
+        dir = f.facing()
+    var vel := f.velocity if not f.remote else Vector3.ZERO
+    return simulate_throw(from, throw_velocity(dir, r, vel))
 
 
-## 던지는 높이 (포물선이 시작~끝 직선보다 가운데에서 이만큼 위): 낮고 빠르게 — 상대를 맞히기 쉽게
-static func throw_arc(r: float) -> float:
-    return 0.3 if r < 0.0 else lerpf(0.6, 2.0, clampf(r, 0.0, 1.0))
+func aim_cell(f: Fighter, r: float) -> Vector2i:
+    return throw_plan(f, r)[0]
 
 
 ## Fighter 가 밀치기 키를 뗐다 (던지기 모드): 탭 r = -1 → 발밑에 놓기, 차징 r = 0~1 → 멀리·높이 던지기
@@ -519,9 +569,10 @@ func on_throw(f: Fighter, r: float) -> bool:
         if f == human:
             popup_text(f.global_position + Vector3(0, 2.4, 0), "폭탄이 터져야 다시 던져요", Color(0.9, 0.9, 0.9))
         return false
-    var c := aim_cell(f, r)
+    var plan := throw_plan(f, r)
+    var c: Vector2i = plan[0]
     var from := f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)
-    var arc := throw_arc(r)
+    var arc := arc_for_time(maxf(float(plan[1]), 0.12))
     var skew := Board.skew_of(f.facing())
     if is_client():
         _pending_throws += 1           # 서버가 폭탄을 알려 줄 때까지 내 폭탄 수에 미리 셈 (연타로 두 번 보내지 않게)
@@ -544,11 +595,9 @@ func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3, ar
         broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost, arc, skew])
 
 
-## 날아가는 시간: 기본 + 거리 비례 + 높이 비례 (높이 던질수록 조금 더 걸림)
-func flight_time(from: Vector3, i: int, arc: float) -> float:
-    var to := board.center(board.cell(i))
-    var dist := Vector2(to.x - from.x, to.z - from.z).length()
-    return FLIGHT_BASE + dist * FLIGHT_PER_M + arc * 0.03
+## 날아가는 시간: 포물선 높이(arc = 중력 × 시간² / 8)에서 거꾸로
+func flight_time(_from: Vector3, _i: int, arc: float) -> float:
+    return sqrt(8.0 * maxf(arc, 0.01) / BOMB_GRAVITY)
 
 
 func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool, arc: float = 1.0, skew: int = 3) -> void:
@@ -1614,11 +1663,12 @@ func on_client_message(pid: int, msg: Array) -> void:
             if ok and not f.dead and msg.size() >= 4 and active_bombs_of(f.slot) < stat(f.slot, 0):
                 var i := int(msg[1])
                 var from: Vector3 = msg[2]
-                var arc := clampf(float(msg[3]), 0.2, 3.0)
+                var arc := clampf(float(msg[3]), 0.05, 12.0)
                 var skew := (int(msg[4]) & 3) if msg.size() >= 5 else 3
                 var c := board.cell(i)
-                if board.in_bounds(c) and not board.pillar(c) and from.distance_to(f.global_position + Vector3(0, 1.4, 0)) < 3.5 \
-                        and Vector2(board.center(c).x - from.x, board.center(c).z - from.z).length() <= THROW_MAX + 2.0:
+                # 부서지지 않는 블록 위로 던져도 OK (예전엔 여기서 버려져 대각선으로 던지면 아무것도 안 나가던 버그)
+                if board.in_bounds(c) and from.distance_to(f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)) < 6.0 \
+                        and Vector2(board.center(c).x - from.x, board.center(c).z - from.z).length() <= 45.0:
                     _create_bomb(f.slot, i, stat(f.slot, 1), false, from, arc, skew)
         "gh":
             if f and f.dead and ghosts.has(f.slot) and msg.size() >= 2:

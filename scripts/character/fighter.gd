@@ -192,6 +192,10 @@ var spring_arm: SpringArm3D
 var camera: Camera3D
 var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 바꿀 수 있음)
 var cam_max_len := 9.0               ## 〃 축소 한계
+var cam_default_len := 4.0           ## 처음 카메라 거리 (게임이 바꿀 수 있음). 시점 버튼: 기본 → 넓게 → 전체 (최대) → 기본
+const VIEW_NAMES := ["기본 시점", "넓은 시점", "전체 시점"]
+var _view_tw: Tween
+var _view_i := 0
 var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 크레이지 봄버 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
 var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 크레이지 봄버 1.3)
@@ -797,8 +801,43 @@ func _unhandled_input(event: InputEvent) -> void:
             spring_arm.spring_length = clampf(spring_arm.spring_length - _wheel_step(), cam_min_len, cam_max_len)
         elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
             spring_arm.spring_length = clampf(spring_arm.spring_length + _wheel_step(), cam_min_len, cam_max_len)
+    elif event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_V:
+        cycle_view()
     elif event.is_action_pressed(&"ui_cancel"):
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## 시점 3단계 거리: 기본 / 기본과 최대의 중간 / 최대 (마우스 휠로 끝까지 민 거리)
+func view_lengths() -> Array:
+    var d := clampf(cam_default_len, cam_min_len, cam_max_len)
+    return [d, (d + cam_max_len) * 0.5, cam_max_len]
+
+
+## 지금 거리에 가장 가까운 시점 번호 (0 기본, 1 넓은, 2 전체)
+func view_index() -> int:
+    if spring_arm == null:
+        return 0
+    var ls := view_lengths()
+    var best := 0
+    for i in ls.size():
+        if absf(float(ls[i]) - spring_arm.spring_length) < absf(float(ls[best]) - spring_arm.spring_length):
+            best = i
+    return best
+
+
+## 시점 버튼·V 키: 다음 시점으로 (부드럽게 당기거나 밂). 바뀐 시점 이름을 돌려줌
+func cycle_view() -> String:
+    if spring_arm == null:
+        return ""
+    var base := _view_i if _view_tw and _view_tw.is_valid() and _view_tw.is_running() else view_index()
+    var i := (base + 1) % 3
+    _view_i = i
+    var target: float = view_lengths()[i]
+    if _view_tw and _view_tw.is_valid():
+        _view_tw.kill()
+    _view_tw = create_tween()
+    _view_tw.tween_property(spring_arm, "spring_length", target, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+    return VIEW_NAMES[i]
 
 
 ## 휠 한 칸에 당기는 거리 (멀리 있을수록 크게)

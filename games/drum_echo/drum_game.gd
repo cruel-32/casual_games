@@ -91,6 +91,16 @@ var _group_center := {}             ## team(개인전 0) -> 무대 위 무리 �
 var _cam_pos := Vector3.ZERO
 var _cam_look := Vector3.ZERO
 var _overview_pos := Vector3.ZERO
+## 시점 버튼: 0 자동 연출(샷이 바뀜) / 1 무대 정면(고정) / 2 전체 시점(더 멀리 고정)
+const VIEW_NAMES := ["자동 연출", "무대 정면", "전체 시점"]
+var view_mode := 0
+
+
+func cycle_view() -> String:
+    view_mode = (view_mode + 1) % 3
+    return VIEW_NAMES[view_mode]
+
+
 var _overview_look := Vector3.ZERO
 # 시간 (화면)
 var _mix_clock := -999.0            ## 반주 재생 위치로 맞춘 곡 시간 (지금 섞이는 소리)
@@ -811,6 +821,9 @@ func _update_camera(delta: float, ht: float, cur: Array, who: int) -> void:
         _pick_shot(picks, group)
     var age := now - _shot_t
     var want := _shot_pose(age)
+    if view_mode > 0:
+        var back := 1.0 if view_mode == 1 else 1.6
+        want = [_overview_look + (_overview_pos - _overview_look) * back, _overview_look, 50.0]
     # 같은 무리 안에서 바뀐 샷은 컷(바로), 무리가 바뀌면 빠르게 따라감, 샷 안에서는 부드럽게
     var k := 1.0 - exp(-delta * (6.0 if fast or age < 0.25 else 3.0))
     if bool(_shot.get("cut", false)) and age < 0.05:
