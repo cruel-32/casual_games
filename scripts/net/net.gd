@@ -27,7 +27,7 @@ const Teams := preload("res://scripts/core/teams.gd")
 const WordFilter := preload("res://scripts/core/word_filter.gd")
 
 ## 서버·클라이언트 통신 규약 버전. 메시지 형식이 바뀌면 올린다 → 다르면 로그인 단계에서 안내
-const PROTOCOL_VERSION := 32
+const PROTOCOL_VERSION := 39
 const LOGIN_TIMEOUT := 6.0
 const DEFAULT_PORT := 7777
 const DEFAULT_TEAMS := 2                    # 새 방의 기본 모드: 2팀전 (0 = 개인전)
@@ -1222,7 +1222,7 @@ func _start_round(rid: int) -> void:
     # 경기에는 이번 라운드 참가자만 (방으로 돌아간 사람 제외)
     snap["members"] = snap.members.filter(func(m): return players.has(int(m.id)))
     var module = GameRegistry.get_or_default(s.game)
-    snap["seed"] = randi()          # 맵을 무작위로 만드는 게임(연쇄폭탄마)이 모든 기기에서 같은 맵을 만들게
+    snap["seed"] = randi()          # 맵을 무작위로 만드는 게임(크레이지 봄버)이 모든 기기에서 같은 맵을 만들게
     snap["bot_fill"] = bool(r.bot_fill) and module.supports_bots
     var teams := int(s.get("teams", 0))
     if teams >= 2 and module.supports_teams:

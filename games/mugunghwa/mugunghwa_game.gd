@@ -485,7 +485,7 @@ func _knock_out(f: Fighter, reason: String, pos: Vector3) -> void:
 
 func _on_finished(f: Fighter) -> void:
     var order := int(finished[f.slot][0])
-    _feed("%s 통과! (%d등)" % [f.display_name, order], Color(0.55, 1.0, 0.6) if f != human else Color(1.0, 0.9, 0.35))
+    _feed(("%s 통과! (%d등, +%d점)" % [f.display_name, order, arrival_points(f)]) if teams >= 2 else ("%s 통과! (%d등)" % [f.display_name, order]), Color(0.55, 1.0, 0.6) if f != human else Color(1.0, 0.9, 0.35))
     if f == human:
         human_result = "통과! %d등" % order
     if not is_server():
@@ -532,7 +532,7 @@ func _winner_text(places: Array) -> String:
         return "아무도 못 들어왔어요"
     var first: Dictionary = places[0]
     if teams >= 2:
-        return "%s 승리!" % String(first.team)
+        return "%s 승리! (%d점)" % [String(first.team), int(first.get("score", 0))]
     return "%s 1등!" % String(first.members[0].name)
 
 
@@ -562,7 +562,23 @@ func _score(f: Fighter) -> float:
     return progress(f)
 
 
-## 팀 순위: 통과한 팀원 수 → 가장 먼저 들어온 팀원 → 가장 멀리 간 팀원
+## 도착 점수: 먼저 들어온 순서대로 인원수점부터 1점씩 줄어듦 (12명이면 1등 12점, 2등 11점 …), 못 들어오면 0점
+func arrival_points(f: Fighter) -> int:
+    if not finished.has(f.slot):
+        return 0
+    return maxi(fighters.size() + 1 - int(finished[f.slot][0]), 0)
+
+
+## 팀별 도착 점수 합 (HUD 도 씀)
+func team_points() -> Dictionary:
+    var pts := {}
+    for f in fighters:
+        pts[f.team] = int(pts.get(f.team, 0)) + arrival_points(f)
+    return pts
+
+
+## 팀 순위: 팀원 도착 점수 합 → (같으면) 가장 먼저 들어온 팀원 → 가장 멀리 간 팀원
+##   라운드 점수는 팀 순위대로 (1등 팀 3점, 2등 팀 2점, 3등 팀 1점 — Series.POINTS)
 func _team_placements() -> Array:
     var key := {}
     var members := {}
@@ -572,8 +588,8 @@ func _team_placements() -> Array:
             members[f.team] = []
         members[f.team].append(participant(f))
         var k: Array = key[f.team]
+        k[0] += arrival_points(f)
         if finished.has(f.slot):
-            k[0] += 1
             k[1] = maxf(float(k[1]), 100.0 - float(finished[f.slot][0]))
         k[2] = maxf(float(k[2]), progress(f))
     var order: Array = key.keys()
@@ -587,7 +603,7 @@ func _team_placements() -> Array:
         if i == 0 or absf(s - prev) > 0.002:
             rank = i + 1
         prev = s
-        out.append({"rank": rank, "members": members[tm], "team": Teams.team_name(tm)})
+        out.append({"rank": rank, "members": members[tm], "team": Teams.team_name(tm), "score": int(key[tm][0])})
     return out
 
 

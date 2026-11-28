@@ -257,9 +257,15 @@ func _build_dialog() -> void:
     _d_dots = UI.hbox(8)
     _d_dots.alignment = BoxContainer.ALIGNMENT_CENTER
     v.add_child(_d_dots)
+    # 게임 설명: 높이 고정 + 넘치면 스크롤 (게임을 넘길 때 설명 길이에 따라 창 높이가 바뀌지 않게)
+    var desc_scroll := ScrollContainer.new()
+    desc_scroll.custom_minimum_size = Vector2(0, 72)
+    desc_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    v.add_child(desc_scroll)
     _d_game_desc = UI.label("", 15, UI.MUTED)
     _d_game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    v.add_child(_d_game_desc)
+    _d_game_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    desc_scroll.add_child(_d_game_desc)
 
     v.add_child(UI.heading("방 이름", 18, UI.MUTED))
     _d_name = UI.line_edit("방 이름", "", Net.ROOM_NAME_MAX)

@@ -339,6 +339,14 @@ func _build_menu_bar() -> void:
     bar.add_to_group("touch_block")      # 터치 조작(스틱·시점)이 이 영역은 무시
     add_child(bar)
     _bar = bar
+    # 시점 버튼 (모든 게임 공통): 기본 → 넓은 → 전체 시점 (PC 는 V 키도)
+    _view_btn = UI.pill_button("기본 시점", UI.BLUE)
+    _view_btn.focus_mode = Control.FOCUS_NONE
+    _view_btn.pressed.connect(func():
+        var h: Fighter = game.human
+        if h:
+            h.cycle_view())
+    bar.add_child(_view_btn)
     bar.add_child(UI.sound_button())
     if not game.is_online_match():
         var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
@@ -360,7 +368,17 @@ func _on_leave_pressed() -> void:
     game.leave_to_menu()
 
 
+var _view_btn: Button
+var _view_idx := -1
+
+
 func _tick_leave(delta: float) -> void:
+    var h: Fighter = game.human if game else null
+    if _view_btn and h and h.spring_arm:
+        var i := h.view_index()
+        if i != _view_idx:
+            _view_idx = i
+            _view_btn.text = String(Fighter.VIEW_NAMES[i])
     if _leave_armed > 0.0:
         _leave_armed -= delta
         if _leave_armed <= 0.0:

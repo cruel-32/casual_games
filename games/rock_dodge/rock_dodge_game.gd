@@ -434,6 +434,7 @@ func _on_fighter_died(f: Fighter) -> void:
         var col := Color(1.0, 0.9, 0.35) if a == human else (Color(1.0, 0.5, 0.45) if f == human else Color.WHITE)
         _feed("%s → %s 낙석행!" % [a.display_name, f.display_name], col)
         popup_text(a.global_position + Vector3(0, 2.6, 0), "+1 킬", Color(1.0, 0.9, 0.35))
+        a.voice("laugh", 0.35)
     else:
         _feed("%s 낙석" % f.display_name, Color(1.0, 0.5, 0.45) if f == human else Color(0.85, 0.85, 0.85))
     if state == State.PLAYING:

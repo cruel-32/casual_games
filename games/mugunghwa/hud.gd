@@ -59,6 +59,13 @@ func _process(delta: float) -> void:
     var left: float = maxf(game.TIME_LIMIT - game.elapsed, 0.0) if game.state == PartyGame.State.PLAYING else game.TIME_LIMIT
     var outs: int = game.out_info.size()
     _top.text = "⏱ %d초     통과 %d     탈락 %d     남은 %d" % [int(ceil(left)), game.finished.size(), outs, game.runners().size()]
+    if int(game.teams) >= 2:
+        # 팀 도착 점수 (먼저 들어온 순서: 인원수점, 인원수-1점 …)
+        var tp: Dictionary = game.team_points()
+        var parts := PackedStringArray()
+        for t in int(game.teams):
+            parts.append("%s %d점" % [Teams.SHORT[t], int(tp.get(t, 0))])
+        _top.text += "     " + " · ".join(parts)
     var ser: Dictionary = game.series()
     if int(ser.get("total", 1)) > 1:
         _top.text = "라운드 %d/%d     " % [int(ser.round), int(ser.total)] + _top.text

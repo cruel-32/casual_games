@@ -1,4 +1,5 @@
 extends Control
+const LoadingOverlay := preload("res://scripts/ui/loading_overlay.gd")
 ## 3단계: 대기룸 — 참가자 슬롯(캐릭터 초상화, 최대 12), 레디, 방장 설정/강퇴/위임, 채팅, 게임 시작
 ## 슬롯 색 = 게임 안 캐릭터 색 (Fighter.SLOT_COLORS, 초상화 ui/portraits/slot_N.png)
 
@@ -126,9 +127,15 @@ func _ready() -> void:
     _game_name.clip_text = true
     _game_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     gt.add_child(_game_name)
+    # 게임 설명: 높이 고정 + 넘치면 스크롤 (게임이 바뀌어도 화면 배치가 흔들리지 않게)
+    var desc_scroll := ScrollContainer.new()
+    desc_scroll.custom_minimum_size = Vector2(0, 58)
+    desc_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    gt.add_child(desc_scroll)
     _game_desc = UI.label("", 13, UI.MUTED)
     _game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    gt.add_child(_game_desc)
+    _game_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    desc_scroll.add_child(_game_desc)
     _settings_box = UI.vbox(8)
     gv.add_child(_settings_box)
 
@@ -168,7 +175,9 @@ func _ready() -> void:
     _start_btn = UI.cta_button("게임 시작!")
     _start_btn.custom_minimum_size = Vector2(250, 62)
     _start_btn.add_theme_font_size_override("font_size", 28)
-    _start_btn.pressed.connect(func(): Net.start_game())
+    _start_btn.pressed.connect(func():
+        LoadingOverlay.open(get_tree(), "게임 시작 준비 중…")
+        Net.start_game())
     bottom.add_child(_start_btn)
 
     # 게임 중 대기 오버레이

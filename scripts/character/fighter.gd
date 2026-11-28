@@ -53,6 +53,7 @@ const SLOT_COLORS: Array[Color] = [
     Color(0.90, 0.22, 0.27), Color(0.27, 0.48, 0.62), Color(1.0, 0.72, 0.01),
     Color(0.16, 0.62, 0.56), Color(0.48, 0.37, 0.65), Color(0.96, 0.50, 0.12),
     Color(0.94, 0.44, 0.61), Color(0.42, 0.69, 0.30),
+    Color(0.55, 0.36, 0.22), Color(1.0, 0.36, 0.74), Color(0.45, 0.78, 0.86), Color(0.68, 0.71, 0.78),
 ]
 const RADIUS := 0.4
 const HEIGHT := 1.65
@@ -128,6 +129,10 @@ var lock_timer := 0.0               # >0 이면 이동 불가(제자리). 돌진
 var push_window := 0.0
 var push_power := 0.0
 var push_tap := true
+var net_prev_flags := 0               ## 온라인: 지난번 받은 상태 표시 (새로 켜진 것만 소리 내려고)
+var _voice_last := {}
+var _cheered := false
+var net_charge_voiced := false        ## 온라인: 다른 캐릭터 차징 목소리를 이번 차징에 냈나                ## 경기가 끝났을 때 환호했나                ## 목소리 종류 -> 마지막으로 낸 시각
 var push_anim := 0.0
 var bump_cooldown := 0.0
 var shake := 0.0
@@ -187,8 +192,14 @@ var spring_arm: SpringArm3D
 var camera: Camera3D
 var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 바꿀 수 있음)
 var cam_max_len := 9.0               ## 〃 축소 한계
-var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 연쇄폭탄마 유령)
+var cam_default_len := 4.0           ## 처음 카메라 거리 (게임이 바꿀 수 있음). 시점 버튼: 기본 → 넓게 → 전체 (최대) → 기본
+const VIEW_NAMES := ["기본 시점", "넓은 시점", "전체 시점"]
+var _view_tw: Tween
+var _view_i := 0
+var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 크레이지 봄버 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
+var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 크레이지 봄버 1.3)
+var throw_mode := false              ## true 면 밀치기 키 = 탭: game.on_throw(self, -1) / 차징: game.on_throw(self, 0~1)
 
 
 func _ready() -> void:
@@ -202,6 +213,10 @@ func _ready() -> void:
     _build_arrow()
     _build_name_tag()
     _build_team_ring()
+    if body_scale != 1.0:
+        visual.scale = Vector3.ONE * body_scale
+        if name_tag:
+            name_tag.position.y *= body_scale
     if is_human:
         _build_camera()
         if not touch_device():
@@ -251,10 +266,10 @@ func can_act() -> bool:
 func _build_collision() -> void:
     var col := CollisionShape3D.new()
     var shape := CapsuleShape3D.new()
-    shape.radius = RADIUS
-    shape.height = HEIGHT
+    shape.radius = RADIUS * body_scale
+    shape.height = HEIGHT * body_scale
     col.shape = shape
-    col.position.y = HEIGHT * 0.5
+    col.position.y = HEIGHT * body_scale * 0.5
     add_child(col)
 
 
@@ -311,14 +326,17 @@ func _pivot(parent: Node3D, pos: Vector3) -> Node3D:
 
 
 ## 외형 번호(슬롯)별 머리 모양·머리색·피부색 — 같은 번호면 어디서나(게임·초상화) 같은 아이
-const HAIR_STYLES := ["short", "pigtails", "spiky", "bob", "bun", "cap", "beanie", "headband"]
+const HAIR_STYLES := ["short", "pigtails", "spiky", "bob", "bun", "cap", "beanie", "headband",
+        "bald", "bald_pink", "perm", "robot"]
 const HAIR_COLORS: Array[Color] = [
     Color(0.30, 0.19, 0.12), Color(0.12, 0.10, 0.10), Color(0.62, 0.36, 0.16), Color(0.85, 0.48, 0.18),
     Color(0.20, 0.13, 0.09), Color(0.93, 0.76, 0.38), Color(0.42, 0.25, 0.14), Color(0.14, 0.12, 0.16),
+    Color(0.16, 0.11, 0.08), Color(0.98, 0.45, 0.72), Color(0.86, 0.86, 0.9), Color(0.7, 0.73, 0.8),
 ]
 const SKIN_TONES: Array[Color] = [
     Color(0.98, 0.80, 0.66), Color(0.93, 0.72, 0.56), Color(0.80, 0.57, 0.40), Color(0.99, 0.83, 0.70),
     Color(0.66, 0.45, 0.31), Color(0.96, 0.77, 0.62), Color(0.86, 0.64, 0.48), Color(0.98, 0.79, 0.65),
+    Color(0.84, 0.6, 0.44), Color(0.99, 0.82, 0.72), Color(0.97, 0.8, 0.7), Color(0.74, 0.78, 0.86),
 ]
 
 
@@ -328,6 +346,8 @@ func _build_mannequin() -> void:
     skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 멜빵바지 (캐릭터 색)
     var light := body_color.get_luminance() > 0.8
     var shirt_color := Color(0.62, 0.78, 0.92) if light else Color(0.98, 0.96, 0.9)
+    if HAIR_STYLES[lk] == "bald_pink":
+        shirt_color = Color(1.0, 0.55, 0.82)                # 핑크 대머리: 핑크 티셔츠
     if team >= 0:
         shirt_color = body_color.lerp(Color.WHITE, 0.3)     # 팀전: 티셔츠도 팀 색 (위아래 모두 팀 색)
     var shirt := Toon.make(shirt_color, {"rim_strength": 0.4, "shade_softness": 0.05})
@@ -380,6 +400,8 @@ func _build_mannequin() -> void:
         var mo := _part(head, _capsule(0.011, 0.065), Vector3(side * 0.024, -0.152, -0.343), ink)
         mo.rotation = Vector3(0.25, 0, PI * 0.5 + side * 0.38)
     _build_hair(HAIR_STYLES[lk], hair)
+    if HAIR_STYLES[lk] == "beanie":
+        _build_beard(hair)
 
     # 팔: 반팔(캐릭터 색) + 맨팔 + 손
     left_arm = _pivot(visual, Vector3(-0.31, 0.88, 0))
@@ -400,12 +422,28 @@ func _build_mannequin() -> void:
         so.scale = Vector3(1.02, 0.25, 1.42)
 
 
+## 털보 아저씨 (털모자 캐릭터): 덥수룩한 턱수염 + 콧수염 + 굵은 눈썹
+func _build_beard(hair: Material) -> void:
+    var beard := _part(head, _sphere(0.3), Vector3(0, -0.2, -0.2), hair)
+    beard.scale = Vector3(1.12, 0.78, 0.72)
+    for side: float in [-1.0, 1.0]:
+        var cheek := _part(head, _sphere(0.16), Vector3(side * 0.24, -0.12, -0.2), hair)
+        cheek.scale = Vector3(0.8, 1.1, 0.9)
+        var mus := _part(head, _capsule(0.035, 0.16), Vector3(side * 0.06, -0.11, -0.385), hair)
+        mus.rotation = Vector3(0, 0, PI * 0.5 + side * 0.35)
+        var brow := _part(head, _capsule(0.03, 0.13), Vector3(side * 0.13, 0.12, -0.355), hair)
+        brow.rotation = Vector3(0, 0, PI * 0.5 - side * 0.2)
+
+
 ## 머리 모양. 헬멧을 쓰면 위로 솟은 부분(tall_hair)은 숨긴다
 func _build_hair(style: String, hair: Material) -> void:
+    if style in ["bald", "bald_pink", "robot"]:
+        _build_special_head(style, hair)
+        return
     # 공통: 뒤통수·정수리를 덮는 머리 + 앞머리
     var cap := _part(head, _sphere(0.405), Vector3(0, 0.05, 0.035), hair)
     cap.scale = Vector3(1.04, 0.95, 1.0)
-    if style != "cap" and style != "beanie":
+    if style != "cap" and style != "beanie" and style != "perm":
         var fringe := _part(head, _capsule(0.09, 0.62), Vector3(0, 0.22, -0.27), hair)
         fringe.rotation = Vector3(0.5, 0, PI * 0.5)
         fringe.scale = Vector3(1.0, 1.0, 0.75)
@@ -466,6 +504,28 @@ func _build_hair(style: String, hair: Material) -> void:
             fold.height = 0.1
             var f := _part(head, fold, Vector3(0, 0.12, 0.02), Toon.make(Color(0.97, 0.95, 0.9), {"rim_strength": 0.4}))
             tall_hair.append(f)
+        "perm":
+            # 뽀글머리 할머니: 머리 위·옆에 작은 공을 잔뜩 + 동그란 안경
+            for i in 16:
+                var a := float(i) / 16.0 * TAU
+                var ring_y := 0.18 + 0.12 * (i % 2)
+                var pp := Vector3(sin(a) * 0.36, ring_y, cos(a) * 0.3 + 0.05)
+                if pp.z < -0.22 and absf(pp.x) < 0.2:
+                    pp.y += 0.1                  # 이마 앞은 조금 위로 (눈을 가리지 않게)
+                _part(head, _sphere(0.12), pp, hair)
+            for i in 5:
+                var a := float(i) / 5.0 * TAU
+                var top := _part(head, _sphere(0.13), Vector3(sin(a) * 0.16, 0.38, cos(a) * 0.14 + 0.04), hair)
+                tall_hair.append(top)
+            var frame := Toon.make(Color(0.45, 0.3, 0.55), {"rim_strength": 0.3})
+            for side: float in [-1.0, 1.0]:
+                var lens := TorusMesh.new()
+                lens.inner_radius = 0.065
+                lens.outer_radius = 0.085
+                var g := _part(head, lens, Vector3(side * 0.13, 0.0, -0.37), frame)
+                g.rotation.x = PI * 0.5
+            var bridge := _part(head, _capsule(0.012, 0.08), Vector3(0, 0.01, -0.385), frame)
+            bridge.rotation.z = PI * 0.5
         "headband":
             var band := TorusMesh.new()
             band.inner_radius = 0.365
@@ -474,6 +534,55 @@ func _build_hair(style: String, hair: Material) -> void:
             hb.rotation.x = 0.35
         _:
             pass
+
+
+## 머리카락 없는 머리: 대머리(콧수염 장사) / 핑크 대머리(핑크 하트 안경) / 로봇 헬멧
+func _build_special_head(style: String, hair: Material) -> void:
+    var shine := Toon.make(Color(1, 1, 1), {"rim_strength": 0.0, "shade_softness": 0.5, "shadow_strength": 1.0})
+    if style == "robot":
+        var metal := Toon.make(Color(0.72, 0.75, 0.82), {"rim_strength": 0.9, "shade_softness": 0.04})
+        var dark := Toon.make(Color(0.1, 0.12, 0.2), {"rim_strength": 0.6})
+        var shell := _part(head, _sphere(0.43), Vector3(0, 0.03, 0.02), metal)
+        shell.scale = Vector3(1.05, 1.0, 1.0)
+        tall_hair.append(shell)
+        var visor := BoxMesh.new()
+        visor.size = Vector3(0.56, 0.17, 0.12)
+        _part(head, visor, Vector3(0, 0.02, -0.36), dark)          # 얼굴 앞 검은 화면
+        var eye_mat := Toon.make(Color(0.3, 1.0, 0.85), {"rim_strength": 0.0, "shade_softness": 0.5, "shadow_strength": 1.0})
+        for side: float in [-1.0, 1.0]:
+            var e := _part(head, _sphere(0.04), Vector3(side * 0.12, 0.02, -0.42), eye_mat)
+            e.scale = Vector3(1.4, 0.7, 0.4)
+            var bolt := _part(head, _capsule(0.05, 0.12), Vector3(side * 0.44, 0.0, 0.0), metal)
+            bolt.rotation.z = PI * 0.5
+        var ant := _part(head, _capsule(0.015, 0.22), Vector3(0, 0.52, 0.02), metal)
+        tall_hair.append(ant)
+        var tip := _part(head, _sphere(0.05), Vector3(0, 0.64, 0.02), Toon.make(Color(1.0, 0.25, 0.2), {"rim_strength": 0.3}))
+        tall_hair.append(tip)
+        return
+    # 반짝이는 정수리 + 귀 위에 남은 머리 조금
+    var gloss := _part(head, _sphere(0.08), Vector3(-0.1, 0.33, -0.12), shine)
+    gloss.scale = Vector3(1.4, 0.35, 0.9)
+    for side: float in [-1.0, 1.0]:
+        var tuft := _part(head, _sphere(0.1), Vector3(side * 0.36, 0.06, 0.12), hair)
+        tuft.scale = Vector3(0.6, 0.9, 1.2)
+    if style == "bald":
+        # 장사: 굵은 콧수염 + 굵은 눈썹
+        for side: float in [-1.0, 1.0]:
+            var mus := _part(head, _capsule(0.045, 0.2), Vector3(side * 0.08, -0.1, -0.375), hair)
+            mus.rotation = Vector3(0, 0, PI * 0.5 + side * 0.4)
+            var brow := _part(head, _capsule(0.032, 0.14), Vector3(side * 0.13, 0.12, -0.355), hair)
+            brow.rotation = Vector3(0, 0, PI * 0.5 - side * 0.25)
+    else:
+        # 핑크 대머리: 핑크 하트 안경
+        var pink := Toon.make(Color(1.0, 0.35, 0.7), {"rim_strength": 0.5})
+        for side: float in [-1.0, 1.0]:
+            for k: float in [-1.0, 1.0]:
+                var lobe := _part(head, _sphere(0.05), Vector3(side * 0.13 + k * 0.035, 0.02, -0.38), pink)
+                lobe.scale = Vector3(1.0, 1.0, 0.4)
+            var point := _part(head, _sphere(0.045), Vector3(side * 0.13, -0.035, -0.38), pink)
+            point.scale = Vector3(0.9, 0.9, 0.4)
+        var bridge := _part(head, _capsule(0.012, 0.07), Vector3(0, 0.03, -0.39), pink)
+        bridge.rotation.z = PI * 0.5
 
 
 func _build_item_visuals() -> void:
@@ -692,8 +801,43 @@ func _unhandled_input(event: InputEvent) -> void:
             spring_arm.spring_length = clampf(spring_arm.spring_length - _wheel_step(), cam_min_len, cam_max_len)
         elif mb.button_index == MOUSE_BUTTON_WHEEL_DOWN:
             spring_arm.spring_length = clampf(spring_arm.spring_length + _wheel_step(), cam_min_len, cam_max_len)
+    elif event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_V:
+        cycle_view()
     elif event.is_action_pressed(&"ui_cancel"):
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+
+## 시점 3단계 거리: 기본 / 기본과 최대의 중간 / 최대 (마우스 휠로 끝까지 민 거리)
+func view_lengths() -> Array:
+    var d := clampf(cam_default_len, cam_min_len, cam_max_len)
+    return [d, (d + cam_max_len) * 0.5, cam_max_len]
+
+
+## 지금 거리에 가장 가까운 시점 번호 (0 기본, 1 넓은, 2 전체)
+func view_index() -> int:
+    if spring_arm == null:
+        return 0
+    var ls := view_lengths()
+    var best := 0
+    for i in ls.size():
+        if absf(float(ls[i]) - spring_arm.spring_length) < absf(float(ls[best]) - spring_arm.spring_length):
+            best = i
+    return best
+
+
+## 시점 버튼·V 키: 다음 시점으로 (부드럽게 당기거나 밂). 바뀐 시점 이름을 돌려줌
+func cycle_view() -> String:
+    if spring_arm == null:
+        return ""
+    var base := _view_i if _view_tw and _view_tw.is_valid() and _view_tw.is_running() else view_index()
+    var i := (base + 1) % 3
+    _view_i = i
+    var target: float = view_lengths()[i]
+    if _view_tw and _view_tw.is_valid():
+        _view_tw.kill()
+    _view_tw = create_tween()
+    _view_tw.tween_property(spring_arm, "spring_length", target, 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+    return VIEW_NAMES[i]
 
 
 ## 휠 한 칸에 당기는 거리 (멀리 있을수록 크게)
@@ -807,6 +951,8 @@ func _physics_process(delta: float) -> void:
         _jump_arc = false
     if _jump_buffer > 0.0 and _coyote > 0.0 and controllable and lock_timer <= 0.0:
         velocity.y = jump_velocity
+        if randf() < 0.45:
+            _voice("jump")             # 점프 기합 (매번 내면 시끄러워 가끔)
         _jump_arc = true
         _jump_buffer = 0.0
         _coyote = 0.0
@@ -869,6 +1015,7 @@ func _physics_process(delta: float) -> void:
 
 
 func _process(delta: float) -> void:
+    _check_cheer()
     if camera:
         camera.h_offset = randf_range(-1.0, 1.0) * shake * 0.15
         camera.v_offset = randf_range(-1.0, 1.0) * shake * 0.15
@@ -930,16 +1077,20 @@ func _update_push(delta: float, pressed: bool) -> void:
         if not can_act() or is_stunned():
             _cancel_charge()
         else:
+            var was := charge_time
             charge_time += delta
+            # 차징 소리 = 캐릭터 목소리 ("흐으으읍~") — 탭이 아니라 차징이 된 순간 한 번
+            if was < tap_threshold and charge_time >= tap_threshold:
+                _voice("charge")
             if is_human:
                 var r := get_charge_ratio()
-                Sfx.charge(r if charge_time >= tap_threshold else 0.0)
                 if r >= 1.0 and not _full_sfx:
                     _full_sfx = true
                     Sfx.play("charge_full")
             if not pressed:
                 _release_push()
     elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0:
+        # 쿨타임 중에 누른 것은 아예 무시 (탭·차징 모두). 쿨타임이 끝난 뒤 새로 눌러야 함
         charging = true
         charge_time = 0.0
         _full_sfx = false
@@ -957,6 +1108,27 @@ func _cancel_charge(penalty: bool = true) -> void:
 
 
 func _release_push() -> void:
+    if throw_mode:
+        # 던지기 모드 (예: 크레이지 봄버): 밀치기 대신 — 탭 = r -1 (발밑에 놓기), 차징 = 차징한 만큼 0~1 (멀리·높이 던지기)
+        var r := -1.0 if charge_time < tap_threshold else get_charge_ratio()
+        charging = false
+        if is_human:
+            Sfx.charge_stop()
+        var thrown := true
+        if game and game.has_method(&"on_throw"):
+            thrown = bool(game.on_throw(self, r))
+        if not thrown:
+            cooldown_total = 0.15          # 폭탄이 없어서 못 던짐: 잠깐만 쉬고 다시 누를 수 있게
+            cooldown_timer = cooldown_total
+            return
+        if r >= 0.0:
+            push_anim = 0.35
+            _voice("push", 3)          # 차징해서 던질 때 기합 (탭으로 발밑에 놓을 때는 조용히)
+        # 쿨타임: 이 동안은 아무것도 못 함 (움직임·점프·다음 던지기)
+        cooldown_total = float(game.throw_cooldown(self)) if game and game.has_method(&"throw_cooldown") else 0.3
+        cooldown_timer = cooldown_total
+        lock_timer = maxf(lock_timer, cooldown_total)
+        return
     var tap := charge_time < tap_threshold
     var c := 0.0 if tap else get_charge_ratio()
     charging = false
@@ -987,8 +1159,6 @@ func _release_push() -> void:
     lock_timer = dash_time + lock_after
     push_window = dash_time + 0.12
     cooldown_timer = cooldown_total
-    if game and game.has_method(&"on_push_released"):
-        game.on_push_released(self)            # 예: 연쇄폭탄마 폭탄 차기
 
 
 func _check_push_hits() -> void:
@@ -1214,17 +1384,75 @@ func _check_wall_slam() -> void:
 
 
 ## 캐릭터 목소리: 외형 번호마다 음높이가 달라서 누가 소리 냈는지 구분된다
-const VOICE_PITCH: Array[float] = [1.0, 1.14, 0.9, 1.07, 0.86, 1.2, 0.95, 1.1]
+## 목소리: 캐릭터마다 목소리 종류(VOICE_TYPES 개) 하나 + 같은 종류 안에서 음높이를 조금씩 다르게
+##   파일 audio/sfx/voice_<종류>_<목소리>_<번호>.wav (tools/audio/gen_voice.py)
+const VOICE_TYPES := 9
+const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2, "charge": 2}
+## 대사 (TTS, tools/audio/gen_tts_lines.py): audio/sfx/line_<종류>_<목소리>_<번호>.wav — "야호!", "이겼다!", "아이씨!", "짜증나!", "우하하!" …
+##   목소리를 낼 때 LINE_CHANCE 확률로 합성 감탄사 대신 대사를 고른다
+const LINE_COUNT := {"win": 4, "die": 4, "hit": 3, "pickup": 3, "laugh": 3, "push": 3, "surprise": 3}
+const LINE_CHANCE := {"win": 0.6, "die": 0.5, "hit": 0.35, "pickup": 0.6, "laugh": 0.6, "push": 0.3, "surprise": 0.5}
+## 캐릭터(외형 = 머리 모양)마다 목소리: [목소리 종류, 음높이 배율] — 8명이 모두 다르게 들리게
+##   0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 얇고 높은 목소리 / 4 털보 아저씨 (털모자 캐릭터는 수염도 있음)
+const LOOK_VOICE := [
+    [0, 1.0],     # short 짧은 머리 → 보통 아이
+    [1, 1.0],     # pigtails 양갈래 → 여자아이
+    [2, 1.0],     # spiky 삐죽 머리 → 굵은 목소리
+    [3, 1.0],     # bob 단발 → 아주 얇고 높은 목소리
+    [1, 0.9],     # bun 올림머리 → 조금 낮은 여자아이
+    [0, 1.13],    # cap 모자 → 조금 높은 아이
+    [4, 1.0],     # beanie 털모자 + 수염 → 털보 아저씨
+    [2, 1.15],    # headband 머리띠 → 조금 높은 굵은 목소리
+    [5, 1.0],     # bald 대머리 장사 (콧수염) → 털보보다 더 두껍고 낮은 목소리
+    [6, 1.0],     # bald_pink 핑크 옷 대머리 → 얇고 하늘하늘한 목소리
+    [7, 1.0],     # perm 뽀글머리 할머니 (동그란 안경) → 덜덜 떨리는 목소리
+    [8, 1.0],     # robot 로봇 헬멧 → 한 음으로 말하는 전자음 목소리
+]
+
+
+func _look_index() -> int:
+    return (look if look >= 0 else maxi(slot, 0)) % HAIR_STYLES.size()
+
+
+func voice_type() -> int:
+    return int(LOOK_VOICE[_look_index()][0])
 
 
 func voice_pitch() -> float:
-    var lk: int = (look if look >= 0 else maxi(slot, 0)) % VOICE_PITCH.size()
-    return VOICE_PITCH[lk]
+    return float(LOOK_VOICE[_look_index()][1])
 
 
-## kind: "push" / "hit" / "die", n: 변형 개수 (audio/sfx/voice_<kind>_<1..n>.wav)
-func _voice(kind: String, n: int) -> void:
-    _sfx("voice_%s_%d" % [kind, randi() % n + 1], 0.0, voice_pitch())
+## kind: VOICE_COUNT 의 종류. 같은 종류는 0.4초 안에 두 번 내지 않음
+##   (내 PC 의 판정과 온라인 상태(경직·밀치기 표시)로 같은 일이 두 번 들어와도 한 번만)
+func _voice(kind: String, _n: int = 0) -> void:
+    var now := Time.get_ticks_msec() * 0.001
+    if now - float(_voice_last.get(kind, -10.0)) < 0.4:
+        return
+    _voice_last[kind] = now
+    if LINE_COUNT.has(kind) and randf() < float(LINE_CHANCE.get(kind, 0.0)):
+        _sfx("line_%s_%d_%d" % [kind, voice_type(), randi() % int(LINE_COUNT[kind]) + 1], 0.0, voice_pitch())
+        return
+    var n: int = VOICE_COUNT.get(kind, 1)
+    _sfx("voice_%s_%d_%d" % [kind, voice_type(), randi() % n + 1], 0.0, voice_pitch())
+
+
+## 경기가 끝나면 살아남은 캐릭터가 환호 (조금씩 다른 때에, 다 같이 내면 시끄러워 일부만)
+func _check_cheer() -> void:
+    if _cheered or game == null or int(game.get("state")) != PartyGame.State.ENDED:
+        return
+    _cheered = true
+    if not dead and (is_human or randf() < 0.6):
+        voice("win", randf_range(0.15, 0.9))
+
+
+## 다른 스크립트(온라인 동기화·게임 모듈)가 목소리를 낼 때. delay 초 뒤에 (여럿이 동시에 내면 겹치지 않게)
+func voice(kind: String, delay: float = 0.0) -> void:
+    if delay <= 0.0:
+        _voice(kind)
+        return
+    get_tree().create_timer(delay).timeout.connect(func():
+        if is_instance_valid(self) and is_inside_tree():
+            _voice(kind))
 
 
 ## 소리: 내 캐릭터는 화면 전체로, 다른 캐릭터는 그 위치에서 (멀면 작게)

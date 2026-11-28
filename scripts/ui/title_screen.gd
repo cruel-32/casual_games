@@ -236,8 +236,42 @@ func _show_web_promo(links: Dictionary) -> void:
     _promo.visible = true
 
 
-# ---- 조작법 창
+# ---- 조작법 창: 위에 게임 탭, 아래에 고른 게임 하나의 조작만 (긴 내용은 스크롤). 오른쪽 위 ✕ 또는 확인으로 닫기
 var _help: Control
+var _help_tabs: HFlowContainer
+var _help_body: VBoxContainer
+var _help_tab := 0
+
+const HELP_PAGES := [
+    ["돌피하기", [
+        ["이동", "WASD  ·  모바일: 왼쪽 화면 스틱. 캐릭터는 움직이는 방향을 바라봐요"],
+        ["카메라", "마우스  ·  모바일: 오른쪽 화면 드래그 (버튼을 누른 채 끌어도 됨)"],
+        ["점프", "Space  ·  모바일: 점프 버튼"],
+        ["밀치기", "좌클릭/E 짧게 = 제자리 밀기, 길게 = 차징 돌진. 바라보는 방향으로 나가요"],
+    ]],
+    ["뒷북의 달인", [
+        ["둥", "Space 또는 F  ·  모바일: 화면 왼쪽 아래 큰 버튼 (주황 노트)"],
+        ["딱", "Enter 또는 J  ·  모바일: 화면 오른쪽 아래 큰 버튼 (보라 노트)"],
+        ["피버", "노란 노트는 누르고 있다가 끝 박자에 떼요"],
+        ["시점", "시점 버튼: 자동 연출 → 무대 정면 → 전체 시점"],
+    ]],
+    ["무궁화", [
+        ["달리기", "돌피하기와 같은 조작. 술래가 외치는 동안(초록불)만 달리고, 돌아보면(빨간불) 손을 떼요"],
+        ["점수", "먼저 들어온 순서대로 인원수점부터 1점씩 (12명이면 1등 12점, 2등 11점 …). 팀전은 팀원 점수 합으로 순위"],
+    ]],
+    ["크레이지 봄버", [
+        ["폭탄", "좌클릭/E  ·  모바일: 던지기 버튼. 탭하면 발밑에 놓고, 누르고 있다가 떼면 멀리 던져요 (3×3 범위로 펑! 내 폭탄에도 맞으니 조심)"],
+        ["던지기", "달리거나 점프하면서 던지면 더 멀리 날아가요. 쿨타임 중엔 눌러도 안 나가요 (아래 막대가 다 차면 다시)"],
+        ["점프", "Space  ·  모바일: 점프 버튼. 블록 두 층까지 한 번에 올라가요. 높이 뛰면 불길을 피할 수 있어요"],
+        ["아이템", "초록 시계 = 쿨타임 줄임 · 보라 폭탄 = 폭탄 +1 · 하늘색 화살표 = 속도 · 주황 불꽃 = 범위 4×4"],
+        ["유령", "탈락하면 바깥 테두리를 돌며 던지기 키로 안쪽에 폭탄을 던져요"],
+    ]],
+    ["공통", [
+        ["시점", "오른쪽 위 시점 버튼 (PC 는 V 키): 기본 시점 → 넓은 시점 → 전체 시점(휠로 끝까지 민 거리)"],
+        ["확대", "마우스 휠로 카메라를 당기거나 밀어요"],
+        ["메뉴", "Esc = 마우스 커서 보이기. 오른쪽 위에서 소리 켜고 끄기 · 다시 하기 · 나가기"],
+    ]],
+]
 
 
 func _build_help() -> void:
@@ -247,43 +281,69 @@ func _build_help() -> void:
     _help.visible = false
     add_child(_help)
     var v := UI.centered_panel(_help, 560)
-    v.add_child(UI.heading("조작법", 30))
-    var rows := [
-        ["3D 돌피하기", ""],
-        ["이동", "WASD  ·  모바일: 왼쪽 화면 스틱. 캐릭터는 움직이는 방향을 바라봐요"],
-        ["카메라", "마우스  ·  모바일: 오른쪽 화면 드래그 (버튼을 누른 채 끌어도 됨)"],
-        ["점프", "Space  ·  모바일: 점프 버튼"],
-        ["밀치기", "좌클릭/E 짧게 = 제자리 밀기, 길게 = 차징 돌진. 바라보는 방향으로 나가요"],
-        ["뒷북의 달인", ""],
-        ["둥", "Space 또는 F  ·  모바일: 화면 왼쪽 아래 큰 버튼 (주황 노트)"],
-        ["딱", "Enter 또는 J  ·  모바일: 화면 오른쪽 아래 큰 버튼 (보라 노트)"],
-        ["피버", "노란 노트는 누르고 있다가 끝 박자에 떼요"],
-        ["무궁화 꽃이 피었습니다", ""],
-        ["달리기", "돌피하기와 같은 조작. 술래가 외치는 동안(초록불)만 달리고, 돌아보면(빨간불) 손을 떼요"],
-        ["연쇄폭탄마", ""],
-        ["폭탄", "Space  ·  모바일: 폭탄 버튼. 내 칸에 놓으면 잠시 뒤 십자로 펑! 다른 폭탄에 닿으면 연쇄 폭발"],
-        ["차기", "좌클릭/E  ·  모바일: 차기 버튼. 바로 앞 폭탄을 차서 미끄러뜨려요"],
-        ["카메라", "기본은 멀리서 내려다봐요. 마우스로 돌리고 휠로 당기거나 밀어요"],
-        ["유령", "탈락하면 바깥 테두리를 돌며 폭탄 키로 안쪽에 폭탄을 던져요"],
-    ]
-    for r in rows:
-        if String(r[1]) == "":          # 게임 이름 (구역 제목)
-            var sec := UI.label(r[0], 20, UI.INK)
-            sec.add_theme_font_override("font", UI.DISPLAY_FONT)
-            v.add_child(sec)
-            continue
+    var top := UI.hbox(8)
+    var title := UI.heading("조작법", 30)
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    top.add_child(title)
+    var x := UI.pill_button("✕", UI.RED)
+    x.focus_mode = Control.FOCUS_NONE
+    x.pressed.connect(func(): _help.visible = false)
+    top.add_child(x)
+    v.add_child(top)
+    _help_tabs = HFlowContainer.new()
+    _help_tabs.add_theme_constant_override("h_separation", 8)
+    _help_tabs.add_theme_constant_override("v_separation", 8)
+    v.add_child(_help_tabs)
+    # 내용: 화면 높이에 맞춰 넘치면 스크롤
+    var scroll := ScrollContainer.new()
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    scroll.custom_minimum_size = Vector2(520, 260)
+    scroll.name = "HelpScroll"
+    v.add_child(scroll)
+    _help_body = UI.vbox(12)
+    _help_body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    scroll.add_child(_help_body)
+    var close := UI.cta_button("확인")
+    close.pressed.connect(func(): _help.visible = false)
+    v.add_child(close)
+    _show_help_tab(0)
+
+
+func _show_help_tab(i: int) -> void:
+    _help_tab = i
+    for c in _help_tabs.get_children():
+        c.queue_free()
+    for k in HELP_PAGES.size():
+        var on: bool = k == i
+        var b := UI.pill_button(String(HELP_PAGES[k][0]), UI.YELLOW if on else UI.BLUE, UI.INK if on else UI.CREAM)
+        b.focus_mode = Control.FOCUS_NONE
+        b.pressed.connect(_show_help_tab.bind(k))
+        _help_tabs.add_child(b)
+    for c in _help_body.get_children():
+        c.queue_free()
+    for r in HELP_PAGES[i][1]:
         var h := UI.hbox(14)
         var k := UI.badge(r[0], UI.BLUE)
         k.custom_minimum_size.x = 84
+        k.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
         h.add_child(k)
         var d := UI.label(r[1], 17)
         d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         d.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         h.add_child(d)
-        v.add_child(h)
-    var close := UI.cta_button("확인")
-    close.pressed.connect(func(): _help.visible = false)
-    v.add_child(close)
+        _help_body.add_child(h)
+    _fit_help()
+
+
+## 창이 화면보다 커지지 않게 내용 칸 높이를 맞춤 (작은 화면·가로 모드 휴대폰)
+func _fit_help() -> void:
+    if _help == null:
+        return
+    var scroll: ScrollContainer = _help.find_child("HelpScroll", true, false)
+    if scroll == null:
+        return
+    var vh := get_viewport_rect().size.y
+    scroll.custom_minimum_size.y = clampf(vh - 330.0, 140.0, 380.0)
 
 
 # ---- 계정 줄
@@ -432,6 +492,7 @@ func _on_delete_account() -> void:
 
 func _show_help() -> void:
     _help.visible = true
+    _fit_help()
 
 
 func _exit_tree() -> void:

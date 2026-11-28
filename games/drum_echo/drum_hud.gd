@@ -21,6 +21,7 @@ var _judge: Label
 var _score_box: VBoxContainer
 var _buttons: Array[Button] = []
 var _leave_btn: Button
+var _view_btn: Button              ## 시점 버튼 (자동 연출 → 무대 정면 → 전체 시점)
 var _leave_armed := 0.0
 var _result: PanelContainer
 var _result_list: VBoxContainer
@@ -66,6 +67,10 @@ func _build_menu_bar() -> void:
     bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 14)
     bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     add_child(bar)
+    _view_btn = UI.pill_button("자동 연출", UI.BLUE)
+    _view_btn.focus_mode = Control.FOCUS_NONE
+    _view_btn.pressed.connect(func(): _view_btn.text = game.cycle_view())
+    bar.add_child(_view_btn)
     bar.add_child(UI.sound_button())
     if not game.is_online_match():
         var again := UI.pill_button("다시 하기", UI.YELLOW, UI.INK)
@@ -397,3 +402,10 @@ func _capsule(x0: float, x1: float, y: float, rad: float, r: Rect2, fill: Color,
 
 
 # ---------------------------------------------------------------- 남은 개수(칩)
+
+
+## V 키 = 시점 버튼
+func _unhandled_key_input(event: InputEvent) -> void:
+    var k := event as InputEventKey
+    if k and k.pressed and not k.echo and k.keycode == KEY_V and _view_btn:
+        _view_btn.text = game.cycle_view()

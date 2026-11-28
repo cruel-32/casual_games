@@ -1,7 +1,8 @@
 """뒷북의 달인 곡 만들기 도구 — 곡 정의(마디 목록) → 반주 ogg + 노트 json + 북 소리
 
 곡 하나를 통째로 쓰고, 북 파트(둥 = 킥 역할, 딱 = 스네어 역할)가 곧 게임 노트가 된다.
-  북 마디(call·resp, 패턴 pat 이 있는 마디): 반주에 북 파트가 들어 있고(진행자가 치는 모습), 플레이어도 같은 자리에서 함께 친다
+  반주(backing.ogg)에는 드럼·타악기가 전혀 없다. 북 소리는 플레이어(캐릭터)가 칠 때 게임이 곡마다의 소리(don.wav·ka.wav, KITS)로 낸다
+  북 마디(call·resp, 패턴 pat 이 있는 마디): 진행자가 치는 모습을 보이고, 플레이어도 같은 자리에서 함께 친다
     (call·resp 이름은 예전 선창·따라 치기 구성에서 온 것. 지금은 둘 다 그냥 '북 마디')
   그 밖(intro·rest·break·outro): 밴드만 (북 쉼)
 
@@ -23,6 +24,75 @@ PROGRAMS = {CH_BASS: (0, 33), CH_CLAV: (0, 7), CH_EP: (0, 4), CH_SAX: (0, 65), C
 DRUM_GAIN = 0.75
 MAX_TURN_BARS = 4                    # 차례 하나 = 북 마디 최대 4개 (점수 정산·노트 발표 단위)
 ROLL_STEP_16 = 1                     # 피버 '드르륵' 간격 = 16분음표 (게임의 ROLL_STEP 0.125초와 같음, 120 BPM)
+
+
+# ================================================================ 곡마다 북 소리 (플레이어가 칠 때 나는 소리)
+# 반주에는 드럼·타악기가 하나도 없다 (9번 채널 전부 빼고, 진행자 북도 안 섞음). 북 소리는 캐릭터가 칠 때만 게임이 낸다
+# 소리: [(종류, 프리셋, 음, 세기, 배율)] 종류 "d" = 드럼 세트(뱅크 128, 프리셋 = 세트 번호), "m" = 일반 악기(뱅크 0, 프리셋 = 악기)
+#   GeneralUser GS 드럼 세트: 0 기본 · 8 룸 · 16 파워 · 24 일렉트로닉 · 25 TR-808 · 32 재즈 · 40 브러시 · 48 오케스트라
+#   음(GM 드럼): 35·36 킥 37 사이드스틱 38 스네어 39 박수 40 일렉 스네어 41 낮은 탐 45 탐 62·63 콩가 높은 64 콩가 낮은 65 팀발레스
+#               75 클라베스 76·77 우드블록
+STD, ROOM, POWER, ELEC, TR808, JAZZ, BRUSH, ORCH = 0, 8, 16, 24, 25, 32, 40, 48
+KITS = {
+    "funk":      {"don": [("d", STD, 36, 120, 1.0)], "ka": [("d", STD, 38, 115, 1.0)]},
+    "rock":      {"don": [("d", POWER, 36, 125, 1.0)], "ka": [("d", POWER, 38, 122, 1.0)]},
+    "metal":     {"don": [("d", POWER, 36, 127, 1.0), ("d", POWER, 35, 110, 0.5)], "ka": [("d", POWER, 38, 127, 1.0)]},
+    "hiphop":    {"don": [("d", TR808, 36, 120, 1.0)], "ka": [("d", TR808, 38, 110, 0.7), ("d", TR808, 39, 115, 0.8)], "len": (0.6, 0.25)},
+    "trap":      {"don": [("d", TR808, 35, 127, 1.0)], "ka": [("d", TR808, 39, 120, 1.0)], "len": (0.7, 0.25)},
+    "house":     {"don": [("d", TR808, 36, 125, 1.0)], "ka": [("d", TR808, 39, 118, 1.0)], "len": (0.5, 0.25)},
+    "disco":     {"don": [("d", STD, 36, 122, 1.0)], "ka": [("d", STD, 38, 110, 0.8), ("d", STD, 39, 110, 0.6)]},
+    "synthwave": {"don": [("d", ELEC, 36, 122, 1.0)], "ka": [("d", ELEC, 38, 120, 1.0)], "len": (0.45, 0.3)},
+    "eurobeat":  {"don": [("d", ELEC, 36, 125, 1.0)], "ka": [("d", ELEC, 40, 120, 1.0)]},
+    "dnb":       {"don": [("d", ELEC, 36, 120, 1.0)], "ka": [("d", ELEC, 40, 125, 1.0)]},
+    "kpop":      {"don": [("d", TR808, 36, 124, 1.0)], "ka": [("d", ELEC, 38, 115, 0.8), ("d", TR808, 39, 110, 0.6)], "len": (0.5, 0.25)},
+    "chip":      {"don": [("d", ELEC, 36, 120, 1.0)], "ka": [("d", ELEC, 40, 120, 1.0)], "crush": True},
+    "lofi":      {"don": [("d", JAZZ, 36, 110, 1.0)], "ka": [("d", JAZZ, 38, 100, 1.0)], "dull": True},
+    "jazz":      {"don": [("d", BRUSH, 36, 110, 1.0)], "ka": [("d", BRUSH, 38, 115, 1.0)]},
+    "bossa":     {"don": [("d", BRUSH, 36, 105, 1.0)], "ka": [("d", BRUSH, 37, 118, 1.0)]},
+    "tango":     {"don": [("d", ORCH, 36, 115, 1.0)], "ka": [("d", STD, 75, 115, 1.0)]},
+    "salsa":     {"don": [("d", STD, 64, 120, 1.0)], "ka": [("d", STD, 65, 118, 1.0)]},
+    "afro":      {"don": [("d", STD, 64, 122, 1.0), ("d", STD, 36, 90, 0.4)], "ka": [("d", STD, 63, 120, 1.0)]},
+    "reggae":    {"don": [("d", STD, 36, 118, 1.0)], "ka": [("d", STD, 37, 122, 1.0)]},
+    "blues":     {"don": [("d", ROOM, 36, 115, 1.0)], "ka": [("d", ROOM, 38, 112, 1.0)]},
+    "soul":      {"don": [("d", STD, 36, 118, 1.0)], "ka": [("d", STD, 38, 112, 1.0)]},
+    "country":   {"don": [("d", BRUSH, 36, 118, 1.0)], "ka": [("d", STD, 38, 105, 1.0)]},
+    "trot":      {"don": [("d", STD, 36, 120, 1.0)], "ka": [("d", STD, 38, 115, 1.0)]},
+    "surf":      {"don": [("d", ROOM, 36, 118, 1.0)], "ka": [("d", ROOM, 38, 118, 1.0)]},
+    "picnic":    {"don": [("d", STD, 36, 110, 1.0)], "ka": [("d", STD, 37, 115, 1.0)]},
+    "morning":   {"don": [("d", BRUSH, 36, 100, 1.0)], "ka": [("d", BRUSH, 37, 105, 1.0)]},
+    "march":     {"don": [("d", ORCH, 36, 122, 1.0)], "ka": [("d", ORCH, 38, 120, 1.0)]},
+    "celtic":    {"don": [("d", STD, 41, 118, 1.0)], "ka": [("d", STD, 37, 112, 1.0)]},
+    "gugak":     {"don": [("m", 116, 45, 122, 1.0)], "ka": [("d", STD, 37, 122, 1.0), ("d", STD, 76, 90, 0.4)]},
+    "wuxia":     {"don": [("m", 116, 40, 124, 1.0), ("d", STD, 41, 100, 0.5)], "ka": [("d", STD, 77, 122, 1.0)]},
+}
+
+
+def make_kit(song_id):
+    """곡에 맞는 둥·딱 소리 (스테레오 float). 앞쪽 무음을 잘라 바로 소리 나게, 꼬리는 짧게"""
+    kit = KITS.get(song_id, KITS["funk"])
+    lens = kit.get("len", (0.42, 0.22))
+    out = []
+    for key, length, peak in (("don", lens[0], 0.9), ("ka", lens[1], 0.8)):
+        x = None
+        for (kind, preset, note, vel, gain) in kit[key]:
+            ch = 9 if kind == "d" else 5
+            y = R.render([(0.0, 0.3, ch, note, vel)], {ch: (128 if kind == "d" else 0, preset)}, length + 0.3) * gain
+            x = y if x is None else x + y
+        m = x.mean(axis=1)
+        assert np.abs(m).max() > 1e-4, "%s %s: 소리가 안 나요 (사운드폰트에 없는 소리)" % (song_id, key)
+        start = int(np.argmax(np.abs(m) > 0.02 * np.abs(m).max()))
+        m = m[start:start + int(length * R.SR)].copy()
+        if kit.get("crush"):              # 칩튠: 8비트 느낌 (비트 줄이기 + 샘플 듬성듬성)
+            m = np.round(m / (np.abs(m).max() + 1e-9) * 15) / 15
+            m = np.repeat(m[::4], 4)[: len(m)]
+        if kit.get("dull"):               # 로파이: 고음을 깎아 먹먹하게
+            k = 12
+            m = np.convolve(m, np.ones(k) / k, mode="same")
+        fade = int(0.04 * R.SR)
+        m[-fade:] *= np.linspace(1, 0, fade)
+        m = m / (np.abs(m).max() + 1e-9) * peak
+        out.append(np.stack([m, m], axis=1))
+    return out[0], out[1]
 
 
 def make_drums():
@@ -96,7 +166,7 @@ def funk_arrange(b, bar, ctx, add):
             add(b, s, d, CH_SAX, k, 92)
 
 
-def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: str = None):
+def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: str = None, song_id: str = "funk"):
     bpm = float(song["bpm"])
     beat = 60.0 / bpm
     bar_len = beat * 4
@@ -122,7 +192,8 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
         add(b if b >= 0 else n_bars + b, s, d, ch, k, v)
 
 
-    don, ka = make_drums()
+    don, ka = make_kit(song_id)
+    notes = [n for n in notes if n[2] != CH_DRUM]       # 반주에서 드럼·타악기는 모두 뺀다 (치는 소리는 플레이어 몫)
 
     def place(buf, sample, t, gain=1.0):
         i = int(round(t * R.SR))
@@ -135,7 +206,7 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
     band = band / (np.abs(band).max() + 1e-9) * song.get("band_level", 0.55)
     host = np.zeros_like(band)
     # 북 마디(pat 이 있는 마디)가 이어진 구간 = 차례 (최대 MAX_TURN_BARS 마디씩). 진행자와 플레이어가 같은 자리에서 함께 친다
-    #   반주에 북 파트가 그대로 들어 있음 (진행자 북) → 내가 치는 소리는 그 위에 겹친다
+    #   반주에는 북이 없다. host = 미리듣기용(제대로 쳤을 때 어떻게 들리나)으로만 만든다
     turns = []
     b = 0
     while b < n_bars:
@@ -169,7 +240,7 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
         turns.append({"bars": n, "start": round(a, 4), "notes": tnotes})
 
     wet = song.get("reverb", 0.16)
-    mix_b = R.reverb(band + host * DRUM_GAIN, wet=wet)
+    mix_b = R.reverb(band, wet=wet)
     scale = 1.0 / (np.abs(mix_b).max() + 1e-9)
     backing = R.soft_limit_fixed(mix_b * scale)
     os.makedirs(out_audio_dir, exist_ok=True)
@@ -179,8 +250,12 @@ def build(song: dict, out_audio_dir: str, drums_dir: str = None, preview_path: s
     subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", tmp, "-c:a", "libvorbis", "-q:a", str(song.get("quality", 0)),
                     os.path.join(out_audio_dir, "backing.ogg")], check=True)
     os.remove(tmp)
-    if preview_path:
-        R.save_wav(preview_path, backing)
+    if preview_path:                                   # 미리듣기: 반주 + 북을 모두 제대로 쳤을 때
+        R.save_wav(preview_path, R.soft_limit_fixed(R.reverb(band + host * DRUM_GAIN, wet=wet) * scale))
+    # 이 곡의 북 소리 (게임이 칠 때 냄): audio/drum/songs/<곡>/don.wav · ka.wav (모노)
+    from scipy.io import wavfile
+    for name, x in (("don", don), ("ka", ka)):
+        wavfile.write(os.path.join(out_audio_dir, name + ".wav"), R.SR, (np.clip(x[:, 0], -1, 1) * 32767).astype(np.int16))
     if drums_dir:
         # 게임의 북 소리 (모노, 짧게). 진행자 북(반주 안)과 같은 소리
         from scipy.io import wavfile
@@ -380,7 +455,7 @@ def main(song: dict, song_id: str, argv):
     """python3 tools/music/song_<id>.py [미리듣기.wav]"""
     root_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
     out = os.path.join(root_dir, "audio", "drum", "songs", song_id)
-    chart, roles = build(song, out, preview_path=argv[1] if len(argv) > 1 else None)
+    chart, roles = build(song, out, preview_path=argv[1] if len(argv) > 1 else None, song_id=song_id)
     print("%s ★%d: bars %d (%.1fs) turns %d notes %d" % (song_id, chart["level"], len(song["bars"]), chart["length"], len(chart["turns"]),
                                                     sum(len(t["notes"]) for t in chart["turns"])))
     print(roles)

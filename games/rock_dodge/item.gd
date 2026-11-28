@@ -57,6 +57,7 @@ static func apply_to(f: Fighter, k: int) -> bool:
         var snd := {Kind.HELMET: "pickup_helmet", Kind.CHARGE_UP: "pickup_charge", Kind.COOL_DOWN: "pickup_cooldown",
             Kind.GLOVE: "pickup_glove"}.get(k, "pickup") as String
         f._sfx(snd)
+        f.voice("pickup", 0.1)
     return ok
 
 
