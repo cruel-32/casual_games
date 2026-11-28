@@ -1,13 +1,13 @@
 extends PartyGame
 ## [게임 모듈] 연쇄폭탄마 (블록 탑 위에서 폭탄 던지기)
-## - 격자(칸 2m)의 칸마다 블록이 5층(1층 = 1m) 쌓여 있고, 모두 꼭대기에서 시작한다. 아래는 용암
-## - 부서지지 않는 기둥(테두리와 짝수·짝수 칸)은 블록보다 3층 높아서 올라갈 수 없다
+## - 정사각형 격자의 칸마다 2m 정육면체 블록이 4층 평평하게 쌓여 있고, 모두 꼭대기에서 시작한다. 아래는 용암
+## - 부서지지 않는 블록(테두리와 짝수·짝수 칸)도 높이가 같아 위에 설 수 있다. 가장자리 밖으로 떨어져도 탈락
 ## - 밀치기 키(좌클릭·E·터치 '던지기')를 누르고 있으면 떨어질 자리가 보이고, 누른 시간만큼 멀리 포물선으로 던진다
 ##   폭탄은 떨어지고 LAND_FUSE 초 뒤 십자로 터진다 (범위 = 불꽃 수). 다른 폭탄에 닿으면 연쇄 폭발
 ## - 터진 칸은 블록이 깎인다 (가운데 2층, 나머지 1층). 높이 0 이 되면 구멍 → 용암
 ## - 폭탄 불길에 맞거나 용암에 떨어지면 바로 탈락 (내 폭탄·아군 폭탄 포함). 마지막까지 남은 사람(팀) 승리
 ## - 탈락하면 유령이 되어 경기장 바깥 테두리를 돌며 안쪽으로 폭탄을 던진다 (쿨타임)
-## - Space 는 점프 (블록 1~2층은 점프로 올라감)
+## - Space 는 점프 (블록 3층까지 한 번에). 날아가는 폭탄에 맞으면 살짝 밀려남
 ##
 ## 온라인 (돌피하기·무궁화와 같은 구조)
 ## - 서버: 폭탄 생성(던진 자리·떨어질 칸·시각)·폭발·연쇄·블록 깎기·아이템·탈락·승패를 정해 알림. 봇·봇 유령도 서버가
@@ -23,28 +23,32 @@ const NAME_FONT := preload("res://fonts/Jua-Regular.ttf")
 
 # 규칙
 const TIME_LIMIT := 150.0
-const LAND_FUSE := 2.1            ## 떨어진 뒤 터지기까지 (초)
-const FLAME_TIME := 0.5           ## 불길이 남아 있는 시간
+const LAND_FUSE := 1.6            ## 떨어진 뒤 터지기까지 (초)
+const FLAME_TIME := 0.4           ## 불길이 남아 있는 시간
 const THROW_MIN := 2.0            ## 던지는 거리 (m): 살짝 누름 ~ 끝까지 누름
-const THROW_MAX := 13.0
-const FLIGHT_BASE := 0.45         ## 날아가는 시간 = 기본 + 거리 비례
-const FLIGHT_PER_M := 0.025
-const HIT_BELOW := 1.2            ## 불길 판정 높이: 폭발 층 꼭대기 기준 아래 / 위 (m)
-const HIT_ABOVE := 2.6
-const LAVA_OUT := 0.4             ## 발이 용암 위 이 높이보다 낮으면 탈락
-const BASE_SPEED := 4.8           ## 이동 속도 (속도 아이템 1개마다 +SPEED_STEP)
-const SPEED_STEP := 0.6
+const THROW_MAX := 18.0
+const FLIGHT_BASE := 0.18         ## 날아가는 시간 = 기본 + 거리 비례 (빠르게)
+const FLIGHT_PER_M := 0.014
+const HIT_BELOW := 1.6            ## 불길 판정 높이: 폭발 층 꼭대기 기준 아래 / 위 (m)
+const HIT_ABOVE := 3.2
+const LAVA_OUT := 0.4             ## 발이 용암(바닥) 위 이 높이보다 낮으면 탈락 — 경기장 밖으로 떨어져도
+const BODY_SCALE := 1.3           ## 캐릭터 크기 (블록 2m 에 맞춰 키움)
+const BASE_SPEED := 9.6           ## 이동 속도 (속도 아이템 1개마다 +SPEED_STEP)
+const SPEED_STEP := 1.2
+const CHARGE_TIME := 0.7          ## 끝까지 멀리 던지려면 누르는 시간
+const BOMB_HIT_R := 1.2           ## 날아가는 폭탄이 캐릭터에 맞는 거리 → 살짝 밀려남
+const BOMB_HIT_PUSH := 7.0
 const START_BOMBS := 1
 const START_POWER := 2
 const MAX_BOMBS := 6
 const MAX_POWER := 7
-const MAX_SPEED := 4
+const MAX_SPEED := 3
 const ITEM_CHANCE := 0.14         ## 블록이 깎인 칸에서 아이템이 나올 확률
 const GHOST_SPEED := 7.0
 const GHOST_COOLDOWN := 5.0
 const GHOST_POWER := 2
 const GHOST_DELAY := 1.0
-const JUMP_VELOCITY := 7.2       ## 점프 높이 약 1.3m: 블록 1층은 오르고, 기둥(2층 더 높음)은 못 오름
+const JUMP_VELOCITY := 16.0      ## 점프 높이 약 6.5m: 블록 3층(6m)까지 한 번에 올라감
 const FLOOR_LIFT := 0.45          ## 용암 판을 땅보다 이만큼 높게 (짧은 풀이 뚫고 보이지 않게)
 const CAM_CENTER_PULL := 0.55
 
@@ -140,7 +144,7 @@ func _build_board() -> void:
     var W := board.w
     var H := board.h
     var T := Board.TILE
-    var pillar_h := (Board.LAYERS + Board.PILLAR_EXTRA) * Board.BLOCK
+    var pillar_h := Board.LAYERS * Board.BLOCK
     # 용암 판 (떨어지면 여기 닿고 탈락)
     var lava_body := StaticBody3D.new()
     lava_body.collision_layer = 1
@@ -152,14 +156,13 @@ func _build_board() -> void:
     lcol.shape = lshape
     lava_body.add_child(lcol)
     lava_body.global_position = Vector3(0, floor_y - 0.5, 0)
-    # 기둥: 몸통 하나에 상자 여러 개
+    # 부서지지 않는 블록: 몸통 하나에 상자 여러 개 (블록 기둥과 같은 8번 층 — 위에 설 수 있음)
     var pillars := StaticBody3D.new()
-    pillars.collision_layer = 4
+    pillars.collision_layer = 8
     pillars.collision_mask = 0
-    pillars.add_to_group(&"arena_wall")
     add_child(pillars)
     var pshape := BoxShape3D.new()
-    pshape.size = Vector3(T, pillar_h + 4.0, T)
+    pshape.size = Vector3(T, pillar_h, T)
     var pillar_cells: Array[Vector2i] = []
     for y in H:
         for x in W:
@@ -168,7 +171,7 @@ func _build_board() -> void:
                 pillar_cells.append(c)
                 var col := CollisionShape3D.new()
                 col.shape = pshape
-                col.position = board.center(c) + Vector3(0, floor_y + (pillar_h + 4.0) * 0.5, 0)
+                col.position = board.center(c) + Vector3(0, floor_y + pillar_h * 0.5, 0)
                 pillars.add_child(col)
             else:
                 _make_column(c)
@@ -194,43 +197,33 @@ func _build_board() -> void:
     side.material_override = Toon.make(Color(0.3, 0.24, 0.2), {"rim_strength": 0.0})
     add_child(side)
     side.global_position = Vector3(0, floor_y - (FLOOR_LIFT + 0.3) * 0.5 - 0.01, 0)
-    # 기둥 모양
-    var mm := MultiMesh.new()
-    mm.transform_format = MultiMesh.TRANSFORM_3D
-    var pbox := BoxMesh.new()
-    pbox.size = Vector3(T, pillar_h, T)
-    mm.mesh = pbox
-    mm.instance_count = pillar_cells.size()
-    for i in pillar_cells.size():
-        mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, board.center(pillar_cells[i]) + Vector3(0, floor_y + pillar_h * 0.5, 0)))
-    var mmi := MultiMeshInstance3D.new()
-    mmi.multimesh = mm
-    mmi.material_override = Toon.make(Color(0.22, 0.24, 0.33), {"rim_strength": 0.2})
-    add_child(mmi)
-    var mm2 := MultiMesh.new()
-    mm2.transform_format = MultiMesh.TRANSFORM_3D
-    var cap := BoxMesh.new()
-    cap.size = Vector3(T * 0.8, 0.12, T * 0.8)
-    mm2.mesh = cap
-    mm2.instance_count = pillar_cells.size()
-    for i in pillar_cells.size():
-        mm2.set_instance_transform(i, Transform3D(Basis.IDENTITY, board.center(pillar_cells[i]) + Vector3(0, floor_y + pillar_h + 0.06, 0)))
-    var mmi2 := MultiMeshInstance3D.new()
-    mmi2.multimesh = mm2
-    mmi2.material_override = Toon.make(Color(0.34, 0.38, 0.5), {"rim_strength": 0.1})
-    add_child(mmi2)
-    # 블록 (층·체크무늬 색마다 한 묶음)
+    # 블록 모양: 2m 정육면체, 모서리 테두리 선 (shaders/block.gdshader)
     var bmesh := BoxMesh.new()
     bmesh.size = Vector3(T, Board.BLOCK, T)
+    # 부서지지 않는 블록: 회색 돌 (층마다 하나씩 쌓아 그림)
+    var mm := MultiMesh.new()
+    mm.transform_format = MultiMesh.TRANSFORM_3D
+    mm.mesh = bmesh
+    mm.instance_count = pillar_cells.size() * Board.LAYERS
+    var k := 0
+    for c in pillar_cells:
+        for layer in Board.LAYERS:
+            mm.set_instance_transform(k, Transform3D(Basis.IDENTITY, board.center(c) + Vector3(0, floor_y + (layer + 0.5) * Board.BLOCK, 0)))
+            k += 1
+    var mmi := MultiMeshInstance3D.new()
+    mmi.multimesh = mm
+    mmi.material_override = _block_mat(Color(0.44, 0.47, 0.55), Color(0.16, 0.17, 0.22))
+    add_child(mmi)
+    # 부서지는 블록 (층·체크무늬 색마다 한 묶음)
     for layer in Board.LAYERS:
         var row: Array = []
-        for k in 2:
+        for kk in 2:
             var inst := MultiMeshInstance3D.new()
             var m := MultiMesh.new()
             m.transform_format = MultiMesh.TRANSFORM_3D
             m.mesh = bmesh
             inst.multimesh = m
-            inst.material_override = Toon.make(_layer_color(layer, k), {"rim_strength": 0.15})
+            inst.material_override = _block_mat(_layer_color(layer, kk), Color(0.22, 0.1, 0.04))
             add_child(inst)
             row.append(inst)
         _block_mm.append(row)
@@ -267,12 +260,24 @@ func _build_board() -> void:
     _aim.visible = false
 
 
-## 층마다 색 (아래는 진한 흙, 위로 갈수록 밝은 모래). k = 체크무늬
+## 층마다 색 (아래는 진한 흙, 위로 갈수록 밝은 주황). k = 체크무늬 (이웃 칸끼리 색이 살짝 다름)
 static func _layer_color(layer: int, k: int) -> Color:
-    var a := Color(0.36, 0.2, 0.12)
-    var b := Color(0.82, 0.5, 0.2)
+    var a := Color(0.55, 0.28, 0.14)
+    var b := Color(0.98, 0.62, 0.22)
     var c := a.lerp(b, float(layer) / float(Board.LAYERS - 1))
-    return c.darkened(0.12) if k == 1 else c
+    return c.darkened(0.14) if k == 1 else c
+
+
+const BLOCK_SHADER := preload("res://shaders/block.gdshader")
+
+
+static func _block_mat(col: Color, edge: Color) -> ShaderMaterial:
+    var m := ShaderMaterial.new()
+    m.shader = BLOCK_SHADER
+    m.set_shader_parameter("albedo", col)
+    m.set_shader_parameter("edge_color", edge)
+    m.set_shader_parameter("half_size", Board.BLOCK * 0.5)
+    return m
 
 
 func _make_column(c: Vector2i) -> void:
@@ -310,6 +315,8 @@ func _rebuild_blocks() -> void:
         for x in board.w:
             var c := Vector2i(x, y)
             var hh := board.height(c)
+            if board.pillar(c):
+                continue
             var p := board.center(c)
             for layer in hh:
                 lists[layer][(x + y) % 2].append(Vector3(p.x, floor_y + (layer + 0.5) * Board.BLOCK, p.z))
@@ -433,6 +440,10 @@ func _spawn_fighters(entries: Array) -> void:
         f.throw_mode = true
         f.jump_velocity = JUMP_VELOCITY
         f.move_speed = BASE_SPEED
+        f.ground_accel = 40.0
+        f.air_accel = 14.0
+        f.charge_max_time = CHARGE_TIME
+        f.body_scale = BODY_SCALE
         var c: Vector2i = board.spawns[int(spots[i])]
         var p := board.center(c)
         f.position = Vector3(p.x, top_y(c) + 0.2, p.z)
@@ -526,7 +537,7 @@ func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3) ->
 
 func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool) -> void:
     var b := {"id": id, "owner": owner, "cell": i, "from": from, "t_land": t_land, "t": t, "power": power,
-            "ghost": ghost, "node": null, "landed": false}
+            "ghost": ghost, "node": null, "landed": false, "hit": {}}
     bombs[id] = b
     if is_server():
         return
@@ -602,6 +613,7 @@ func _update_bombs(now: float) -> void:
     for id in bombs:
         var b: Dictionary = bombs[id]
         if now < float(b.t_land):
+            _flight_hits(b, now)
             continue
         var c := board.cell(int(b.cell))
         if board.height(c) <= 0:
@@ -614,6 +626,36 @@ func _update_bombs(now: float) -> void:
             broadcast(["sink", id])
     if not due.is_empty():
         _explode(due, now)
+
+
+## 날아가는 폭탄이 캐릭터에 맞으면 날아가던 쪽으로 살짝 밀림 (폭탄은 그대로 날아감, 한 사람에 한 번)
+func _flight_hits(b: Dictionary, now: float) -> void:
+    var p := bomb_pos(b, now)
+    var from: Vector3 = b.from
+    var to := board.center(board.cell(int(b.cell)))
+    var dir := Vector3(to.x - from.x, 0, to.z - from.z)
+    dir = dir.normalized() if dir.length() > 0.1 else Vector3.FORWARD
+    var hit: Dictionary = b.get("hit", {})
+    for f in fighters:
+        if f.dead or hit.has(f.slot):
+            continue
+        if f.slot == int(b.owner) and now < float(b.t_land) - 0.1 and from.distance_to(p) < 2.0:
+            continue          # 막 던진 내 폭탄은 나를 안 맞힘
+        var body := f.global_position + Vector3(0, Fighter.HEIGHT * BODY_SCALE * 0.5, 0)
+        if body.distance_to(p) > BOMB_HIT_R:
+            continue
+        hit[f.slot] = true
+        var impulse := dir * BOMB_HIT_PUSH + Vector3(0, 3.5, 0)
+        var attacker: Fighter = fighters[int(b.owner)] if int(b.owner) >= 0 and int(b.owner) < fighters.size() else null
+        if f.remote:
+            send_to_peer(f.peer_id, ["knock", impulse, 0.25, int(b.owner)])
+        else:
+            f.receive_push(impulse, 0.25, attacker)
+        if is_server():
+            broadcast(["pop", "퍽!", f.global_position + Vector3(0, 2.6, 0), Color(1.0, 0.85, 0.4)])
+        else:
+            popup_text(f.global_position + Vector3(0, 2.6, 0), "퍽!", Color(1.0, 0.85, 0.4))
+    b.hit = hit
 
 
 func _sink_bomb(id: int) -> void:
@@ -859,7 +901,7 @@ func _judge_sample(f: Fighter, t: float, pos: Vector3) -> void:
     if who > -2:
         _knock_out(f, who, pos)
         return
-    if items.has(i) and absf(pos.y - top_y(c)) < 1.6:
+    if items.has(i) and absf(pos.y - top_y(c)) < 2.2:
         _pick_item(f, i)
 
 
@@ -877,7 +919,7 @@ func _on_out(f: Fighter, killer: int) -> void:
     f.die()
     var kname := ""
     if killer == -1:
-        kname = "용암에 빠짐"
+        kname = "떨어짐"
     elif killer == f.slot:
         kname = "자폭"
     elif killer >= 0 and killer < fighters.size():
@@ -1185,7 +1227,7 @@ func _process(delta: float) -> void:
         if not human.dead:
             _cam_anchor.global_position = _anchor_goal(human)
         elif is_instance_valid(_ghost_cam):
-            _cam_anchor.global_position = _ghost_cam.global_position.lerp(Vector3(0, floor_y + Board.LAYERS, 0), 0.7) - Vector3(0, 1.3, 0)
+            _cam_anchor.global_position = _ghost_cam.global_position.lerp(Vector3(0, floor_y + Board.LAYERS * Board.BLOCK, 0), 0.7) - Vector3(0, 1.3, 0)
     var t := net_now()
     for id in bombs:
         var b: Dictionary = bombs[id]
@@ -1468,6 +1510,9 @@ func on_server_message(msg: Array) -> void:
                 ghosts[int(msg[1])].cool = float(msg[2])
         "pop":
             popup_text(msg[2], String(msg[1]), msg[3])
+        "knock":
+            if human and not human.dead:
+                human.receive_push(msg[1], float(msg[2]), _fighter_at(int(msg[3])))
         "end":
             state = State.ENDED
             state_time = 0.0

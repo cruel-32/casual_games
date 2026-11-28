@@ -189,6 +189,7 @@ var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 �
 var cam_max_len := 9.0               ## 〃 축소 한계
 var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 연쇄폭탄마 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
+var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 연쇄폭탄마 1.3)
 var throw_mode := false              ## true 면 밀치기 키 = 누른 시간만큼 던지기 (game.on_throw(self, 0~1))
 
 
@@ -203,6 +204,10 @@ func _ready() -> void:
     _build_arrow()
     _build_name_tag()
     _build_team_ring()
+    if body_scale != 1.0:
+        visual.scale = Vector3.ONE * body_scale
+        if name_tag:
+            name_tag.position.y *= body_scale
     if is_human:
         _build_camera()
         if not touch_device():
@@ -252,10 +257,10 @@ func can_act() -> bool:
 func _build_collision() -> void:
     var col := CollisionShape3D.new()
     var shape := CapsuleShape3D.new()
-    shape.radius = RADIUS
-    shape.height = HEIGHT
+    shape.radius = RADIUS * body_scale
+    shape.height = HEIGHT * body_scale
     col.shape = shape
-    col.position.y = HEIGHT * 0.5
+    col.position.y = HEIGHT * body_scale * 0.5
     add_child(col)
 
 

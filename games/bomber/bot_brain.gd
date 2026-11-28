@@ -1,7 +1,7 @@
 extends Node
 ## 봇 (연쇄폭탄마): 블록 탑 격자 위에서 생각한다
-##   1. 지금 칸이 곧 터질 자리면 → 안전한 칸으로 도망 (구멍은 피하고, 1층은 점프로 오름)
-##   2. 던질 폭탄이 있고 상대가 3~13m 안이면 → 상대 쪽으로 몸을 돌리고, 거리만큼 눌렀다가 던짐 (내가 맞을 자리는 안 던짐)
+##   1. 지금 칸이 곧 터질 자리면 → 안전한 칸으로 도망 (구멍은 피하고, 3층까지는 점프로 오름)
+##   2. 던질 폭탄이 있고 상대가 3~18m 안이면 → 상대 쪽으로 몸을 돌리고, 거리만큼 눌렀다가 던짐 (내가 맞을 자리는 안 던짐)
 ##   3. 가까운 아이템 줍기
 ##   4. 상대에게서 3~5칸 떨어진 자리로 이동
 ## 생각은 0.2~0.4초마다. Fighter 의 intent_* 만 채운다 (서버·혼자 연습에서만 돈다)
@@ -100,12 +100,12 @@ func _danger() -> Dictionary:
     return d
 
 
-## 옆 칸으로 갈 수 있나: 서 있을 수 있고, 1층 넘게 높지 않음 (점프 약 1.3m)
+## 옆 칸으로 갈 수 있나: 서 있을 수 있고, 3층 넘게 높지 않음 (점프 약 6.5m)
 func _can_step(from: Vector2i, to: Vector2i) -> bool:
     var b := _board()
     if not b.standable(to):
         return false
-    return b.height(to) - b.height(from) <= 1
+    return b.height(to) - b.height(from) <= 3
 
 
 func _bfs(start: Vector2i, goal: Callable, danger: Dictionary, max_depth: int = 30) -> Array[Vector2i]:
@@ -228,7 +228,7 @@ func _follow() -> void:
         target = b.center(_path[0])
         # 다음 칸이 높으면 가까이 가서 점프
         var up: float = b.top(_path[0]) - (pos.y - float(game.floor_y))
-        if up > 0.3 and f.is_on_floor() and Vector2(target.x - pos.x, target.z - pos.z).length() < 1.7:
+        if up > 0.3 and f.is_on_floor() and Vector2(target.x - pos.x, target.z - pos.z).length() < 2.2:
             f.intent_jump = true
     var to := Vector3(target.x - pos.x, 0, target.z - pos.z)
     if to.length() < 0.15:

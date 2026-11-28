@@ -1,13 +1,12 @@
 extends RefCounted
 ## 연쇄폭탄마 격자 (판정·봇이 쓰는 순수 데이터. 화면은 bomber_game.gd 가 그린다)
-##   칸 2m. 칸마다 블록(높이 1m)이 LAYERS 층 쌓여 있고, 모두 그 꼭대기에서 시작한다
-##   바깥 테두리와 (짝수, 짝수) 칸은 부서지지 않는 기둥 (블록 꼭대기보다 PILLAR_EXTRA 층 높아서 올라갈 수 없음 — 이 게임 점프는 약 1.3m)
-##   폭발로 블록이 깎여 높이가 0 이 된 칸은 구멍 → 아래 용암으로 떨어진다
+##   블록은 2m 정육면체. 칸마다 LAYERS 층 쌓여 있고, 모두 그 꼭대기(평평)에서 시작한다
+##   바깥 테두리와 (짝수, 짝수) 칸은 부서지지 않는 블록(기둥) — 처음엔 다른 블록과 높이가 같아 위에 설 수 있다
+##   폭발로 블록이 깎여 높이가 0 이 된 칸은 구멍 → 아래 용암으로 떨어진다. 경기장 가장자리 밖으로 떨어져도 탈락
 
 const TILE := 2.0
-const BLOCK := 1.0
-const LAYERS := 5
-const PILLAR_EXTRA := 2
+const BLOCK := 2.0
+const LAYERS := 4
 const EMPTY := 0
 const PILLAR := 1
 const DIRS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
@@ -25,17 +24,15 @@ var x0 := 0.0                      ## 칸 (0,0) 의 왼쪽 위 모서리 (월드
 var z0 := 0.0
 
 
-## 인원에 맞는 크기 (모두 홀수)
+## 인원에 맞는 크기 (정사각형, 홀수)
 static func size_for(n: int) -> Vector2i:
     if n <= 4:
-        return Vector2i(13, 11)
+        return Vector2i(11, 11)
     if n <= 6:
-        return Vector2i(15, 13)
-    if n <= 8:
-        return Vector2i(17, 13)
+        return Vector2i(13, 13)
     if n <= 10:
-        return Vector2i(19, 15)
-    return Vector2i(21, 15)
+        return Vector2i(15, 15)
+    return Vector2i(17, 17)
 
 
 func generate(n_players: int) -> void:
@@ -52,7 +49,6 @@ func generate(n_players: int) -> void:
         for x in w:
             if x == 0 or y == 0 or x == w - 1 or y == h - 1 or (x % 2 == 0 and y % 2 == 0):
                 cells[idx(Vector2i(x, y))] = PILLAR
-                hgt[idx(Vector2i(x, y))] = 0
     # 출발 자리: 안쪽 테두리 한 바퀴(1번째 줄)에 고르게, (홀수, 홀수) 칸에
     var ring := _ring()
     spawns.clear()
@@ -97,18 +93,19 @@ func in_bounds(c: Vector2i) -> bool:
     return c.x >= 0 and c.y >= 0 and c.x < w and c.y < h
 
 
+## 부서지지 않는 칸 (또는 경기장 밖)
 func pillar(c: Vector2i) -> bool:
     return not in_bounds(c) or cells[idx(c)] == PILLAR
 
 
-## 블록 수 (기둥·밖은 -1)
+## 블록 수 (밖은 -1, 부서지지 않는 칸은 늘 LAYERS)
 func height(c: Vector2i) -> int:
-    if pillar(c):
+    if not in_bounds(c):
         return -1
     return hgt[idx(c)]
 
 
-## 서 있을 수 있는 칸 (기둥 아님, 구멍 아님)
+## 서 있을 수 있는 칸 (구멍 아님)
 func standable(c: Vector2i) -> bool:
     return height(c) > 0
 
@@ -127,7 +124,9 @@ func top(c: Vector2i) -> float:
     return maxf(height(c), 0) * BLOCK
 
 
-## 폭발: 폭탄 칸 c (그 칸 높이 = 폭발 층 L) 에서 십자로. 기둥에서 멈추고, L 보다 높은 칸은 벽처럼 맞고 멈춤
+## 폭발: 폭탄 칸 c (그 칸 높이 = 폭발 층 L) 에서 십자로
+##   부서지지 않는 칸: 높이가 같으면 그 위까지 불길이 닿고 멈춤, 더 높으면 막힘
+##   L 보다 높은 블록은 벽처럼 맞고(깎임) 멈춤
 ##   돌려줌: 불길 칸들 (깎을지는 lowered_by 로)
 func blast(c: Vector2i, power: int) -> Array[Vector2i]:
     var level := maxi(height(c), 0)
@@ -135,7 +134,11 @@ func blast(c: Vector2i, power: int) -> Array[Vector2i]:
     for dir in DIRS:
         for k in range(1, power + 1):
             var n: Vector2i = c + dir * k
+            if not in_bounds(n):
+                break
             if pillar(n):
+                if height(n) <= level:
+                    fire.append(n)
                 break
             fire.append(n)
             if height(n) > level:
@@ -146,12 +149,12 @@ func blast(c: Vector2i, power: int) -> Array[Vector2i]:
 ## 불길 칸이 깎이는 층 수: 가운데 2, 나머지 1. 폭발 층보다 2층 넘게 낮은 칸은 불길이 위로 지나감 (0)
 func lowered_by(center_cell: Vector2i, n: Vector2i, level: int) -> int:
     var hn := height(n)
-    if hn <= 0 or hn < level - 1:
+    if pillar(n) or hn <= 0 or hn < level - 1:
         return 0
     return 2 if n == center_cell else 1
 
 
-## 던진 폭탄이 떨어질 칸: from 에서 dir 쪽으로 dist m. 기둥·밖이면 앞쪽으로 한 칸씩 당김
+## 던진 폭탄이 떨어질 칸: from 에서 dir 쪽으로 dist m. 경기장 밖이면 앞쪽으로 당김
 func throw_target(from: Vector3, dir: Vector3, dist: float) -> Vector2i:
     var d := Vector3(dir.x, 0, dir.z)
     if d.length() < 0.01:
@@ -161,7 +164,7 @@ func throw_target(from: Vector3, dir: Vector3, dist: float) -> Vector2i:
     var t := dist
     while t > 0.0:
         var c := cell_at(from + d * t)
-        if not pillar(c):
+        if in_bounds(c):
             return c
         t -= step
     return cell_at(from)
