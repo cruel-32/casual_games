@@ -343,7 +343,7 @@ static func image_card(tex: Texture2D, min_size: Vector2, bg: Color = SOFT, radi
 
 ## 캐릭터 초상화 (ui/portraits/slot_N.png — tools/render_assets.gd 로 생성)
 static func portrait(slot: int) -> Texture2D:
-    var path := "res://ui/portraits/slot_%d.png" % (slot % 8) if slot >= 0 else "res://ui/portraits/me.png"
+    var path := "res://ui/portraits/slot_%d.png" % (slot % 12) if slot >= 0 else "res://ui/portraits/me.png"
     return load(path) if ResourceLoader.exists(path) else null
 
 

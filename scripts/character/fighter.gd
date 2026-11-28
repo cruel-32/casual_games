@@ -53,6 +53,7 @@ const SLOT_COLORS: Array[Color] = [
     Color(0.90, 0.22, 0.27), Color(0.27, 0.48, 0.62), Color(1.0, 0.72, 0.01),
     Color(0.16, 0.62, 0.56), Color(0.48, 0.37, 0.65), Color(0.96, 0.50, 0.12),
     Color(0.94, 0.44, 0.61), Color(0.42, 0.69, 0.30),
+    Color(0.55, 0.36, 0.22), Color(1.0, 0.36, 0.74), Color(0.45, 0.78, 0.86), Color(0.68, 0.71, 0.78),
 ]
 const RADIUS := 0.4
 const HEIGHT := 1.65
@@ -320,14 +321,17 @@ func _pivot(parent: Node3D, pos: Vector3) -> Node3D:
 
 
 ## 외형 번호(슬롯)별 머리 모양·머리색·피부색 — 같은 번호면 어디서나(게임·초상화) 같은 아이
-const HAIR_STYLES := ["short", "pigtails", "spiky", "bob", "bun", "cap", "beanie", "headband"]
+const HAIR_STYLES := ["short", "pigtails", "spiky", "bob", "bun", "cap", "beanie", "headband",
+        "bald", "bald_pink", "perm", "robot"]
 const HAIR_COLORS: Array[Color] = [
     Color(0.30, 0.19, 0.12), Color(0.12, 0.10, 0.10), Color(0.62, 0.36, 0.16), Color(0.85, 0.48, 0.18),
     Color(0.20, 0.13, 0.09), Color(0.93, 0.76, 0.38), Color(0.42, 0.25, 0.14), Color(0.14, 0.12, 0.16),
+    Color(0.16, 0.11, 0.08), Color(0.98, 0.45, 0.72), Color(0.86, 0.86, 0.9), Color(0.7, 0.73, 0.8),
 ]
 const SKIN_TONES: Array[Color] = [
     Color(0.98, 0.80, 0.66), Color(0.93, 0.72, 0.56), Color(0.80, 0.57, 0.40), Color(0.99, 0.83, 0.70),
     Color(0.66, 0.45, 0.31), Color(0.96, 0.77, 0.62), Color(0.86, 0.64, 0.48), Color(0.98, 0.79, 0.65),
+    Color(0.84, 0.6, 0.44), Color(0.99, 0.82, 0.72), Color(0.97, 0.8, 0.7), Color(0.74, 0.78, 0.86),
 ]
 
 
@@ -337,6 +341,8 @@ func _build_mannequin() -> void:
     skin_mat = Toon.make(body_color, {"rim_strength": 0.45, "shade_softness": 0.05})       # 멜빵바지 (캐릭터 색)
     var light := body_color.get_luminance() > 0.8
     var shirt_color := Color(0.62, 0.78, 0.92) if light else Color(0.98, 0.96, 0.9)
+    if HAIR_STYLES[lk] == "bald_pink":
+        shirt_color = Color(1.0, 0.55, 0.82)                # 핑크 대머리: 핑크 티셔츠
     if team >= 0:
         shirt_color = body_color.lerp(Color.WHITE, 0.3)     # 팀전: 티셔츠도 팀 색 (위아래 모두 팀 색)
     var shirt := Toon.make(shirt_color, {"rim_strength": 0.4, "shade_softness": 0.05})
@@ -426,10 +432,13 @@ func _build_beard(hair: Material) -> void:
 
 ## 머리 모양. 헬멧을 쓰면 위로 솟은 부분(tall_hair)은 숨긴다
 func _build_hair(style: String, hair: Material) -> void:
+    if style in ["bald", "bald_pink", "robot"]:
+        _build_special_head(style, hair)
+        return
     # 공통: 뒤통수·정수리를 덮는 머리 + 앞머리
     var cap := _part(head, _sphere(0.405), Vector3(0, 0.05, 0.035), hair)
     cap.scale = Vector3(1.04, 0.95, 1.0)
-    if style != "cap" and style != "beanie":
+    if style != "cap" and style != "beanie" and style != "perm":
         var fringe := _part(head, _capsule(0.09, 0.62), Vector3(0, 0.22, -0.27), hair)
         fringe.rotation = Vector3(0.5, 0, PI * 0.5)
         fringe.scale = Vector3(1.0, 1.0, 0.75)
@@ -490,6 +499,28 @@ func _build_hair(style: String, hair: Material) -> void:
             fold.height = 0.1
             var f := _part(head, fold, Vector3(0, 0.12, 0.02), Toon.make(Color(0.97, 0.95, 0.9), {"rim_strength": 0.4}))
             tall_hair.append(f)
+        "perm":
+            # 뽀글머리 할머니: 머리 위·옆에 작은 공을 잔뜩 + 동그란 안경
+            for i in 16:
+                var a := float(i) / 16.0 * TAU
+                var ring_y := 0.18 + 0.12 * (i % 2)
+                var pp := Vector3(sin(a) * 0.36, ring_y, cos(a) * 0.3 + 0.05)
+                if pp.z < -0.22 and absf(pp.x) < 0.2:
+                    pp.y += 0.1                  # 이마 앞은 조금 위로 (눈을 가리지 않게)
+                _part(head, _sphere(0.12), pp, hair)
+            for i in 5:
+                var a := float(i) / 5.0 * TAU
+                var top := _part(head, _sphere(0.13), Vector3(sin(a) * 0.16, 0.38, cos(a) * 0.14 + 0.04), hair)
+                tall_hair.append(top)
+            var frame := Toon.make(Color(0.45, 0.3, 0.55), {"rim_strength": 0.3})
+            for side: float in [-1.0, 1.0]:
+                var lens := TorusMesh.new()
+                lens.inner_radius = 0.065
+                lens.outer_radius = 0.085
+                var g := _part(head, lens, Vector3(side * 0.13, 0.0, -0.37), frame)
+                g.rotation.x = PI * 0.5
+            var bridge := _part(head, _capsule(0.012, 0.08), Vector3(0, 0.01, -0.385), frame)
+            bridge.rotation.z = PI * 0.5
         "headband":
             var band := TorusMesh.new()
             band.inner_radius = 0.365
@@ -498,6 +529,55 @@ func _build_hair(style: String, hair: Material) -> void:
             hb.rotation.x = 0.35
         _:
             pass
+
+
+## 머리카락 없는 머리: 대머리(콧수염 장사) / 핑크 대머리(핑크 하트 안경) / 로봇 헬멧
+func _build_special_head(style: String, hair: Material) -> void:
+    var shine := Toon.make(Color(1, 1, 1), {"rim_strength": 0.0, "shade_softness": 0.5, "shadow_strength": 1.0})
+    if style == "robot":
+        var metal := Toon.make(Color(0.72, 0.75, 0.82), {"rim_strength": 0.9, "shade_softness": 0.04})
+        var dark := Toon.make(Color(0.1, 0.12, 0.2), {"rim_strength": 0.6})
+        var shell := _part(head, _sphere(0.43), Vector3(0, 0.03, 0.02), metal)
+        shell.scale = Vector3(1.05, 1.0, 1.0)
+        tall_hair.append(shell)
+        var visor := BoxMesh.new()
+        visor.size = Vector3(0.56, 0.17, 0.12)
+        _part(head, visor, Vector3(0, 0.02, -0.36), dark)          # 얼굴 앞 검은 화면
+        var eye_mat := Toon.make(Color(0.3, 1.0, 0.85), {"rim_strength": 0.0, "shade_softness": 0.5, "shadow_strength": 1.0})
+        for side: float in [-1.0, 1.0]:
+            var e := _part(head, _sphere(0.04), Vector3(side * 0.12, 0.02, -0.42), eye_mat)
+            e.scale = Vector3(1.4, 0.7, 0.4)
+            var bolt := _part(head, _capsule(0.05, 0.12), Vector3(side * 0.44, 0.0, 0.0), metal)
+            bolt.rotation.z = PI * 0.5
+        var ant := _part(head, _capsule(0.015, 0.22), Vector3(0, 0.52, 0.02), metal)
+        tall_hair.append(ant)
+        var tip := _part(head, _sphere(0.05), Vector3(0, 0.64, 0.02), Toon.make(Color(1.0, 0.25, 0.2), {"rim_strength": 0.3}))
+        tall_hair.append(tip)
+        return
+    # 반짝이는 정수리 + 귀 위에 남은 머리 조금
+    var gloss := _part(head, _sphere(0.08), Vector3(-0.1, 0.33, -0.12), shine)
+    gloss.scale = Vector3(1.4, 0.35, 0.9)
+    for side: float in [-1.0, 1.0]:
+        var tuft := _part(head, _sphere(0.1), Vector3(side * 0.36, 0.06, 0.12), hair)
+        tuft.scale = Vector3(0.6, 0.9, 1.2)
+    if style == "bald":
+        # 장사: 굵은 콧수염 + 굵은 눈썹
+        for side: float in [-1.0, 1.0]:
+            var mus := _part(head, _capsule(0.045, 0.2), Vector3(side * 0.08, -0.1, -0.375), hair)
+            mus.rotation = Vector3(0, 0, PI * 0.5 + side * 0.4)
+            var brow := _part(head, _capsule(0.032, 0.14), Vector3(side * 0.13, 0.12, -0.355), hair)
+            brow.rotation = Vector3(0, 0, PI * 0.5 - side * 0.25)
+    else:
+        # 핑크 대머리: 핑크 하트 안경
+        var pink := Toon.make(Color(1.0, 0.35, 0.7), {"rim_strength": 0.5})
+        for side: float in [-1.0, 1.0]:
+            for k: float in [-1.0, 1.0]:
+                var lobe := _part(head, _sphere(0.05), Vector3(side * 0.13 + k * 0.035, 0.02, -0.38), pink)
+                lobe.scale = Vector3(1.0, 1.0, 0.4)
+            var point := _part(head, _sphere(0.045), Vector3(side * 0.13, -0.035, -0.38), pink)
+            point.scale = Vector3(0.9, 0.9, 0.4)
+        var bridge := _part(head, _capsule(0.012, 0.07), Vector3(0, 0.03, -0.39), pink)
+        bridge.rotation.z = PI * 0.5
 
 
 func _build_item_visuals() -> void:
@@ -1255,7 +1335,7 @@ func _check_wall_slam() -> void:
 ## 캐릭터 목소리: 외형 번호마다 음높이가 달라서 누가 소리 냈는지 구분된다
 ## 목소리: 캐릭터마다 목소리 종류(VOICE_TYPES 개) 하나 + 같은 종류 안에서 음높이를 조금씩 다르게
 ##   파일 audio/sfx/voice_<종류>_<목소리>_<번호>.wav (tools/audio/gen_voice.py)
-const VOICE_TYPES := 5
+const VOICE_TYPES := 9
 const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2}
 ## 대사 (TTS, tools/audio/gen_tts_lines.py): audio/sfx/line_<종류>_<목소리>_<번호>.wav — "야호!", "이겼다!", "아이씨!", "짜증나!", "우하하!" …
 ##   목소리를 낼 때 LINE_CHANCE 확률로 합성 감탄사 대신 대사를 고른다
@@ -1272,6 +1352,10 @@ const LOOK_VOICE := [
     [0, 1.13],    # cap 모자 → 조금 높은 아이
     [4, 1.0],     # beanie 털모자 + 수염 → 털보 아저씨
     [2, 1.15],    # headband 머리띠 → 조금 높은 굵은 목소리
+    [5, 1.0],     # bald 대머리 장사 (콧수염) → 털보보다 더 두껍고 낮은 목소리
+    [6, 1.0],     # bald_pink 핑크 옷 대머리 → 얇고 하늘하늘한 목소리
+    [7, 1.0],     # perm 뽀글머리 할머니 (동그란 안경) → 덜덜 떨리는 목소리
+    [8, 1.0],     # robot 로봇 헬멧 → 한 음으로 말하는 전자음 목소리
 ]
 
 

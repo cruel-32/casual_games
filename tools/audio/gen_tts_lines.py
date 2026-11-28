@@ -9,6 +9,7 @@
   모델은 성인 여성 낭독 목소리(KSS) 하나뿐이라, 목소리마다 높이를 바꾼다:
     TTS 를 (빠르기 ÷ 높이배율) 로 만든 뒤 높이배율만큼 빠르게 재생 → 말 빠르기는 TEMPO, 높이(와 울림)는 배율만큼
   목소리 번호는 gen_voice.py 와 같다: 0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 얇고 높은 목소리 / 4 털보 아저씨
+    / 5 대머리 장사 / 6 핑크 대머리 / 7 뽀글머리 할머니 / 8 로봇
 """
 import os
 import sys
@@ -29,7 +30,13 @@ TYPES = [
     ("deep", 0.86, 0.0),
     ("squeak", 1.95, 0.0),
     ("beard", 0.6, 0.8),
+    ("bald", 0.47, 0.6),
+    ("pink", 1.45, 0.0),
+    ("granny", 1.15, 0.15),
+    ("robot", 1.0, 0.0),
 ]
+# 목소리별 덧붙이는 효과: 핑크 = 하늘하늘 떨림 + 끝 올림, 할머니 = 덜덜 떨림, 로봇 = 전자음
+EFFECT = {"pink": "sing", "granny": "shake", "robot": "robot"}
 
 # 종류별 대사 (Fighter 의 목소리 종류와 같은 이름 — 게임에서 합성 목소리와 섞어서 고름)
 #   너무 짧은 말("아야!", "헉!", "아싸!")은 이 모델이 0.1초로 뭉개서 조금 긴 말로 바꿈
@@ -73,6 +80,30 @@ def growl(x, sr, amount):
     return lfilter(b, a, y)
 
 
+def vibrato(x, sr, depth_ms, rate, rise=0.0):
+    """소리를 아주 조금씩 앞뒤로 밀고 당겨 높이를 떨게 (rise > 0 이면 끝으로 갈수록 높아짐)"""
+    n = len(x)
+    t = np.arange(n) / sr
+    d = depth_ms * 0.001 * sr * (1 + np.sin(2 * np.pi * rate * t))
+    if rise > 0:
+        k = np.linspace(0, 1, n)
+        d = d - rise * k ** 3 * 0.03 * sr        # 끝에서 빨라지듯 → 높아짐
+    idx = np.clip(np.arange(n) - d, 0, n - 1)
+    return np.interp(idx, np.arange(n), x)
+
+
+def effect(y, sr, kind):
+    t = np.arange(len(y)) / sr
+    if kind == "sing":
+        return vibrato(y, sr, 0.35, 6.0, rise=1.0)
+    if kind == "shake":
+        return vibrato(y, sr, 0.6, 6.5) * (1 + 0.28 * np.sin(2 * np.pi * 6.5 * t))
+    if kind == "robot":
+        z = y * (0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 75.0 * t)))
+        return np.round(z / (np.abs(z).max() + 1e-9) * 10) / 10
+    return y
+
+
 def main():
     import glob
     for old in glob.glob(os.path.join(OUT, "line_*.wav")):
@@ -94,6 +125,8 @@ def main():
                 y = resample_poly(x, fr.numerator, fr.denominator)
                 if rough > 0:
                     y = growl(y / (np.abs(y).max() + 1e-9), sr, rough)
+                if tname in EFFECT:
+                    y = effect(y / (np.abs(y).max() + 1e-9), sr, EFFECT[tname])
                 y = trim(y, sr)
                 f = int(0.006 * sr)
                 y[:f] *= np.linspace(0, 1, f)

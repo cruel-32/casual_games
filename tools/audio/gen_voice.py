@@ -1,6 +1,6 @@
 """캐릭터 목소리 효과음 (아이 목소리 감탄사) — 포먼트 합성, 샘플·녹음 없이 코드로만 만든다
 
-  파일: audio/sfx/voice_<종류>_<목소리>_<번호>.wav  (목소리 0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 높은 목소리 / 4 털보 아저씨)
+  파일: audio/sfx/voice_<종류>_<목소리>_<번호>.wav  (목소리 0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 높은 목소리 / 4 털보 아저씨 / 5 대머리 장사 / 6 핑크 대머리 / 7 할머니 / 8 로봇)
   push     밀칠 때·차징 던지기 기합 ("핫!", "얍!", "에잇!", "하앗!")
   hit      밀쳐졌을 때 ("윽!", "으악!", "아얏!", "끄악!")
   die      탈락할 때 ("으아아~", "꺄아~", "우에에~")
@@ -51,10 +51,13 @@ def _resonator(x, f, bw):
     return y
 
 
-def voice(segs, base=1.0, fs=1.0, rough=0.0):
+def voice(segs, base=1.0, fs=1.0, rough=0.0, vib=0.0, robot=False, sing=0.0):
     """segs: [(sec, vowel0, vowel1, f0_0, f0_1, amp0, amp1, breath)] 를 이어 붙여 소리 하나
     fs: 포먼트 배율 (1보다 크면 작고 가는 목소리, 작으면 크고 굵은 목소리)
-    rough: 거친 정도 (0~1, 성대가 반 박자씩 흔들리는 걸걸한 소리 — 털보 아저씨)"""
+    rough: 거친 정도 (0~1, 성대가 반 박자씩 흔들리는 걸걸한 소리 — 털보 아저씨)
+    vib: 떨림 크기 (0 = 보통, 0.06 정도면 할머니처럼 덜덜, 빠르기는 6.5Hz)
+    robot: 높낮이 없이 한 음으로 + 전자음처럼 울림
+    sing: 노래하듯 끝을 위로 휘감는 정도 (핑크 대머리의 하늘하늘한 말투)"""
     f0s, a, fm, br = [], [], [[], [], []], []
     for sec, v0, v1, p0, p1, a0, a1, b in segs:
         n = int(sec * SR)
@@ -71,7 +74,13 @@ def voice(segs, base=1.0, fs=1.0, rough=0.0):
     n = len(f0)
     t = np.arange(n) / SR
     # 떨림(비브라토) + 미세한 흔들림
-    f0 = f0 * (1 + 0.025 * np.sin(2 * np.pi * 5.5 * t) + 0.006 * rng.standard_normal(n).cumsum() / np.sqrt(np.arange(1, n + 1)))
+    if robot:
+        f0 = np.full(n, float(np.median(f0)))
+    elif sing > 0.0:
+        k = np.linspace(0, 1, n)
+        f0 = f0 * (1 + sing * np.sin(np.pi * k) ** 2 + sing * 0.8 * k ** 3)    # 가운데 살짝, 끝에서 위로 휘감음
+    f0 = f0 * (1 + (0.0 if robot else 0.025 + vib) * np.sin(2 * np.pi * (6.5 if vib > 0 else 5.5) * t)
+               + (0.0 if robot else 0.006) * rng.standard_normal(n).cumsum() / np.sqrt(np.arange(1, n + 1)))
     phase = np.cumsum(f0) / SR
     saw = 2 * (phase % 1.0) - 1
     glottal = lp(-saw, 2600, 1)                       # 성대 소리 (고음 줄임)
@@ -87,6 +96,11 @@ def voice(segs, base=1.0, fs=1.0, rough=0.0):
     for i in range(3):
         f = np.concatenate(fm[i]) * (1.08 if base > 1.05 else 1.0) * fs
         out += gains[i] * _resonator(src, f, np.full(n, BW[i]))
+    if robot:
+        out = out * (0.55 + 0.45 * np.sign(np.sin(2 * np.pi * 70.0 * t)))      # 전자음 울림 (네모파 링 변조)
+        out = np.round(out / (np.abs(out).max() + 1e-9) * 12) / 12             # 조금 거칠게 (비트 깎기)
+    if vib > 0.0:
+        out = out * (1 + vib * 4.0 * np.sin(2 * np.pi * 6.5 * t))              # 소리 크기도 덜덜
     # 앞뒤 클릭 방지
     fade = int(0.006 * SR)
     out[:fade] *= np.linspace(0, 1, fade)
@@ -124,14 +138,19 @@ TYPES = [
     ("deep", 200.0, 0.84, 0.05),    # 2 굵은 목소리 (덩치)
     ("squeak", 540.0, 1.22, 0.0),   # 3 아주 높은 만화 목소리
     ("beard", 92.0, 0.7, 0.08),     # 4 우락부락한 털보 아저씨 (아주아주 굵고 걸걸함)
+    ("bald", 66.0, 0.6, 0.1),       # 5 대머리 장사 (털보보다 더 두껍고 낮음)
+    ("pink", 400.0, 1.1, 0.12),     # 6 핑크 대머리 (얇고 하늘하늘, 노래하듯)
+    ("granny", 300.0, 0.97, 0.25),  # 7 뽀글머리 할머니 (덜덜 떨리는 목소리)
+    ("robot", 170.0, 0.95, 0.0),    # 8 로봇 (한 음 + 전자음)
 ]
-ROUGH = {"beard": 0.9}
+ROUGH = {"beard": 0.9, "bald": 0.75, "granny": 0.15}
+EXTRA = {"pink": {"sing": 0.12}, "granny": {"vib": 0.06}, "robot": {"robot": True}}
 
 
-def make_sounds(P, fs, br, rough=0.0):
+def make_sounds(P, fs, br, rough=0.0, extra=None):
     """한 목소리 종류의 감탄사 전부. P = 기본 높이, fs = 포먼트 배율, br = 숨소리 더함"""
     def v(segs):
-        return voice([(sec, a, b, p0, p1, a0, a1, min(bb + br, 0.6)) for sec, a, b, p0, p1, a0, a1, bb in segs], 1.0, fs, rough)
+        return voice([(sec, a, b, p0, p1, a0, a1, min(bb + br, 0.6)) for sec, a, b, p0, p1, a0, a1, bb in segs], 1.0, fs, rough, **(extra or {}))
     return {
         # 밀칠 때·차징 던지기: 짧고 힘 있게
         "push_1": cat(burst(0.05, 800, 4000, 0.5),                                       # 핫
@@ -215,7 +234,7 @@ if __name__ == "__main__":
             os.remove(old + ".import")
     count = 0
     for ti, (tname, P, fs, br) in enumerate(TYPES):
-        for name, x in make_sounds(P, fs, br, ROUGH.get(tname, 0.0)).items():
+        for name, x in make_sounds(P, fs, br, ROUGH.get(tname, 0.0), EXTRA.get(tname)).items():
             kind, n = name.rsplit("_", 1)
             save22("voice_%s_%d_%s" % (kind, ti, n), x)
             count += 1
