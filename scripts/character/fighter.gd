@@ -389,6 +389,8 @@ func _build_mannequin() -> void:
         var mo := _part(head, _capsule(0.011, 0.065), Vector3(side * 0.024, -0.152, -0.343), ink)
         mo.rotation = Vector3(0.25, 0, PI * 0.5 + side * 0.38)
     _build_hair(HAIR_STYLES[lk], hair)
+    if HAIR_STYLES[lk] == "beanie":
+        _build_beard(hair)
 
     # 팔: 반팔(캐릭터 색) + 맨팔 + 손
     left_arm = _pivot(visual, Vector3(-0.31, 0.88, 0))
@@ -407,6 +409,19 @@ func _build_mannequin() -> void:
         foot.scale = Vector3(1.0, 0.68, 1.4)
         var so := _part(leg, _sphere(0.112), Vector3(0, -0.33, -0.04), sole)
         so.scale = Vector3(1.02, 0.25, 1.42)
+
+
+## 털보 아저씨 (털모자 캐릭터): 덥수룩한 턱수염 + 콧수염 + 굵은 눈썹
+func _build_beard(hair: Material) -> void:
+    var beard := _part(head, _sphere(0.3), Vector3(0, -0.2, -0.2), hair)
+    beard.scale = Vector3(1.12, 0.78, 0.72)
+    for side: float in [-1.0, 1.0]:
+        var cheek := _part(head, _sphere(0.16), Vector3(side * 0.24, -0.12, -0.2), hair)
+        cheek.scale = Vector3(0.8, 1.1, 0.9)
+        var mus := _part(head, _capsule(0.035, 0.16), Vector3(side * 0.06, -0.11, -0.385), hair)
+        mus.rotation = Vector3(0, 0, PI * 0.5 + side * 0.35)
+        var brow := _part(head, _capsule(0.03, 0.13), Vector3(side * 0.13, 0.12, -0.355), hair)
+        brow.rotation = Vector3(0, 0, PI * 0.5 - side * 0.2)
 
 
 ## 머리 모양. 헬멧을 쓰면 위로 솟은 부분(tall_hair)은 숨긴다
@@ -1246,16 +1261,30 @@ const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "wi
 ##   목소리를 낼 때 LINE_CHANCE 확률로 합성 감탄사 대신 대사를 고른다
 const LINE_COUNT := {"win": 4, "die": 4, "hit": 3, "pickup": 3, "laugh": 3, "push": 3, "surprise": 3}
 const LINE_CHANCE := {"win": 0.6, "die": 0.5, "hit": 0.35, "pickup": 0.6, "laugh": 0.6, "push": 0.3, "surprise": 0.5}
-const VOICE_PITCH: Array[float] = [1.0, 1.06, 0.95, 1.1, 0.92, 1.03, 0.97, 1.08, 0.94, 1.12, 0.99, 0.9]
+## 캐릭터(외형 = 머리 모양)마다 목소리: [목소리 종류, 음높이 배율] — 8명이 모두 다르게 들리게
+##   0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 얇고 높은 목소리 / 4 털보 아저씨 (털모자 캐릭터는 수염도 있음)
+const LOOK_VOICE := [
+    [0, 1.0],     # short 짧은 머리 → 보통 아이
+    [1, 1.0],     # pigtails 양갈래 → 여자아이
+    [2, 1.0],     # spiky 삐죽 머리 → 굵은 목소리
+    [3, 1.0],     # bob 단발 → 아주 얇고 높은 목소리
+    [1, 0.9],     # bun 올림머리 → 조금 낮은 여자아이
+    [0, 1.13],    # cap 모자 → 조금 높은 아이
+    [4, 1.0],     # beanie 털모자 + 수염 → 털보 아저씨
+    [2, 1.15],    # headband 머리띠 → 조금 높은 굵은 목소리
+]
+
+
+func _look_index() -> int:
+    return (look if look >= 0 else maxi(slot, 0)) % HAIR_STYLES.size()
 
 
 func voice_type() -> int:
-    return (look if look >= 0 else maxi(slot, 0)) % VOICE_TYPES
+    return int(LOOK_VOICE[_look_index()][0])
 
 
 func voice_pitch() -> float:
-    var lk: int = (look if look >= 0 else maxi(slot, 0)) % VOICE_PITCH.size()
-    return VOICE_PITCH[lk]
+    return float(LOOK_VOICE[_look_index()][1])
 
 
 ## kind: VOICE_COUNT 의 종류. 같은 종류는 0.4초 안에 두 번 내지 않음
