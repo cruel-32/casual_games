@@ -1,6 +1,6 @@
 """캐릭터 목소리 효과음 (아이 목소리 감탄사) — 포먼트 합성, 샘플·녹음 없이 코드로만 만든다
 
-  파일: audio/sfx/voice_<종류>_<목소리>_<번호>.wav  (목소리 0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 높은 목소리)
+  파일: audio/sfx/voice_<종류>_<목소리>_<번호>.wav  (목소리 0 보통 아이 / 1 여자아이 / 2 굵은 목소리 / 3 아주 높은 목소리 / 4 털보 아저씨)
   push     밀칠 때·차징 던지기 기합 ("핫!", "얍!", "에잇!", "하앗!")
   hit      밀쳐졌을 때 ("윽!", "으악!", "아얏!", "끄악!")
   die      탈락할 때 ("으아아~", "꺄아~", "우에에~")
@@ -51,9 +51,10 @@ def _resonator(x, f, bw):
     return y
 
 
-def voice(segs, base=1.0, fs=1.0):
+def voice(segs, base=1.0, fs=1.0, rough=0.0):
     """segs: [(sec, vowel0, vowel1, f0_0, f0_1, amp0, amp1, breath)] 를 이어 붙여 소리 하나
-    fs: 포먼트 배율 (1보다 크면 작고 가는 목소리, 작으면 크고 굵은 목소리)"""
+    fs: 포먼트 배율 (1보다 크면 작고 가는 목소리, 작으면 크고 굵은 목소리)
+    rough: 거친 정도 (0~1, 성대가 반 박자씩 흔들리는 걸걸한 소리 — 털보 아저씨)"""
     f0s, a, fm, br = [], [], [[], [], []], []
     for sec, v0, v1, p0, p1, a0, a1, b in segs:
         n = int(sec * SR)
@@ -76,6 +77,10 @@ def voice(segs, base=1.0, fs=1.0):
     glottal = lp(-saw, 2600, 1)                       # 성대 소리 (고음 줄임)
     noise = hp(rng.standard_normal(n), 900) * 0.6     # 숨소리
     src = glottal * (1 - breath) + noise * breath
+    if rough > 0.0:
+        # 걸걸함: 한 주기씩 세기가 번갈아 바뀌고(반음 아래 울림), 떨림도 크게
+        src *= 1.0 + rough * np.sign(np.sin(np.pi * phase)) * 0.6
+        src *= 1.0 + rough * 0.35 * np.sin(2 * np.pi * 23.0 * t)
     src *= amp
     out = np.zeros(n)
     gains = (1.0, 0.55, 0.25)
@@ -118,13 +123,15 @@ TYPES = [
     ("girl", 430.0, 1.12, 0.03),    # 1 가는 여자아이
     ("deep", 200.0, 0.84, 0.05),    # 2 굵은 목소리 (덩치)
     ("squeak", 540.0, 1.22, 0.0),   # 3 아주 높은 만화 목소리
+    ("beard", 92.0, 0.7, 0.08),     # 4 우락부락한 털보 아저씨 (아주아주 굵고 걸걸함)
 ]
+ROUGH = {"beard": 0.9}
 
 
-def make_sounds(P, fs, br):
+def make_sounds(P, fs, br, rough=0.0):
     """한 목소리 종류의 감탄사 전부. P = 기본 높이, fs = 포먼트 배율, br = 숨소리 더함"""
     def v(segs):
-        return voice([(sec, a, b, p0, p1, a0, a1, min(bb + br, 0.6)) for sec, a, b, p0, p1, a0, a1, bb in segs], 1.0, fs)
+        return voice([(sec, a, b, p0, p1, a0, a1, min(bb + br, 0.6)) for sec, a, b, p0, p1, a0, a1, bb in segs], 1.0, fs, rough)
     return {
         # 밀칠 때·차징 던지기: 짧고 힘 있게
         "push_1": cat(burst(0.05, 800, 4000, 0.5),                                       # 핫
@@ -208,7 +215,7 @@ if __name__ == "__main__":
             os.remove(old + ".import")
     count = 0
     for ti, (tname, P, fs, br) in enumerate(TYPES):
-        for name, x in make_sounds(P, fs, br).items():
+        for name, x in make_sounds(P, fs, br, ROUGH.get(tname, 0.0)).items():
             kind, n = name.rsplit("_", 1)
             save22("voice_%s_%d_%s" % (kind, ti, n), x)
             count += 1

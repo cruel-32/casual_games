@@ -1240,7 +1240,7 @@ func _check_wall_slam() -> void:
 ## 캐릭터 목소리: 외형 번호마다 음높이가 달라서 누가 소리 냈는지 구분된다
 ## 목소리: 캐릭터마다 목소리 종류(VOICE_TYPES 개) 하나 + 같은 종류 안에서 음높이를 조금씩 다르게
 ##   파일 audio/sfx/voice_<종류>_<목소리>_<번호>.wav (tools/audio/gen_voice.py)
-const VOICE_TYPES := 4
+const VOICE_TYPES := 5
 const VOICE_COUNT := {"push": 4, "hit": 4, "die": 3, "jump": 3, "pickup": 3, "win": 3, "laugh": 2, "surprise": 2}
 const VOICE_PITCH: Array[float] = [1.0, 1.06, 0.95, 1.1, 0.92, 1.03, 0.97, 1.08, 0.94, 1.12, 0.99, 0.9]
 
