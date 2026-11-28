@@ -15,9 +15,12 @@ var app: Node
 var _title: Label
 var _s_name: LineEdit
 var _state_badge_holder: HBoxContainer
-var _rounds_box: HFlowContainer       ## 경기 (라운드별 게임)
-var _mode_row: HBoxContainer          ## 팀 · 인원 · 봇
-var _desc: Label                      ## 1라운드 게임 한 줄 설명
+var _rounds_box: VBoxContainer        ## 경기: 라운드 1~5 고정 다섯 줄 (라운드별 게임)
+var _mode_row: HBoxContainer          ## 참가자 제목 옆: 팀 수 · 최대 인원 · 봇 채우기
+var _preview_img: Control             ## 고른 라운드 게임 썸네일
+var _preview_name: Label
+var _preview_desc: Label
+var _focus_round := 0                 ## 지금 보고 있는 라운드 (썸네일·소개)
 var _slots_label: Label
 var _my_team_label: Label
 var _slots: VBoxContainer
@@ -46,7 +49,7 @@ func _ready() -> void:
     margin.add_child(root)
 
     # ---- 왼쪽
-    var left := UI.vbox(12)
+    var left := UI.vbox(10)
     left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     root.add_child(left)
 
@@ -60,8 +63,8 @@ func _ready() -> void:
     _title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     top.add_child(_title)
     _s_name = UI.line_edit("방 이름", "", Net.ROOM_NAME_MAX)
-    _s_name.custom_minimum_size = Vector2(0, 46)
-    _s_name.add_theme_font_size_override("font_size", 22)
+    _s_name.custom_minimum_size = Vector2(0, 42)
+    _s_name.add_theme_font_size_override("font_size", 21)
     _s_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     _s_name.tooltip_text = "방 이름 (방장만 바꿀 수 있어요)"
     _s_name.text_submitted.connect(func(t): Net.update_settings({"name": t}))
@@ -82,52 +85,64 @@ func _ready() -> void:
     # 경기 설정 한 장
     var setp := PanelContainer.new()
     var ssb := UI.box(Color(1, 0.99, 0.95), 16, 18, UI.INK, 3, 4)
-    ssb.content_margin_top = 12
-    ssb.content_margin_bottom = 12
+    ssb.content_margin_top = 10
+    ssb.content_margin_bottom = 10
     setp.add_theme_stylebox_override("panel", ssb)
     left.add_child(setp)
-    var sv := UI.vbox(10)
-    setp.add_child(sv)
-    var r1 := UI.hbox(12)
-    sv.add_child(r1)
-    r1.add_child(_row_title("경기"))
-    _rounds_box = HFlowContainer.new()
-    _rounds_box.add_theme_constant_override("h_separation", 8)
-    _rounds_box.add_theme_constant_override("v_separation", 8)
-    _rounds_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    r1.add_child(_rounds_box)
-    var r2 := UI.hbox(12)
-    sv.add_child(r2)
-    r2.add_child(_row_title("방식"))
-    _mode_row = UI.hbox(14)
-    _mode_row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    r2.add_child(_mode_row)
-    _desc = UI.label("", 14, UI.MUTED)
-    _desc.clip_text = true
-    _desc.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-    sv.add_child(_desc)
+    # 왼쪽: 라운드 다섯 줄 (고정) / 오른쪽: 고른 라운드 게임 썸네일 + 소개
+    var sh := UI.hbox(18)
+    setp.add_child(sh)
+    var lv2 := UI.vbox(4)
+    lv2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    sh.add_child(lv2)
+    var cap := UI.hbox(8)
+    lv2.add_child(cap)
+    cap.add_child(UI.heading("경기", 18))
+    var pts := UI.label("라운드마다 1등 3점 · 2등 2점 · 3등 1점, 합계 1위가 우승", 12, UI.MUTED)
+    pts.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    pts.clip_text = true
+    pts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    cap.add_child(pts)
+    _rounds_box = UI.vbox(3)
+    lv2.add_child(_rounds_box)
+    var rv := UI.vbox(4)
+    rv.custom_minimum_size.x = 220
+    sh.add_child(rv)
+    _preview_img = UI.vbox(0)
+    rv.add_child(_preview_img)
+    _preview_name = UI.heading("", 16)
+    _preview_name.clip_text = true
+    rv.add_child(_preview_name)
+    _preview_desc = UI.label("", 13, UI.MUTED)
+    _preview_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    _preview_desc.custom_minimum_size = Vector2(220, 0)
+    _preview_desc.max_lines_visible = 2
+    rv.add_child(_preview_desc)
 
     # 참가자
     var pp := PanelContainer.new()
     pp.size_flags_vertical = Control.SIZE_EXPAND_FILL
     left.add_child(pp)
-    var pv := UI.vbox(12)
+    var pv := UI.vbox(8)
     pp.add_child(pv)
     var ph := UI.hbox(12)
     pv.add_child(ph)
     _slots_label = UI.heading("참가자", 22)
-    _slots_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     ph.add_child(_slots_label)
     _my_team_label = UI.label("", 15, UI.MUTED)
     _my_team_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    _my_team_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     ph.add_child(_my_team_label)
+    _mode_row = UI.hbox(8)
+    _mode_row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    ph.add_child(_mode_row)
     var scroll := ScrollContainer.new()
     scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
     scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     pv.add_child(scroll)
     var pad := MarginContainer.new()
     pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    pad.add_theme_constant_override("margin_bottom", 8)
+    pad.add_theme_constant_override("margin_bottom", 2)
     pad.add_theme_constant_override("margin_right", 8)
     scroll.add_child(pad)
     _slots = UI.vbox(12)
@@ -143,12 +158,12 @@ func _ready() -> void:
     bottom.add_child(_status)
     bottom.add_child(UI.spacer())
     _ready_btn = UI.good_button("레디!")
-    _ready_btn.custom_minimum_size = Vector2(220, 58)
+    _ready_btn.custom_minimum_size = Vector2(220, 52)
     _ready_btn.add_theme_font_size_override("font_size", 26)
     _ready_btn.pressed.connect(_on_ready_pressed)
     bottom.add_child(_ready_btn)
     _start_btn = UI.cta_button("게임 시작!")
-    _start_btn.custom_minimum_size = Vector2(240, 58)
+    _start_btn.custom_minimum_size = Vector2(240, 52)
     _start_btn.add_theme_font_size_override("font_size", 26)
     _start_btn.pressed.connect(func():
         LoadingOverlay.open(get_tree(), "게임 시작 준비 중…")
@@ -291,17 +306,14 @@ func _my_entry(r: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- 경기 설정
-## [경기] R1 [게임 ▼] R2 [게임 ▼] … [+ 라운드] [− 라운드]   (방장이 아니면 글자만)
-## [방식] [팀 ▼ 개인전·2팀·3팀·4팀]  [인원 ▲▼]  [봇 채우기]
+## 경기: 라운드 1~5 다섯 줄 고정. 쓰는 라운드는 [R1][게임 ▼], 안 쓰는 줄은 '+ 라운드 추가'(방장, 바로 다음 줄만)·흐린 칸
+##   줄을 누르면 그 라운드 게임의 썸네일·소개를 오른쪽에. 마지막 라운드 줄 끝 × = 빼기
+## 참가자 제목 옆: [팀 수 ▼] [최대 n명] [봇 채우기]  (방장이 아니면 작은 배지)
 func _build_settings(r: Dictionary, editable: bool) -> void:
     var rg: Array = r.get("round_games", [String(r.get("game", ""))])
     var teams := int(r.get("teams", 0))
-    var key := "%s|%s|%d|%d|%s" % [str(rg), editable, teams, int(r.max), r.get("bot_fill", false)]
-    var first := String(rg[0]) if not rg.is_empty() else ""
-    _desc.text = ("1라운드 %s: %s" % [GameRegistry.display_name(first), GameRegistry.get_or_default(first).description]) \
-            if first != Series.RANDOM else "1라운드는 게임을 무작위로 골라요"
-    if rg.size() > 1:
-        _desc.text += "   ·   라운드마다 1등 3점 · 2등 2점 · 3등 1점, 합계 1위가 우승"
+    _focus_round = clampi(_focus_round, 0, rg.size() - 1)
+    var key := "%s|%s|%d|%d|%s|%d" % [str(rg), editable, teams, int(r.max), r.get("bot_fill", false), _focus_round]
     if key == _last_settings_key:
         return
     _last_settings_key = key
@@ -309,49 +321,17 @@ func _build_settings(r: Dictionary, editable: bool) -> void:
         c.queue_free()
     for c in _mode_row.get_children():
         c.queue_free()
-    # 라운드 칸
-    for i in rg.size():
-        var chip := PanelContainer.new()
-        var csb := UI.box(Color.WHITE, 12, 8, Color(UI.INK, 0.25), 2, 0)
-        csb.content_margin_top = 4
-        csb.content_margin_bottom = 4
-        chip.add_theme_stylebox_override("panel", csb)
-        var ch := UI.hbox(6)
-        chip.add_child(ch)
-        var tag := UI.badge("R%d" % (i + 1), UI.YELLOW, UI.INK)
-        ch.add_child(tag)
-        if editable:
-            var o := _small_option()
-            o.custom_minimum_size.x = 136
-            for m in GameRegistry.all():
-                o.add_item(m.display_name)
-            o.add_item("랜덤")
-            o.select(_choice_index(String(rg[i])))
-            var ri: int = i
-            o.item_selected.connect(func(idx): Net.update_settings({"round_game": [ri, _choice_at(idx)]}))
-            ch.add_child(o)
-            # 마지막 라운드 빼기 (2라운드 이상일 때 마지막 칸에 ×)
-            if i == rg.size() - 1 and rg.size() > Series.MIN_ROUNDS:
-                var x := _tiny_button("×", "마지막 라운드 빼기")
-                x.pressed.connect(func(): Net.update_settings({"rounds": rg.size() - 1}))
-                ch.add_child(x)
-        else:
-            var l := UI.label(Series.choice_name(String(rg[i])), 15, UI.INK)
-            l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-            ch.add_child(l)
-        _rounds_box.add_child(chip)
-    if editable and rg.size() < Series.MAX_ROUNDS:
-        var add := _tiny_button("+ 라운드", "라운드 추가 (최대 %d)" % Series.MAX_ROUNDS)
-        add.custom_minimum_size = Vector2(84, 40)
-        add.pressed.connect(func(): Net.update_settings({"rounds": rg.size() + 1}))
-        _rounds_box.add_child(add)
-    # 팀 · 인원 · 봇
+    for i in Series.MAX_ROUNDS:
+        _rounds_box.add_child(_round_line(i, rg, editable))
+    _show_preview(String(rg[_focus_round]))
+    # 팀 · 인원 · 봇 (참가자 제목 옆, 작게)
     if editable:
         var tsel := _small_option()
-        tsel.custom_minimum_size.x = 110
+        tsel.custom_minimum_size = Vector2(92, 30)
         for t in Teams.MODES:
             tsel.add_item("개인전" if t == 0 else "%d팀" % t)
         tsel.select(Teams.MODES.find(teams))
+        tsel.tooltip_text = "팀 나누기"
         tsel.item_selected.connect(func(idx): Net.update_settings({"teams": int(Teams.MODES[idx])}))
         _mode_row.add_child(tsel)
         var mx := SpinBox.new()
@@ -361,29 +341,124 @@ func _build_settings(r: Dictionary, editable: bool) -> void:
         mx.value = int(r.max)
         mx.prefix = "최대"
         mx.suffix = "명"
-        mx.custom_minimum_size = Vector2(130, 34)
-        mx.get_line_edit().add_theme_font_size_override("font_size", 15)
-        for st in ["normal", "focus"]:
-            var lsb := UI.box(Color.WHITE, 12, 12, Color(UI.INK, 0.3), 2, 0)
-            lsb.content_margin_top = 4
-            lsb.content_margin_bottom = 4
-            mx.get_line_edit().add_theme_stylebox_override(st, lsb)
+        mx.custom_minimum_size = Vector2(112, 30)
         mx.tooltip_text = "%d팀전: 인원은 %d명 단위" % [teams, teams] if teams >= 2 else "최대 인원"
+        mx.get_line_edit().add_theme_font_size_override("font_size", 14)
+        for st in ["normal", "focus"]:
+            var lsb := UI.box(Color.WHITE, 10, 10, Color(UI.INK, 0.3), 2, 0)
+            lsb.content_margin_top = 2
+            lsb.content_margin_bottom = 2
+            mx.get_line_edit().add_theme_stylebox_override(st, lsb)
         mx.value_changed.connect(func(v): Net.update_settings({"max": int(v)}))
         _mode_row.add_child(mx)
         var bots := CheckBox.new()
-        bots.text = "빈 자리 봇으로 채우기"
-        bots.add_theme_font_size_override("font_size", 16)
+        bots.text = "봇 채우기"
+        bots.add_theme_font_size_override("font_size", 14)
         bots.button_pressed = bool(r.bot_fill)
         bots.toggled.connect(func(on): Net.update_settings({"bot_fill": on}))
         _mode_row.add_child(bots)
     else:
-        _mode_row.add_child(UI.badge(Teams.mode_name(teams) if teams >= 2 else "개인전", UI.PRIMARY))
-        _mode_row.add_child(UI.badge("최대 %d명" % int(r.max), UI.SECONDARY))
-        _mode_row.add_child(UI.badge("봇 채우기 %s" % ("ON" if r.bot_fill else "OFF"), UI.GOOD if r.bot_fill else UI.MUTED))
-        var who := UI.label("설정은 방장이 바꿔요", 13, UI.MUTED)
-        who.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-        _mode_row.add_child(who)
+        _mode_row.add_child(_mini_badge(Teams.mode_name(teams) if teams >= 2 else "개인전", UI.PRIMARY))
+        _mode_row.add_child(_mini_badge("최대 %d명" % int(r.max), UI.SECONDARY))
+        _mode_row.add_child(_mini_badge("봇 %s" % ("ON" if r.bot_fill else "OFF"), UI.GOOD if r.bot_fill else UI.MUTED))
+
+
+func _mini_badge(text: String, color: Color) -> Control:
+    var b := UI.badge(text, color)
+    (b.get_child(0) as Label).add_theme_font_size_override("font_size", 13)
+    return b
+
+
+## 라운드 한 줄 (높이 32 고정)
+func _round_line(i: int, rg: Array, editable: bool) -> Control:
+    var used := i < rg.size()
+    var focus := used and i == _focus_round
+    var line := PanelContainer.new()
+    line.custom_minimum_size.y = 29
+    var bg := Color(1.0, 0.93, 0.7) if focus else (Color.WHITE if used else Color(1, 1, 1, 0.35))
+    var sb := UI.box(bg, 10, 8, UI.YELLOW.darkened(0.2) if focus else Color(UI.INK, 0.15 if used else 0.08), 2, 0)
+    sb.content_margin_top = 1
+    sb.content_margin_bottom = 1
+    line.add_theme_stylebox_override("panel", sb)
+    var h := UI.hbox(8)
+    line.add_child(h)
+    var tag := UI.label("R%d" % (i + 1), 14, UI.INK if used else Color(UI.INK, 0.3))
+    tag.custom_minimum_size.x = 26
+    tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    h.add_child(tag)
+    if used:
+        var ri: int = i
+        line.mouse_filter = Control.MOUSE_FILTER_STOP
+        line.gui_input.connect(func(e):
+            if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+                _set_focus_round(ri))
+        if editable:
+            var o := _small_option()
+            o.custom_minimum_size = Vector2(0, 26)
+            o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+            o.add_theme_font_size_override("font_size", 14)
+            for m in GameRegistry.all():
+                o.add_item(m.display_name)
+            o.add_item("랜덤")
+            o.select(_choice_index(String(rg[i])))
+            o.pressed.connect(func(): _set_focus_round(ri))
+            o.item_selected.connect(func(idx):
+                _focus_round = ri
+                Net.update_settings({"round_game": [ri, _choice_at(idx)]}))
+            h.add_child(o)
+            if i == rg.size() - 1 and rg.size() > Series.MIN_ROUNDS:
+                var x := _tiny_button("×", "%d라운드 빼기" % (i + 1))
+                x.custom_minimum_size = Vector2(28, 26)
+                x.pressed.connect(func(): Net.update_settings({"rounds": rg.size() - 1}))
+                h.add_child(x)
+        else:
+            var l := UI.label(Series.choice_name(String(rg[i])), 15, UI.INK)
+            l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+            l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+            h.add_child(l)
+    elif editable and i == rg.size():
+        var add := _tiny_button("+ 라운드 추가", "%d라운드 추가" % (i + 1))
+        add.custom_minimum_size = Vector2(0, 26)
+        add.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        add.pressed.connect(func():
+            _focus_round = i
+            Net.update_settings({"rounds": i + 1}))
+        h.add_child(add)
+    else:
+        var l := UI.label("—", 14, Color(UI.INK, 0.25))
+        l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        h.add_child(l)
+    return line
+
+
+func _set_focus_round(i: int) -> void:
+    if i == _focus_round:
+        return
+    _focus_round = i
+    _last_settings_key = ""
+    _refresh(Net.room)
+
+
+## 오른쪽: 고른 라운드 게임 썸네일 + 이름 + 소개 (2줄)
+func _show_preview(choice: String) -> void:
+    for c in _preview_img.get_children():
+        c.queue_free()
+    var size_v := Vector2(220, 112)
+    if choice == Series.RANDOM:
+        var card := UI.image_card(null, size_v, UI.YELLOW)
+        var q := UI.title("?", 64, UI.INK)
+        q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+        card.add_child(q)
+        _preview_img.add_child(card)
+        _preview_name.text = "R%d · 랜덤" % (_focus_round + 1)
+        _preview_desc.text = "이 라운드는 시작할 때 게임을 무작위로 골라요"
+    else:
+        var m = GameRegistry.get_or_default(choice)
+        _preview_img.add_child(UI.image_card(m.thumbnail(), size_v, m.accent))
+        _preview_name.text = "R%d · %s" % [_focus_round + 1, m.display_name]
+        _preview_desc.text = m.description
 
 
 func _choice_at(idx: int) -> String:
