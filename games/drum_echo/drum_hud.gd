@@ -36,7 +36,7 @@ func _ready() -> void:
     _sub = _label(17)
     _judge = _label(46, true)
     _score_box = UI.vbox(4)
-    _score_box.position = Vector2(18, 16)
+    _score_box.position = Vector2(24, 22)
     add_child(_score_box)
     _build_menu_bar()
     _build_drum_buttons()
@@ -64,7 +64,7 @@ func _screen() -> Vector2:
 # ---------------------------------------------------------------- 버튼
 func _build_menu_bar() -> void:
     var bar := UI.hbox(12)
-    bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 14)
+    bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 20)
     bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     add_child(bar)
     _view_btn = UI.pill_button("자동 연출", UI.BLUE)
@@ -170,7 +170,7 @@ func _process(delta: float) -> void:
     for lane in 2:
         var b := _buttons[lane]
         b.size = Vector2(bs, bs)
-        b.position = Vector2(24.0 if lane == 0 else sc.x - bs - 24.0, sc.y - bs - 22.0)
+        b.position = Vector2(30.0 if lane == 0 else sc.x - bs - 30.0, sc.y - bs - 30.0)
         b.visible = game.state != PartyGame.State.ENDED
     _update_scores()
     _update_results()

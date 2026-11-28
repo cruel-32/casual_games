@@ -18,7 +18,7 @@ func _ready() -> void:
     else:
         _help.text = "WASD 이동 · 마우스 시점 · 휠 확대/축소 · 좌클릭/E 탭 = 발밑에 놓기, 누르다 떼기 = 멀리 던지기 · Space 점프%s" \
                 % ("" if game.is_online_match() else " · R 재시작")
-    _help.position = Vector2(18, 14)
+    _help.position = Vector2(22, 20)
     _build_menu_bar()
     _build_result_box()
     _build_spectate_bar()
@@ -40,7 +40,7 @@ func _ready() -> void:
     _cool.add_theme_stylebox_override("normal", UI.box(UI.INK, 12, 2, UI.INK, 0, 4))
     for i in 5:
         var l := _make_label(18)
-        l.position = Vector2(18, 52 + i * 30)
+        l.position = Vector2(22, 62 + i * 30)
         _feed_labels.append(l)
 
 
@@ -53,7 +53,7 @@ func _process(delta: float) -> void:
         return
     _tick_leave(delta)
     if _bar:
-        _bar.position = Vector2(_screen().x - _bar.size.x - 14.0, 12.0)
+        _bar.position = Vector2(_screen().x - _bar.size.x - 22.0, 18.0)
     _update_result_box()
     var scr := _screen()
     var left: float = maxf(game.TIME_LIMIT - game.elapsed, 0.0) if game.state == PartyGame.State.PLAYING else game.TIME_LIMIT
@@ -71,7 +71,7 @@ func _process(delta: float) -> void:
     var ser: Dictionary = game.series()
     if int(ser.get("total", 1)) > 1:
         _top.text = "라운드 %d/%d     " % [int(ser.round), int(ser.total)] + _top.text
-    _place_centered(_top, 14 + 24)
+    _place_centered(_top, 52)
 
     var human: Fighter = game.human
     var center := ""

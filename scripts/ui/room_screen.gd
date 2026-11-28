@@ -44,10 +44,10 @@ func _ready() -> void:
     margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     for side in ["left", "right"]:
         margin.add_theme_constant_override("margin_" + side, 28)
-    margin.add_theme_constant_override("margin_top", 16)
-    margin.add_theme_constant_override("margin_bottom", 20)
+    margin.add_theme_constant_override("margin_top", 18)
+    margin.add_theme_constant_override("margin_bottom", 26)       # 아래 버튼 그림자까지 여유
     add_child(margin)
-    var root := UI.vbox(14)
+    var root := UI.vbox(12)
     margin.add_child(root)
 
     # 상단 바: 방 이름 · 게임/상태 배지 · 나가기
@@ -60,6 +60,17 @@ func _ready() -> void:
     _title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     _title.size_flags_stretch_ratio = 3.0
     top.add_child(_title)
+    # 방장: 방 이름을 위 제목 자리에서 바로 고침 (오른쪽 설정 칸 높이를 줄이려고 여기로)
+    _s_name = UI.line_edit("방 이름", "", Net.ROOM_NAME_MAX)
+    _s_name.custom_minimum_size = Vector2(0, 50)
+    _s_name.add_theme_font_size_override("font_size", 24)
+    _s_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    _s_name.size_flags_stretch_ratio = 3.0
+    _s_name.tooltip_text = "방 이름 (방장만 바꿀 수 있어요)"
+    _s_name.text_submitted.connect(func(t): Net.update_settings({"name": t}))
+    _s_name.focus_exited.connect(func(): Net.update_settings({"name": _s_name.text}))
+    _s_name.visible = false
+    top.add_child(_s_name)
     _state_badge_holder = UI.hbox(8)
     top.add_child(_state_badge_holder)
     var snd := UI.sound_button()
@@ -72,7 +83,10 @@ func _ready() -> void:
 
     # 경기 방식: 팀 · 라운드 — 한눈에 보이게 크게 (방장만 바꿀 수 있음)
     var mode_panel := PanelContainer.new()
-    mode_panel.add_theme_stylebox_override("panel", UI.box(Color(1, 0.99, 0.95), 18, 10, UI.INK, 3, 4))
+    var mode_sb := UI.box(Color(1, 0.99, 0.95), 18, 18, UI.INK, 3, 4)
+    mode_sb.content_margin_top = 12
+    mode_sb.content_margin_bottom = 12
+    mode_panel.add_theme_stylebox_override("panel", mode_sb)
     root.add_child(mode_panel)
     _mode_bar = UI.hbox(22)
     _mode_bar.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -106,9 +120,22 @@ func _ready() -> void:
     _grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     pad.add_child(_grid)
 
-    var right := UI.vbox(14)
-    right.custom_minimum_size.x = 370
-    body.add_child(right)
+    # 오른쪽 줄: 화면이 낮으면 스크롤 (아래 '게임 시작' 줄이 화면 밖으로 밀리지 않게)
+    var right_scroll := ScrollContainer.new()
+    right_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    right_scroll.custom_minimum_size.x = 392
+    right_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    body.add_child(right_scroll)
+    var right_pad := MarginContainer.new()
+    right_pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    right_pad.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    right_pad.add_theme_constant_override("margin_right", 10)       # 그림자·스크롤바 자리
+    right_pad.add_theme_constant_override("margin_bottom", 6)
+    right_scroll.add_child(right_pad)
+    var right := UI.vbox(16)
+    right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    right.size_flags_vertical = Control.SIZE_EXPAND_FILL
+    right_pad.add_child(right)
 
     # 게임 카드 (썸네일 + 이름 + 설명 + 설정)
     var game_panel := PanelContainer.new()
@@ -142,14 +169,14 @@ func _ready() -> void:
     var chat_panel := PanelContainer.new()
     chat_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
     right.add_child(chat_panel)
-    var cv := UI.vbox(12)
+    var cv := UI.vbox(8)
     chat_panel.add_child(cv)
     cv.add_child(UI.heading("채팅", 20))
     _chat_log = RichTextLabel.new()
     _chat_log.bbcode_enabled = true
     _chat_log.scroll_following = true
     _chat_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    _chat_log.custom_minimum_size.y = 36
+    _chat_log.custom_minimum_size.y = 40
     _chat_log.add_theme_font_size_override("normal_font_size", 16)
     _chat_log.add_theme_font_size_override("bold_font_size", 16)
     cv.add_child(_chat_log)
@@ -342,13 +369,12 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
     var v := UI.vbox(8)
     card.add_child(v)
 
-    # 초상화 + 왼쪽 위 상태 배지
-    var face := Control.new()
-    face.custom_minimum_size = Vector2(0, 104)
-    v.add_child(face)
-    var pr := _portrait_rect(index)
-    pr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    face.add_child(pr)
+    # 위 줄: 상태 배지(왼쪽) · 팀 배지(오른쪽) — 초상화와 겹치지 않게 따로 한 줄 (카드가 좁으면 다음 줄로)
+    var badges := HFlowContainer.new()
+    badges.add_theme_constant_override("h_separation", 8)
+    badges.add_theme_constant_override("v_separation", 6)
+    badges.alignment = FlowContainer.ALIGNMENT_CENTER
+    v.add_child(badges)
     var b: Control
     if m.host:
         b = UI.badge("★ 방장", UI.CTA, UI.INK)
@@ -356,14 +382,18 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
         b = UI.badge("READY", UI.GOOD)
     else:
         b = UI.badge("대기", UI.MUTED)
-    b.position = Vector2(4, 2)
-    face.add_child(b)
+    badges.add_child(b)
     if team >= 0:
         var tb := UI.badge(Teams.SHORT[team], Teams.color(team), UI.INK if team == 3 else Color.WHITE)
-        tb.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
-        tb.position.y = 2
-        tb.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-        face.add_child(tb)
+        badges.add_child(tb)
+    # 초상화
+    var face := Control.new()
+    face.custom_minimum_size = Vector2(0, 100)
+    v.add_child(face)
+    var pr := _portrait_rect(index)
+    pr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    pr.offset_bottom = -10                 # 이름과 발 사이 여백
+    face.add_child(pr)
 
     var name_l := UI.heading(String(m.nick), 20)
     name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -518,18 +548,10 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
     _settings_mode = "host" if host else "guest"
     for c in _settings_box.get_children():
         c.queue_free()
+    _s_name.visible = host
+    _title.visible = not host
     if host:
-        # 1줄: 방 이름
-        var nrow := UI.hbox(14)
-        _settings_box.add_child(nrow)
-        nrow.add_child(_field_label("방 이름"))
-        _s_name = UI.line_edit("방 이름", String(r.name), Net.ROOM_NAME_MAX)
-        _s_name.custom_minimum_size.y = 40
-        _s_name.add_theme_font_size_override("font_size", 17)
-        _s_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        _s_name.text_submitted.connect(func(t): Net.update_settings({"name": t}))
-        _s_name.focus_exited.connect(func(): Net.update_settings({"name": _s_name.text}))
-        nrow.add_child(_s_name)
+        _s_name.text = String(r.name)
 
         # 2줄: 최대 인원 · 봇 채우기 (팀·라운드는 위쪽 '경기 방식' 바에서)
         var mrow := UI.hbox(14)
@@ -600,14 +622,19 @@ func _update_mode_bar(teams: int, rounds: int, editable: bool) -> void:
             var dots := UI.hbox(3)
             dots.alignment = BoxContainer.ALIGNMENT_CENTER
             dots.mouse_filter = Control.MOUSE_FILTER_IGNORE
-            dots.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 7)
             for i in t:
                 var d := ColorRect.new()
                 d.color = Teams.color(i)
                 d.custom_minimum_size = Vector2(12, 5)
                 d.mouse_filter = Control.MOUSE_FILTER_IGNORE
                 dots.add_child(d)
-            b.add_child(dots)
+            # 흰 받침 위에 (고른 버튼이 팀 색이어도 점이 보이게), 테두리 안쪽에
+            var holder := PanelContainer.new()
+            holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+            holder.add_theme_stylebox_override("panel", UI.box(Color(1, 1, 1, 0.95), 4, 3))
+            holder.add_child(dots)
+            holder.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM, Control.PRESET_MODE_MINSIZE, 8)
+            b.add_child(holder)
         var tv: int = t
         b.pressed.connect(func(): Net.update_settings({"teams": tv}))
         tg.add_child(b)
@@ -624,11 +651,9 @@ func _update_mode_bar(teams: int, rounds: int, editable: bool) -> void:
         var nv: int = n
         b.pressed.connect(func(): Net.update_settings({"rounds": nv}))
         rgp.add_child(b)
-    var cap := UI.label("1등 3점 · 2등 2점 · 3등 1점\n합계 1위가 우승", 13, UI.MUTED)
+    # 설명 글은 한 칸에 (방장이 아니면 '방장이 정해요'까지 세 줄) — 바가 옆으로 넘치지 않게
+    var cap := UI.label("1등 3점 · 2등 2점 · 3등 1점\n합계 1위가 우승" + ("" if editable else "\n방장이 정해요"), 13, UI.MUTED)
     _mode_bar.add_child(cap)
-    if not editable:
-        var who := UI.label("방장이 정해요", 13, UI.MUTED)
-        _mode_bar.add_child(who)
 
 
 func _mode_title(text: String) -> Label:
@@ -641,7 +666,7 @@ func _mode_title(text: String) -> Label:
 func _seg_button(text: String, selected: bool, color: Color, editable: bool, width: float) -> Button:
     var b := Button.new()
     b.text = text
-    b.custom_minimum_size = Vector2(width, 50)
+    b.custom_minimum_size = Vector2(width, 56)
     b.focus_mode = Control.FOCUS_NONE
     b.add_theme_font_size_override("font_size", 22 if selected else 19)
     var fg := (UI.INK if color == UI.YELLOW else Color.WHITE) if selected else UI.INK
@@ -649,8 +674,10 @@ func _seg_button(text: String, selected: bool, color: Color, editable: bool, wid
         b.add_theme_color_override(st, fg if (selected or st != "font_disabled_color") else Color(UI.INK, 0.45))
     var base := color if selected else Color(1, 1, 1)
     for st in ["normal", "hover", "pressed", "disabled", "focus"]:
-        var sb := UI.box(base.lightened(0.08) if st == "hover" and editable else base, 14, 6,
+        var sb := UI.box(base.lightened(0.08) if st == "hover" and editable else base, 14, 10,
                 UI.INK if selected else Color(UI.INK, 0.25), 3 if selected else 2, 4 if selected else 0)
+        sb.content_margin_top = 6
+        sb.content_margin_bottom = 14          # 아래 팀 색 점 자리
         b.add_theme_stylebox_override(st, sb)
     b.disabled = not editable and not selected
     if selected:

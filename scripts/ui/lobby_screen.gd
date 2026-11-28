@@ -31,7 +31,7 @@ func _ready() -> void:
     for side in ["left", "right"]:
         margin.add_theme_constant_override("margin_" + side, 36)
     margin.add_theme_constant_override("margin_top", 20)
-    margin.add_theme_constant_override("margin_bottom", 28)
+    margin.add_theme_constant_override("margin_bottom", 36)
     add_child(margin)
     var root := UI.vbox(16)
     margin.add_child(root)
@@ -57,7 +57,7 @@ func _ready() -> void:
     var panel := PanelContainer.new()
     panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(panel)
-    var v := UI.vbox(14)
+    var v := UI.vbox(18)
     panel.add_child(v)
 
     var bar := UI.hbox(10)
@@ -81,13 +81,14 @@ func _ready() -> void:
     v.add_child(scroll)
     var pad := MarginContainer.new()          # 카드 그림자가 잘리지 않게 여백
     pad.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    pad.add_theme_constant_override("margin_bottom", 8)
-    pad.add_theme_constant_override("margin_right", 6)
+    pad.add_theme_constant_override("margin_top", 6)
+    pad.add_theme_constant_override("margin_bottom", 10)
+    pad.add_theme_constant_override("margin_right", 10)
     scroll.add_child(pad)
     _grid = GridContainer.new()
     _grid.columns = 2
-    _grid.add_theme_constant_override("h_separation", 14)
-    _grid.add_theme_constant_override("v_separation", 14)
+    _grid.add_theme_constant_override("h_separation", 20)
+    _grid.add_theme_constant_override("v_separation", 20)
     _grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     pad.add_child(_grid)
 
@@ -142,14 +143,17 @@ func _make_card(r: Dictionary) -> Control:
     var full: bool = int(r.count) >= int(r.max)
 
     var card := PanelContainer.new()
-    card.add_theme_stylebox_override("panel", UI.box(Color.WHITE, 18, 12, UI.INK, UI.OUTLINE, 4))
+    var card_sb := UI.box(Color.WHITE, 18, 16, UI.INK, UI.OUTLINE, 4)
+    card_sb.content_margin_top = 14
+    card_sb.content_margin_bottom = 14
+    card.add_theme_stylebox_override("panel", card_sb)
     card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    var h := UI.hbox(14)
+    var h := UI.hbox(18)
     card.add_child(h)
 
     h.add_child(UI.image_card(module.thumbnail(), Vector2(168, 96), module.accent))
 
-    var info := UI.vbox(4)
+    var info := UI.vbox(8)
     info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     info.alignment = BoxContainer.ALIGNMENT_CENTER
     h.add_child(info)
@@ -169,7 +173,7 @@ func _make_card(r: Dictionary) -> Control:
     if r.bot_fill:
         chips.add_child(UI.badge("봇 채우기", UI.SECONDARY))
 
-    var right := UI.vbox(6)
+    var right := UI.vbox(10)
     right.alignment = BoxContainer.ALIGNMENT_CENTER
     h.add_child(right)
     var count := UI.heading("%d / %d" % [r.count, r.max], 26)

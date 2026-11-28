@@ -17,7 +17,7 @@ func _ready() -> void:
     else:
         _help.text = "WASD 이동 · 마우스 시점 · 초록불에만 달리고, 술래가 돌아보면 멈춰요 · 좌클릭/E 밀치기%s" \
                 % ("" if game.is_online_match() else " · R 재시작")
-    _help.position = Vector2(18, 14)
+    _help.position = Vector2(22, 20)
     _build_menu_bar()
     _build_result_box()
     _build_spectate_bar()
@@ -32,7 +32,7 @@ func _ready() -> void:
     _status_label = _make_label(20, true)
     for i in 5:
         var l := _make_label(18)
-        l.position = Vector2(18, 52 + i * 30)
+        l.position = Vector2(22, 62 + i * 30)
         _feed_labels.append(l)
 
 
@@ -49,7 +49,7 @@ func _process(delta: float) -> void:
         return
     _tick_leave(delta)
     if _bar:
-        _bar.position = Vector2(_screen().x - _bar.size.x - 14.0, 12.0)
+        _bar.position = Vector2(_screen().x - _bar.size.x - 22.0, 18.0)
     _update_result_box()
     _update_spectate(delta)
     var scr := _screen()
@@ -69,7 +69,7 @@ func _process(delta: float) -> void:
     var ser: Dictionary = game.series()
     if int(ser.get("total", 1)) > 1:
         _top.text = "라운드 %d/%d     " % [int(ser.round), int(ser.total)] + _top.text
-    _place_centered(_top, 14 + 24)
+    _place_centered(_top, 52)
 
     var human: Fighter = game.human
     var chant := ""
