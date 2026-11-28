@@ -12,7 +12,8 @@ var app: Node
 var _title: Label
 var _state_badge_holder: HBoxContainer
 var _slots_label: Label
-var _grid: GridContainer
+var _slots: VBoxContainer           ## 참가자 목록 (팀전 = 팀별 열, 개인전 = 2~3열 목록)
+var _last_slots_key := ""
 var _game_img_holder: Control
 var _game_name: Label
 var _game_desc: Label
@@ -113,12 +114,9 @@ func _ready() -> void:
     pad.add_theme_constant_override("margin_bottom", 8)
     pad.add_theme_constant_override("margin_right", 6)
     scroll.add_child(pad)
-    _grid = GridContainer.new()
-    _grid.columns = 4
-    _grid.add_theme_constant_override("h_separation", 18)
-    _grid.add_theme_constant_override("v_separation", 18)
-    _grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    pad.add_child(_grid)
+    _slots = UI.vbox(14)
+    _slots.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    pad.add_child(_slots)
 
     # 오른쪽 줄: 화면이 낮으면 스크롤 (아래 '게임 시작' 줄이 화면 밖으로 밀리지 않게)
     var right_scroll := ScrollContainer.new()
@@ -236,8 +234,9 @@ func _exit_tree() -> void:
 
 
 func _update_columns() -> void:
-    if _grid:
-        _grid.columns = 4 if size.x >= 1180 else 3
+    _last_slots_key = ""
+    if not Net.room.is_empty():
+        _refresh(Net.room)
 
 
 func _refresh(r: Dictionary) -> void:
@@ -293,16 +292,10 @@ func _refresh(r: Dictionary) -> void:
     else:
         _game_desc.text = module.description if first_choice != Series.RANDOM else "게임을 무작위로 골라요"
 
-    # 슬롯
-    for c in _grid.get_children():
-        c.queue_free()
+    # 참가자
     var members: Array = r.members
     _slots_label.text = "참가자  %d / %d" % [members.size(), int(r.max)]
-    for i in int(r.max):
-        if i < members.size():
-            _grid.add_child(_member_card(members[i], i, host, teams))
-        else:
-            _grid.add_child(_empty_card(i, bool(r.bot_fill)))
+    _build_slots(r, host, teams)
 
     _build_settings(r, host, module)
 
@@ -336,121 +329,237 @@ func _my_entry(r: Dictionary) -> Dictionary:
     return {}
 
 
-func _slot_card(index: int, border: Color, border_w: int, bg: Color) -> PanelContainer:
-    var card := PanelContainer.new()
-    var sb := UI.box(bg, 16, 14, border, border_w, 4 if border_w > 0 else 0)
-    sb.content_margin_top = 12
-    sb.content_margin_bottom = 14
-    card.add_theme_stylebox_override("panel", sb)
-    card.custom_minimum_size = Vector2(0, 160)
-    card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    return card
-
-
 func _portrait_rect(index: int, alpha: float = 1.0) -> TextureRect:
     var t := TextureRect.new()
     t.texture = UI.portrait(index)
     t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
     t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-    t.custom_minimum_size = Vector2(0, 104)
+    t.custom_minimum_size = Vector2(56, 56)
     t.modulate.a = alpha
     t.mouse_filter = Control.MOUSE_FILTER_IGNORE
     return t
 
 
-func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 0) -> Control:
-    var is_me := int(m.id) == Net.my_id
-    var color: Color = Fighter.SLOT_COLORS[index % Fighter.SLOT_COLORS.size()]
-    var team := int(m.get("team", 0)) if teams >= 2 else -1
-    if team >= 0:
-        color = Teams.color(team)            # 팀전: 카드 색 = 팀 색
-    var card := _slot_card(index, UI.CTA if is_me else (Teams.color(team).darkened(0.2) if team >= 0 else UI.INK), 5 if is_me or team >= 0 else 3,
-            color.lerp(Color.WHITE, 0.72))
-    var v := UI.vbox(8)
-    card.add_child(v)
-
-    # 위 줄: 상태 배지(왼쪽) · 팀 배지(오른쪽) — 초상화와 겹치지 않게 따로 한 줄 (카드가 좁으면 다음 줄로)
-    var badges := HFlowContainer.new()
-    badges.add_theme_constant_override("h_separation", 8)
-    badges.add_theme_constant_override("v_separation", 6)
-    badges.alignment = FlowContainer.ALIGNMENT_CENTER
-    v.add_child(badges)
-    var b: Control
-    if m.host:
-        b = UI.badge("★ 방장", UI.CTA, UI.INK)
-    elif m.ready:
-        b = UI.badge("READY", UI.GOOD)
+## 참가자 목록 다시 그리기
+##   팀전: 팀마다 한 열 (팀 색 머리글 · 인원 · '이 팀으로' 버튼 → 사람 줄 → 빈 자리)
+##   개인전: 사람 줄을 2~3열로
+##   사람 줄 = 초상화 · 이름(+나·방장·차단) · 상태(READY/대기) · 오른쪽 '•••' 메뉴(팀 옮기기·강퇴·방장 위임·신고·차단)
+func _build_slots(r: Dictionary, host: bool, teams: int) -> void:
+    var members: Array = r.members
+    var key := "%s|%s|%d|%d|%s|%d|%s|%s" % [str(members), host, teams, int(r.max), r.get("bot_fill", false), Net.my_id, str(Net.blocked.keys()), r.get("state", "")]
+    if key == _last_slots_key:
+        return
+    _last_slots_key = key
+    for c in _slots.get_children():
+        c.queue_free()
+    var bot_fill := bool(r.get("bot_fill", false))
+    var waiting := String(r.get("state", "")) == "waiting"
+    if teams >= 2:
+        var per := int(ceil(float(int(r.max)) / teams))
+        # 팀 열: 들어가는 만큼 옆으로 (좁으면 2열로 접어 아래로)
+        var compact := teams >= 3 or _slots_width() < 640.0      # 3·4팀: 작은 줄로 모든 팀을 한 줄에
+        var row := GridContainer.new()
+        row.columns = teams if _slots_width() / teams >= (170.0 if compact else 300.0) else maxi(teams / 2, 1)
+        row.add_theme_constant_override("h_separation", 12 if compact else 16)
+        row.add_theme_constant_override("v_separation", 16)
+        row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _slots.add_child(row)
+        var my_team := int(_my_entry(r).get("team", -1))
+        for t in teams:
+            var list: Array = []
+            for i in members.size():
+                if int(members[i].get("team", 0)) == t:
+                    list.append(i)
+            row.add_child(_team_column(t, list, members, per, host, teams, my_team, waiting, bot_fill, compact))
     else:
-        b = UI.badge("대기", UI.MUTED)
-    badges.add_child(b)
-    if team >= 0:
-        var tb := UI.badge(Teams.SHORT[team], Teams.color(team), UI.INK if team == 3 else Color.WHITE)
-        badges.add_child(tb)
-    # 초상화
-    var face := Control.new()
-    face.custom_minimum_size = Vector2(0, 100)
-    v.add_child(face)
-    var pr := _portrait_rect(index)
-    pr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    pr.offset_bottom = -10                 # 이름과 발 사이 여백
-    face.add_child(pr)
+        var grid := GridContainer.new()
+        var small := int(r.max) > 8                # 사람이 많으면 작은 줄로 3~4열 (스크롤 없이 한눈에)
+        grid.columns = clampi(int(_slots_width() / (180.0 if small else 280.0)), 1, 4 if small else 3)
+        grid.add_theme_constant_override("h_separation", 14)
+        grid.add_theme_constant_override("v_separation", 12)
+        grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        _slots.add_child(grid)
+        for i in int(r.max):
+            if i < members.size():
+                grid.add_child(_member_row(members[i], i, host, 0, -1, waiting, small))
+            else:
+                grid.add_child(_empty_row(i, bot_fill, Color(UI.INK, 0.3), small))
 
-    var name_l := UI.heading(String(m.nick), 20)
-    name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+
+## 참가자 칸 너비 (화면 너비 - 오른쪽 칸 - 여백)
+func _slots_width() -> float:
+    return maxf(size.x - 56.0 - 20.0 - 392.0 - 64.0, 280.0)
+
+
+func _team_column(t: int, list: Array, members: Array, per: int, host: bool, teams: int, my_team: int,
+        waiting: bool, bot_fill: bool, compact: bool = false) -> Control:
+    var tc := Teams.color(t)
+    var col := PanelContainer.new()
+    col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var sb := UI.box(tc.lerp(Color.WHITE, 0.86), 16, 8 if compact else 14, tc, 3, 0)
+    sb.content_margin_top = 10 if compact else 12
+    sb.content_margin_bottom = 12 if compact else 14
+    col.add_theme_stylebox_override("panel", sb)
+    var v := UI.vbox(8 if compact else 10)
+    col.add_child(v)
+    # 머리글: 팀 색 띠
+    var head_p := PanelContainer.new()
+    var hsb := UI.box(tc, 10, 12)
+    hsb.content_margin_top = 6
+    hsb.content_margin_bottom = 6
+    head_p.add_theme_stylebox_override("panel", hsb)
+    v.add_child(head_p)
+    var head := UI.hbox(10)
+    head_p.add_child(head)
+    var fg := UI.INK if t == 3 else Color.WHITE
+    var name_l := UI.heading(Teams.team_name(t), 17 if compact else 20, fg)
+    name_l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    head.add_child(name_l)
+    var cnt := UI.label("%d / %d" % [list.size(), per], 15, fg)
+    cnt.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    head.add_child(cnt)
+    # 나: 다른 팀으로 옮기기 (그 팀 머리 아래 버튼)
+    if waiting and my_team >= 0 and my_team != t and list.size() < per:
+        var join := UI.pill_button("이 팀으로" if compact else "이 팀으로 옮기기", Color.WHITE, tc.darkened(0.25))
+        join.focus_mode = Control.FOCUS_NONE
+        join.pressed.connect(func(): Net.set_team(Net.my_id, t))
+        v.add_child(join)
+    for i in list:
+        v.add_child(_member_row(members[i], i, host, teams, t, waiting, compact))
+    for k in maxi(per - list.size(), 0):
+        v.add_child(_empty_row(-1, bot_fill, Color(tc, 0.45), compact))
+    return col
+
+
+func _member_row(m: Dictionary, index: int, host: bool, teams: int, team: int, waiting: bool, compact: bool = false) -> Control:
+    var is_me := int(m.id) == Net.my_id
+    var row := PanelContainer.new()
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var border := UI.CTA if is_me else Color(UI.INK, 0.18)
+    var sb := UI.box(Color.WHITE, 12, 8 if compact else 12, border, 3 if is_me else 2, 0)
+    sb.content_margin_top = 6
+    sb.content_margin_bottom = 6
+    row.add_theme_stylebox_override("panel", sb)
+    var h := UI.hbox(6 if compact else 12)
+    row.add_child(h)
+    # 초상화 (캐릭터 색 동그라미 위)
+    var face := PanelContainer.new()
+    var col: Color = Teams.color(team) if team >= 0 else Fighter.SLOT_COLORS[index % Fighter.SLOT_COLORS.size()]
+    face.add_theme_stylebox_override("panel", UI.box(col.lerp(Color.WHITE, 0.7), 28, 0))
+    var pr := _portrait_rect(index)
+    if compact:
+        pr.custom_minimum_size = Vector2(34, 36)
+    face.add_child(pr)
+    face.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    h.add_child(face)
+    # 이름 + 작은 표시
+    var mid := UI.vbox(2)
+    mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    mid.alignment = BoxContainer.ALIGNMENT_CENTER
+    h.add_child(mid)
+    var name_l := UI.heading(String(m.nick), 16 if compact else 19)
+    name_l.custom_minimum_size.x = 44 if compact else 72
     name_l.clip_text = true
     name_l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-    v.add_child(name_l)
+    mid.add_child(name_l)
+    var tags := PackedStringArray()
     if is_me:
-        var me_l := UI.label("나", 13, UI.MUTED)
-        me_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-        v.add_child(me_l)
-
-    # 팀 바꾸기: 나 자신은 누구나, 다른 사람은 방장만
-    if team >= 0 and (is_me or viewer_is_host) and Net.room.get("state", "") == "waiting":
-        var pid_t := int(m.id)
-        var next_team := (team + 1) % teams
-        var tbtn := _small_button("→ %s" % Teams.SHORT[next_team], Teams.color(next_team).darkened(0.1))
-        tbtn.pressed.connect(func(): Net.set_team(pid_t, next_team))
-        var trow := UI.hbox(0)
-        trow.alignment = BoxContainer.ALIGNMENT_CENTER
-        trow.add_child(tbtn)
-        v.add_child(trow)
-    if viewer_is_host and not is_me:
-        var acts := UI.hbox(10)
-        acts.alignment = BoxContainer.ALIGNMENT_CENTER
-        v.add_child(acts)
-        var pid := int(m.id)
-        var kick := _small_button("강퇴", UI.DANGER)
-        kick.pressed.connect(func(): Net.kick(pid))
-        acts.add_child(kick)
-        var give := _small_button("방장 위임", UI.SECONDARY)
-        give.pressed.connect(func(): Net.transfer_host(pid))
-        acts.add_child(give)
-    # 신고·차단: 다른 사람 누구에게나
+        tags.append("나")
+    var uid := String(m.get("uid", ""))
+    var blocked := uid != "" and Net.blocked.has(uid)
+    if blocked:
+        tags.append("차단함")
+    # 상태: 넓으면 오른쪽 배지, 좁으면 이름 아래 색 글자
+    var st_text := "방장" if m.host else ("READY" if m.ready else "대기")
+    var st_col: Color = UI.YELLOW if m.host else (UI.GOOD if m.ready else UI.MUTED)
+    if compact:
+        tags.insert(0, st_text)
+    if not tags.is_empty():
+        var tl := UI.label(" · ".join(tags), 12 if compact else 13, UI.DANGER if blocked else (st_col.darkened(0.25) if compact else UI.MUTED))
+        tl.clip_text = true
+        mid.add_child(tl)
+    if not compact:
+        var st: Control = UI.badge(st_text, st_col, UI.INK if m.host else Color.WHITE)
+        h.add_child(st)
+    # 더보기 메뉴 (할 수 있는 것이 있을 때만)
+    var acts: Array = []                     # [글자, Callable]
+    var pid := int(m.id)
+    if host and not is_me and waiting and teams >= 2:
+        for t in teams:
+            if t != team:
+                var tv: int = t
+                acts.append(["%s으로 옮기기" % Teams.team_name(t), func(): Net.set_team(pid, tv)])
+    if host and not is_me:
+        acts.append(["방장 넘기기", func(): Net.transfer_host(pid)])
+        acts.append(["내보내기 (강퇴)", func(): Net.kick(pid)])
     if not is_me:
-        var safety := UI.hbox(10)
-        safety.alignment = BoxContainer.ALIGNMENT_CENTER
-        v.add_child(safety)
-        var pid_s := int(m.id)
         var nick_s := String(m.nick)
-        var uid := String(m.get("uid", ""))
-        var rep := _small_button("신고", UI.MUTED)
-        rep.pressed.connect(func(): _open_report(pid_s, nick_s))
-        safety.add_child(rep)
+        acts.append(["신고하기", func(): _open_report(pid, nick_s)])
         if uid != "":
-            var is_blocked := Net.blocked.has(uid)
-            var blk := _small_button("차단 해제" if is_blocked else "차단", UI.SECONDARY if is_blocked else UI.MUTED)
-            blk.tooltip_text = "이 사람의 채팅을 내 화면에서 숨겨요"
-            blk.pressed.connect(func():
-                Net.set_blocked(uid, nick_s, not is_blocked)
-                _append_chat("", "%s 님을 %s" % [nick_s, "차단 해제했어요" if is_blocked else "차단했어요. 이 사람의 채팅이 보이지 않아요"], true)
-                _refresh(Net.room))
-            safety.add_child(blk)
-        if Net.blocked.has(uid):
-            var bl := UI.label("차단함", 12, UI.DANGER)
-            bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-            v.add_child(bl)
-    return card
+            acts.append(["차단 해제" if blocked else "채팅 차단", func():
+                Net.set_blocked(uid, nick_s, not blocked)
+                _append_chat("", "%s 님을 %s" % [nick_s, "차단 해제했어요" if blocked else "차단했어요. 이 사람의 채팅이 보이지 않아요"], true)
+                _last_slots_key = ""
+                _refresh(Net.room)])
+    if not acts.is_empty():
+        var mb := _more_menu(acts)
+        if compact:
+            mb.custom_minimum_size = Vector2(28, 28)
+            for st in ["normal", "hover", "pressed", "focus"]:
+                (mb.get_theme_stylebox(st) as StyleBoxFlat).content_margin_left = 4
+                (mb.get_theme_stylebox(st) as StyleBoxFlat).content_margin_right = 4
+        h.add_child(mb)
+    elif not compact:
+        var gap := Control.new()
+        gap.custom_minimum_size.x = 40
+        h.add_child(gap)
+    return row
+
+
+## '•••' 더보기 단추 → 펼침 메뉴
+func _more_menu(acts: Array) -> MenuButton:
+    var mb := MenuButton.new()
+    mb.text = "•••"
+    mb.flat = false
+    mb.focus_mode = Control.FOCUS_NONE
+    mb.tooltip_text = "더보기"
+    mb.custom_minimum_size = Vector2(40, 34)
+    mb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    mb.add_theme_font_size_override("font_size", 14)
+    for st in ["normal", "hover", "pressed", "focus"]:
+        var sb := UI.box(Color(UI.INK, 0.06) if st == "normal" else Color(UI.INK, 0.14), 10, 8)
+        mb.add_theme_stylebox_override(st, sb)
+    for st in ["font_color", "font_hover_color", "font_pressed_color"]:
+        mb.add_theme_color_override(st, UI.INK)
+    var pop := mb.get_popup()
+    pop.add_theme_font_size_override("font_size", 16)
+    for i in acts.size():
+        pop.add_item(String(acts[i][0]), i)
+    pop.id_pressed.connect(func(id: int): (acts[id][1] as Callable).call())
+    return mb
+
+
+func _empty_row(index: int, bot_fill: bool, border: Color, compact: bool = false) -> Control:
+    var row := PanelContainer.new()
+    row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    var sb := UI.box(Color(1, 1, 1, 0.45), 12, 12, border, 2, 0)
+    sb.content_margin_top = 6
+    sb.content_margin_bottom = 6
+    row.add_theme_stylebox_override("panel", sb)
+    var h := UI.hbox(12)
+    row.add_child(h)
+    var ph := Control.new()
+    ph.custom_minimum_size = Vector2(34, 36) if compact else Vector2(56, 56)
+    if bot_fill and index >= 0:
+        var pr := _portrait_rect(index, 0.55)
+        pr.custom_minimum_size = ph.custom_minimum_size
+        pr.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+        ph.add_child(pr)
+    h.add_child(ph)
+    var l := UI.label(("봇" if compact else "봇이 채워요") if bot_fill else "빈 자리", 14 if compact else 16, UI.MUTED)
+    l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    h.add_child(l)
+    return row
 
 
 # ---------------------------------------------------------------- 신고
@@ -498,38 +607,6 @@ func _open_report(pid: int, nick: String) -> void:
     _report_reason.select(0)
     _report_detail.clear()
     _report_dlg.visible = true
-
-
-func _empty_card(index: int, bot_fill: bool) -> Control:
-    var card := _slot_card(index, Color(UI.INK, 0.18), 3, Color(0.9, 0.92, 0.96))
-    (card.get_theme_stylebox("panel") as StyleBoxFlat).shadow_size = 0
-    var v := UI.vbox(2)
-    card.add_child(v)
-    var pr := _portrait_rect(index, 0.6 if bot_fill else 1.0)
-    if not bot_fill:
-        pr.modulate = Color(0.55, 0.58, 0.66, 0.35)      # 실루엣
-    v.add_child(pr)
-    var l := UI.heading("봇" if bot_fill else "빈 자리", 19, UI.MUTED)
-    l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    v.add_child(l)
-    return card
-
-
-func _small_button(text: String, color: Color) -> Button:
-    var b := UI.colored_button(text, color, color.lightened(0.15))
-    b.custom_minimum_size = Vector2(0, 32)
-    b.add_theme_font_size_override("font_size", 14)
-    b.remove_theme_constant_override("outline_size")
-    for st in ["normal", "hover", "pressed", "disabled"]:
-        var sb: StyleBoxFlat = b.get_theme_stylebox(st).duplicate()
-        sb.content_margin_left = 8
-        sb.content_margin_right = 8
-        sb.content_margin_top = 2
-        sb.content_margin_bottom = 4
-        sb.set_border_width_all(2)
-        sb.shadow_offset = Vector2(0, 2)
-        b.add_theme_stylebox_override(st, sb)
-    return b
 
 
 # ---------------------------------------------------------------- 설정
