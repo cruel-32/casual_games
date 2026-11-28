@@ -132,7 +132,6 @@ var push_tap := true
 var net_prev_flags := 0               ## 온라인: 지난번 받은 상태 표시 (새로 켜진 것만 소리 내려고)
 var _voice_last := {}
 var _cheered := false
-var _press_pending := false          ## 쿨타임 중에 밀치기(던지기) 키를 눌렀음
 var net_charge_voiced := false        ## 온라인: 다른 캐릭터 차징 목소리를 이번 차징에 냈나                ## 경기가 끝났을 때 환호했나                ## 목소리 종류 -> 마지막으로 낸 시각
 var push_anim := 0.0
 var bump_cooldown := 0.0
@@ -1051,15 +1050,11 @@ func _update_push(delta: float, pressed: bool) -> void:
                     Sfx.play("charge_full")
             if not pressed:
                 _release_push()
-    elif pressed and (not _charge_was_pressed or _press_pending) and cooldown_timer <= 0.0 and dash_timer <= 0.0:
+    elif pressed and not _charge_was_pressed and cooldown_timer <= 0.0 and dash_timer <= 0.0:
+        # 쿨타임 중에 누른 것은 아예 무시 (탭·차징 모두). 쿨타임이 끝난 뒤 새로 눌러야 함
         charging = true
         charge_time = 0.0
         _full_sfx = false
-        _press_pending = false
-    elif pressed and not _charge_was_pressed:
-        _press_pending = true          # 쿨타임 중에 눌렀으면 쿨타임이 끝나는 순간 (계속 누르고 있으면) 차징 시작
-    if not pressed:
-        _press_pending = false
     _charge_was_pressed = pressed
 
 

@@ -3,9 +3,10 @@ extends PartyGame
 ## - 정사각형 격자의 칸마다 2m 정육면체 블록이 4층 평평하게 쌓여 있고, 모두 꼭대기에서 시작한다. 아래는 용암
 ## - 부서지지 않는 블록(테두리와 짝수·짝수 칸)도 높이가 같아 위에 설 수 있다. 가장자리 밖으로 떨어져도 탈락
 ## - 밀치기 키(좌클릭·E·터치 "던지기"): 탭 = 발밑에 놓기, 차징 = 차징한 만큼 멀리·높이 포물선으로 던지기 (떨어질 자리·범위 표시)
-##   폭탄은 떨어지고 LAND_FUSE 초 뒤 정사각형으로 터진다 (반경 = 불꽃 수, 기본 1 = 3×3, 높이도 위아래 반경 층). 범위 안 폭탄은 연쇄 폭발
+##   폭탄은 떨어지고 LAND_FUSE 초 뒤 정사각형으로 터진다 (기본 3×3, 불꽃 아이템 1번 = 4×4 — 던진 쪽으로 한 칸 더). 높이는 폭탄 층 위아래 1층.
+##   범위 안 폭탄은 연쇄 폭발. 점프로 불길 위로 높이 떠 있으면 안 맞음
 ## - 범위 안 블록이 깎인다 (평평하면 반경만큼). 높이 0 이 되면 구멍 → 용암
-## - 폭탄 불길에 맞거나 용암에 떨어지면 바로 탈락 (내 폭탄·아군 폭탄 포함). 마지막까지 남은 사람(팀) 승리
+## - 폭탄 불길에 맞거나 용암에 떨어지면 바로 탈락 (아군 폭탄 포함, 내 폭탄은 나를 안 맞힘). 마지막까지 남은 사람(팀) 승리
 ## - 탈락하면 유령이 되어 경기장 바깥 테두리를 돌며 안쪽으로 폭탄을 던진다 (쿨타임)
 ## - Space 는 점프 (블록 2층까지 한 번에). 날아가는 폭탄에 맞으면 살짝 밀려남
 ##
@@ -29,8 +30,8 @@ const THROW_MIN := 2.0            ## 던지는 거리 (m): 살짝 누름 ~ 끝�
 const THROW_MAX := 11.0
 const FLIGHT_BASE := 0.18         ## 날아가는 시간 = 기본 + 거리 비례 (빠르게)
 const FLIGHT_PER_M := 0.014
-const HIT_BELOW := 0.3            ## 불길 판정 높이: 폭발 층 꼭대기 기준 위아래 (반경 × 블록) + 여유 아래 / 위 (m)
-const HIT_ABOVE := 1.0
+const HIT_BELOW := 2.3            ## 불길 판정 높이 (발 기준): 폭발 층 꼭대기보다 이만큼 아래 ~ (한 층 아래 칸까지)
+const HIT_ABOVE := 1.5            ##   이만큼 위까지. 점프해서 더 높이 떠 있으면 안 맞음
 const LAVA_OUT := 0.4             ## 발이 용암(바닥) 위 이 높이보다 낮으면 탈락 — 경기장 밖으로 떨어져도
 const BODY_SCALE := 1.3           ## 캐릭터 크기 (블록 2m 에 맞춰 키움)
 const BASE_SPEED := 7.2           ## 이동 속도 (속도 아이템 1개마다 +SPEED_STEP) — 처음(4.8)의 1.5배
@@ -42,9 +43,9 @@ const MAX_COOL := 3
 const BOMB_HIT_R := 1.2           ## 날아가는 폭탄이 캐릭터에 맞는 거리 → 살짝 밀려남
 const BOMB_HIT_PUSH := 7.0
 const START_BOMBS := 1
-const START_POWER := 1            ## 폭발 반경 1 = 3×3 (불꽃 아이템마다 +1: 5×5, 7×7 …)
+const START_POWER := 1            ## 불꽃 1 = 3×3
 const MAX_BOMBS := 6
-const MAX_POWER := 2                ## 불꽃은 한 번만 (3×3 → 5×5), 더 먹어도 그대로
+const MAX_POWER := 2             ## 불꽃은 한 번만 (3×3 → 4×4), 더 먹어도 그대로
 const MAX_SPEED := 3
 const ITEM_CHANCE := 0.14         ## 블록이 깎인 칸에서 아이템이 나올 확률
 const GHOST_SPEED := 7.0
@@ -100,6 +101,8 @@ var _col_bodies := {}             ## 칸 -> StaticBody3D (블록 기둥 충돌)
 var _block_mm: Array = []         ## [층][색 0/1] -> MultiMeshInstance3D
 var _item_nodes := {}
 var _aim: Node3D                  ## 내가 던질 때 떨어질 자리 표시
+var _aim_zone: Node3D             ## 그때 터질 범위 (노란 칸 타일)
+var _aim_key := Vector2i(-1, -1)
 var _mat_bomb: Material
 var _mat_fuse: Material
 var _mat_spark: StandardMaterial3D
@@ -259,20 +262,6 @@ func _build_board() -> void:
     am.no_depth_test = true
     ring.material_override = am
     _aim.add_child(ring)
-    # 터질 범위 (반경에 맞춰 크기를 바꿈)
-    var area := MeshInstance3D.new()
-    area.name = "Area"
-    var ap := PlaneMesh.new()
-    ap.size = Vector2(T, T)
-    area.mesh = ap
-    var arm := StandardMaterial3D.new()
-    arm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    arm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    arm.albedo_color = Color(1.0, 0.9, 0.2, 0.28)
-    arm.no_depth_test = true
-    area.material_override = arm
-    area.position.y = 0.02
-    _aim.add_child(area)
     _aim.visible = false
 
 
@@ -517,9 +506,9 @@ func aim_cell(f: Fighter, r: float) -> Vector2i:
     return board.throw_target(f.global_position, f.facing(), throw_dist(r))
 
 
-## 던지는 높이 (포물선 꼭대기가 시작·끝 중 높은 쪽보다 이만큼 위): 탭은 살짝, 차징할수록 높이
+## 던지는 높이 (포물선이 시작~끝 직선보다 가운데에서 이만큼 위): 낮고 빠르게 — 상대를 맞히기 쉽게
 static func throw_arc(r: float) -> float:
-    return 0.4 if r < 0.0 else lerpf(1.5, 7.0, clampf(r, 0.0, 1.0))
+    return 0.3 if r < 0.0 else lerpf(0.6, 2.0, clampf(r, 0.0, 1.0))
 
 
 ## Fighter 가 밀치기 키를 뗐다 (던지기 모드): 탭 r = -1 → 발밑에 놓기, 차징 r = 0~1 → 멀리·높이 던지기
@@ -533,25 +522,26 @@ func on_throw(f: Fighter, r: float) -> bool:
     var c := aim_cell(f, r)
     var from := f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)
     var arc := throw_arc(r)
+    var skew := Board.skew_of(f.facing())
     if is_client():
         _pending_throws += 1           # 서버가 폭탄을 알려 줄 때까지 내 폭탄 수에 미리 셈 (연타로 두 번 보내지 않게)
         get_tree().create_timer(0.6).timeout.connect(func(): _pending_throws = maxi(_pending_throws - 1, 0))
-        send_to_server(["throw", board.idx(c), from, arc])
+        send_to_server(["throw", board.idx(c), from, arc, skew])
         return true
-    _create_bomb(f.slot, board.idx(c), stat(f.slot, 1), false, from, arc)
+    _create_bomb(f.slot, board.idx(c), stat(f.slot, 1), false, from, arc, skew)
     return true
 
 
 ## 서버·오프라인: 폭탄 만들기 (from 에서 포물선으로 날아가 칸 i 에 떨어짐)
-func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3, arc: float = 4.0) -> void:
+func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3, arc: float = 1.0, skew: int = 3) -> void:
     var id := _next_bomb_id
     _next_bomb_id += 1
     var now := net_now()
     var t_land := now + flight_time(from, i, arc)
     var t := t_land + LAND_FUSE
-    _add_bomb(id, owner, i, from, t_land, t, power, ghost, arc)
+    _add_bomb(id, owner, i, from, t_land, t, power, ghost, arc, skew)
     if is_server():
-        broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost, arc])
+        broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost, arc, skew])
 
 
 ## 날아가는 시간: 기본 + 거리 비례 + 높이 비례 (높이 던질수록 조금 더 걸림)
@@ -561,9 +551,9 @@ func flight_time(from: Vector3, i: int, arc: float) -> float:
     return FLIGHT_BASE + dist * FLIGHT_PER_M + arc * 0.03
 
 
-func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool, arc: float = 4.0) -> void:
+func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool, arc: float = 1.0, skew: int = 3) -> void:
     var b := {"id": id, "owner": owner, "cell": i, "from": from, "t_land": t_land, "t": t, "power": power,
-            "ghost": ghost, "node": null, "landed": false, "hit": {}, "arc": arc}
+            "ghost": ghost, "node": null, "landed": false, "hit": {}, "arc": arc, "skew": skew}
     bombs[id] = b
     if is_server():
         return
@@ -606,44 +596,83 @@ func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: flo
     ring.position.y = 0.6
     vis.add_child(ring)
     b.node = vis
-    b.zone = _make_zone(power)
+    b.zone = _make_zone(power, skew, ZONE_RED)
     vis.global_position = from
     Sfx.play_at("ghost_throw" if ghost else "bomb_place", from, self, -4.0)
 
 
-## 터질 범위 표시: 바닥에 빨간 사각형 + 테두리. 떨어진 뒤부터 보이고 터질 때가 가까울수록 진해지고 빨리 깜빡인다
-func _make_zone(power: int) -> Node3D:
+## 터질 범위 표시: 칸마다 빨간 타일(굵은 흰 테두리 + 움직이는 빗금). 각 칸 꼭대기 높이에 붙고 구멍 칸은 숨김.
+##   날아가는 동안은 옅게, 떨어진 뒤엔 진하게, 터질 때가 가까울수록 빨리 깜빡인다
+const ZONE_RED := Color(0.92, 0.02, 0.08)
+const ZONE_AIM := Color(1.0, 0.85, 0.1)
+const ZONE_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled, depth_draw_never, shadows_disabled;
+uniform vec4 col : source_color = vec4(1.0, 0.1, 0.1, 1.0);
+uniform float fill_a = 0.5;
+uniform float edge_a = 1.0;
+uniform float glow = 1.0;
+void fragment() {
+    vec2 d = min(UV, vec2(1.0) - UV);
+    float e = min(d.x, d.y);
+    float stripe = step(0.5, fract((UV.x + UV.y) * 2.0 - TIME * 1.2));
+    if (e < 0.1) {
+        ALBEDO = vec3(1.0);
+        ALPHA = edge_a;
+    } else if (e < 0.16) {
+        ALBEDO = col.rgb * 0.3;
+        ALPHA = edge_a;
+    } else {
+        ALBEDO = mix(col.rgb, col.rgb * 0.55, stripe) * glow;
+        ALPHA = fill_a;
+    }
+}
+"""
+var _zone_shader: Shader
+
+
+func _make_zone(power: int, skew: int, col: Color) -> Node3D:
+    if _zone_shader == null:
+        _zone_shader = Shader.new()
+        _zone_shader.code = ZONE_SHADER
     var z := Node3D.new()
     z.visible = false
     add_child(z)
-    var size := (2 * power + 1) * Board.TILE
-    var fill := MeshInstance3D.new()
+    var mat := ShaderMaterial.new()
+    mat.shader = _zone_shader
+    mat.set_shader_parameter("col", col)
+    mat.render_priority = 2
+    z.set_meta("mat", mat)
     var pm := PlaneMesh.new()
-    pm.size = Vector2(size, size)
-    fill.mesh = pm
-    var fm := StandardMaterial3D.new()
-    fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-    fm.albedo_color = Color(1.0, 0.15, 0.1, 0.2)
-    fm.cull_mode = BaseMaterial3D.CULL_DISABLED
-    fill.material_override = fm
-    fill.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-    fill.name = "Fill"
-    z.add_child(fill)
-    var em := StandardMaterial3D.new()
-    em.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    em.albedo_color = Color(1.0, 0.2, 0.1)
-    for k in 4:
-        var bar := MeshInstance3D.new()
-        var bm := BoxMesh.new()
-        bm.size = Vector3(size + 0.16, 0.08, 0.16) if k < 2 else Vector3(0.16, 0.08, size + 0.16)
-        bar.mesh = bm
-        bar.material_override = em
-        bar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-        var sgn := -1.0 if k % 2 == 0 else 1.0
-        bar.position = Vector3(0, 0.04, sgn * size * 0.5) if k < 2 else Vector3(sgn * size * 0.5, 0.04, 0)
-        z.add_child(bar)
+    pm.size = Vector2(Board.TILE - 0.06, Board.TILE - 0.06)
+    var bx := Board.blast_box(power, skew)
+    for dy in range(bx.position.y, bx.end.y):
+        for dx in range(bx.position.x, bx.end.x):
+            var t := MeshInstance3D.new()
+            t.mesh = pm
+            t.material_override = mat
+            t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+            t.position = Vector3(dx * Board.TILE, 0.0, dy * Board.TILE)
+            t.set_meta("off", Vector2i(dx, dy))
+            z.add_child(t)
     return z
+
+
+## 범위 타일을 폭탄 칸 c 기준으로 각 칸 꼭대기에 붙임 (경기장 밖·구멍 칸은 숨김)
+func _place_zone(z: Node3D, c: Vector2i, fill_a: float, edge_a: float, glow: float = 1.0) -> void:
+    var p := board.center(c)
+    z.global_position = Vector3(p.x, 0.0, p.z)
+    z.visible = true
+    for t in z.get_children():
+        var n: Vector2i = c + (t.get_meta("off") as Vector2i)
+        var ok := board.in_bounds(n) and board.height(n) > 0
+        (t as Node3D).visible = ok
+        if ok:
+            (t as Node3D).position.y = top_y(n) + 0.07
+    var mat: ShaderMaterial = z.get_meta("mat")
+    mat.set_shader_parameter("fill_a", fill_a)
+    mat.set_shader_parameter("edge_a", edge_a)
+    mat.set_shader_parameter("glow", glow)
 
 
 func _free_zone(b: Dictionary) -> void:
@@ -755,9 +784,9 @@ func _explode(ids: Array, now: float) -> void:
         var level := maxi(board.height(c), 0)
         var y := floor_y + level * Board.BLOCK
         var owner := int(b.owner)
-        var r := int(b.power)
+        var r := 1                    # 높이는 위아래 1층 (넓이만 불꽃 아이템으로 커짐)
         var fire := {}
-        for n: Vector2i in board.blast(c, r):
+        for n: Vector2i in board.blast(c, int(b.power), int(b.get("skew", 3))):
             var i := board.idx(n)
             fire[i] = owner
             var cut := maxi(board.height(n), 0) - maxi(board.height_after(n, level, r), 0)
@@ -861,7 +890,7 @@ func _show_flames(fire: Dictionary, y: float) -> void:
         core.scale = Vector3.ONE * 0.2
         var tw := create_tween()
         tw.set_parallel(true)
-        tw.tween_property(m, "scale", Vector3(1.0, 1.5, 1.0), 0.1).set_ease(Tween.EASE_OUT)
+        tw.tween_property(m, "scale", Vector3(1.0, 1.25, 1.0), 0.1).set_ease(Tween.EASE_OUT)
         tw.tween_property(core, "scale", Vector3.ONE, 0.1).set_ease(Tween.EASE_OUT)
         tw.chain().tween_interval(FLAME_TIME - 0.25)
         tw.chain().tween_property(m, "scale", Vector3(0.2, 2.2, 0.2), 0.2).set_ease(Tween.EASE_IN)
@@ -870,13 +899,14 @@ func _show_flames(fire: Dictionary, y: float) -> void:
         tw.chain().tween_callback(core.queue_free)
 
 
-## 그 시각·그 높이에 그 칸에 불길이 있으면 주인 slot, 없으면 -2
-func _in_flame(i: int, t: float, y: float) -> int:
+## 그 시각·그 높이(발)에 그 칸에 불길이 있으면 주인 slot, 없으면 -2. me = 그 사람 slot (내 폭탄 불길은 건너뜀)
+func _in_flame(i: int, t: float, y: float, me: int = -99) -> int:
     for fl in flames:
         if t >= float(fl.t0) and t < float(fl.t1) and fl.cells.has(i):
+            if int(fl.cells[i]) == me:
+                continue
             var fy := float(fl.y)
-            var reach := int(fl.r) * Board.BLOCK
-            if y >= fy - reach - HIT_BELOW and y <= fy + reach + HIT_ABOVE:
+            if y >= fy - HIT_BELOW and y <= fy + HIT_ABOVE:
                 return int(fl.cells[i])
     return -2
 
@@ -887,6 +917,11 @@ func _prune_flames(now: float) -> void:
 
 
 # ================================================================ 아이템
+## 아이템 종류별 이름·색 (HUD·도움말도 씀)
+const ITEM_NAMES := ["범위 +", "폭탄 +1", "속도 +", "쿨타임 -"]
+const ITEM_COLORS := [Color(1.0, 0.32, 0.12), Color(0.55, 0.4, 1.0), Color(0.2, 0.75, 1.0), Color(0.3, 0.9, 0.35)]
+
+
 func _add_item(i: int, kind: int) -> void:
     items[i] = kind
     if is_server():
@@ -894,28 +929,144 @@ func _add_item(i: int, kind: int) -> void:
     var root := Node3D.new()
     add_child(root)
     root.global_position = board.center(board.cell(i)) + Vector3(0, top_y(board.cell(i)) + 0.7, 0)
-    var colr := [Color(1.0, 0.45, 0.15), Color(0.25, 0.25, 0.32), Color(0.3, 0.7, 1.0), Color(0.35, 0.85, 0.4)][kind] as Color
-    var mi := MeshInstance3D.new()
-    var bm := BoxMesh.new()
-    bm.size = Vector3(0.9, 0.9, 0.9)
-    mi.mesh = bm
-    mi.material_override = Toon.make(colr, {"rim_strength": 0.5})
-    root.add_child(mi)
+    var colr: Color = ITEM_COLORS[kind]
+    # 바닥 빛 고리 (아이템 색) — 멀리서도 아이템 칸이 보이게
+    var halo := MeshInstance3D.new()
+    var hm := TorusMesh.new()
+    hm.inner_radius = 0.62
+    hm.outer_radius = 0.8
+    halo.mesh = hm
+    var hmat := StandardMaterial3D.new()
+    hmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    hmat.albedo_color = colr
+    halo.material_override = hmat
+    halo.position.y = -0.55
+    halo.name = "Halo"
+    root.add_child(halo)
+    var spin := Node3D.new()
+    spin.name = "Spin"
+    root.add_child(spin)
+    _build_item_icon(spin, kind, colr)
     var l := Label3D.new()
-    l.text = ["불꽃", "폭탄", "속도", "쿨타임"][kind]
+    l.text = ITEM_NAMES[kind]
     l.font = NAME_FONT
-    l.font_size = 64
-    l.outline_size = 14
+    l.font_size = 72
+    l.outline_size = 18
+    l.outline_modulate = colr.darkened(0.55)
     l.pixel_size = 0.006
     l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
     l.no_depth_test = true
-    l.modulate = Color(1, 1, 0.9)
-    l.position.y = 0.9
+    l.modulate = colr.lightened(0.45)
+    l.position.y = 0.95
     root.add_child(l)
     root.scale = Vector3.ONE * 0.1
     var tw := create_tween()
     tw.tween_property(root, "scale", Vector3.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
     _item_nodes[i] = root
+
+
+## 아이템 모양: 불꽃 = 불꽃 모양(겹친 원뿔), 폭탄 = 작은 폭탄 + 심지, 속도 = 빨리감기 화살표 ▶▶, 쿨타임 = 시계
+func _build_item_icon(root: Node3D, kind: int, colr: Color) -> void:
+    var mat := Toon.make(colr, {"rim_strength": 0.6})
+    match kind:
+        Board.ITEM_FIRE:
+            for k in 3:
+                var cone := MeshInstance3D.new()
+                var cm := CylinderMesh.new()
+                cm.top_radius = 0.0
+                cm.bottom_radius = [0.42, 0.3, 0.18][k]
+                cm.height = [0.95, 0.75, 0.5][k]
+                cone.mesh = cm
+                cone.material_override = Toon.make([colr, Color(1.0, 0.62, 0.1), Color(1.0, 0.95, 0.4)][k], {"rim_strength": 0.5})
+                cone.position = Vector3(0, -0.1 + [0.0, -0.06, -0.12][k], [0.0, 0.08, 0.16][k])
+                root.add_child(cone)
+            var ball := MeshInstance3D.new()
+            var sm := SphereMesh.new()
+            sm.radius = 0.42
+            sm.height = 0.6
+            ball.mesh = sm
+            ball.material_override = mat
+            ball.position.y = -0.4
+            root.add_child(ball)
+        Board.ITEM_BOMB:
+            var ball := MeshInstance3D.new()
+            var sm := SphereMesh.new()
+            sm.radius = 0.38
+            sm.height = 0.76
+            ball.mesh = sm
+            ball.material_override = mat          # 진짜 폭탄(검정)과 헷갈리지 않게 아이템 색 (보라)
+            root.add_child(ball)
+            var band := MeshInstance3D.new()
+            var tm := TorusMesh.new()
+            tm.inner_radius = 0.34
+            tm.outer_radius = 0.44
+            band.mesh = tm
+            band.material_override = mat
+            band.rotation.x = PI * 0.5
+            root.add_child(band)
+            var fuse := MeshInstance3D.new()
+            var cm := CylinderMesh.new()
+            cm.top_radius = 0.05
+            cm.bottom_radius = 0.07
+            cm.height = 0.28
+            fuse.mesh = cm
+            fuse.material_override = _mat_fuse
+            fuse.position = Vector3(0.08, 0.45, 0)
+            fuse.rotation.z = -0.4
+            root.add_child(fuse)
+            var spark := MeshInstance3D.new()
+            var sp := SphereMesh.new()
+            sp.radius = 0.1
+            sp.height = 0.2
+            spark.mesh = sp
+            spark.material_override = _mat_spark
+            spark.position = Vector3(0.15, 0.6, 0)
+            root.add_child(spark)
+        Board.ITEM_SPEED:
+            # ▶▶ (두 겹 화살표), 양쪽에서 보이도록 두께 있는 상자로
+            for j in 2:
+                for k in 2:
+                    var bar := MeshInstance3D.new()
+                    var bm := BoxMesh.new()
+                    bm.size = Vector3(0.52, 0.16, 0.2)
+                    bar.mesh = bm
+                    bar.material_override = mat
+                    var sgn := 1.0 if k == 0 else -1.0
+                    bar.position = Vector3(-0.22 + j * 0.36, sgn * 0.16, 0)
+                    bar.rotation.z = -sgn * PI * 0.25
+                    root.add_child(bar)
+        Board.ITEM_COOL:
+            var disc := MeshInstance3D.new()
+            var cm := CylinderMesh.new()
+            cm.top_radius = 0.44
+            cm.bottom_radius = 0.44
+            cm.height = 0.16
+            disc.mesh = cm
+            disc.material_override = mat
+            disc.rotation.x = PI * 0.5
+            root.add_child(disc)
+            var face := MeshInstance3D.new()
+            var fm := CylinderMesh.new()
+            fm.top_radius = 0.34
+            fm.bottom_radius = 0.34
+            fm.height = 0.2
+            face.mesh = fm
+            face.material_override = Toon.make(Color(0.98, 0.97, 0.9), {"rim_strength": 0.0})
+            face.rotation.x = PI * 0.5
+            root.add_child(face)
+            var hand_mat := Toon.make(Color(0.12, 0.12, 0.15), {"rim_strength": 0.0})
+            for side in [-1.0, 1.0]:
+                for k in 2:
+                    var hand := MeshInstance3D.new()
+                    var bm := BoxMesh.new()
+                    bm.size = Vector3(0.06, [0.26, 0.18][k], 0.04)
+                    hand.mesh = bm
+                    hand.material_override = hand_mat
+                    var ang: float = [0.0, -PI * 0.5][k]
+                    var half: float = [0.13, 0.09][k]
+                    hand.rotation.z = ang
+                    hand.position = Vector3(-sin(ang) * half, cos(ang) * half, side * 0.11)
+                    root.add_child(hand)
 
 
 func _remove_item(i: int, burned: bool) -> void:
@@ -954,8 +1105,8 @@ func _apply_item(f: Fighter, kind: int) -> void:
         Board.ITEM_COOL:
             s[3] = mini(int(s[3]) + 1, MAX_COOL)
     if not is_server():
-        var txt: String = ["불꽃 +1", "폭탄 +1", "속도 +1", "쿨타임 -"][kind]
-        popup_text(f.global_position + Vector3(0, 2.4, 0), txt, Color(1.0, 0.9, 0.4))
+        var txt: String = ["범위 4×4!", "폭탄 +1", "속도 +1", "쿨타임 -0.15초"][kind]
+        popup_text(f.global_position + Vector3(0, 2.4, 0), txt, (ITEM_COLORS[kind] as Color).lightened(0.3))
         if f == human:
             Sfx.play("pickup")
         else:
@@ -973,7 +1124,7 @@ func _judge_sample(f: Fighter, t: float, pos: Vector3) -> void:
         return
     var c := board.cell_at(pos)
     var i := board.idx(c)
-    var who := _in_flame(i, t, pos.y)
+    var who := _in_flame(i, t, pos.y, f.slot)
     if who > -2:
         _knock_out(f, who, pos)
         return
@@ -1221,7 +1372,8 @@ func _ghost_throw(slot: int, s: float) -> void:
     g.cool = net_now() + GHOST_COOLDOWN
     if is_server():
         broadcast(["gcool", slot, float(g.cool)])
-    _create_bomb(slot, board.idx(c), GHOST_POWER, true, board.ghost_pos(s) + Vector3(0, floor_y + Board.LAYERS * Board.BLOCK + 1.6, 0), 4.0)
+    var from := board.ghost_pos(s) + Vector3(0, floor_y + Board.LAYERS * Board.BLOCK + 1.6, 0)
+    _create_bomb(slot, board.idx(c), GHOST_POWER, true, from, 1.6, Board.skew_of(board.center(c) - from))
 
 
 func _drive_bot_ghosts(delta: float) -> void:
@@ -1307,7 +1459,11 @@ func _process(delta: float) -> void:
             continue
         var p := bomb_pos(b, t)
         vis.global_position = vis.global_position.lerp(p, 1.0 - exp(-30.0 * delta)) if t >= float(b.t_land) else p
+        var zone = b.get("zone")
+        var zc := board.cell(int(b.cell))
         if t < float(b.t_land):
+            if zone != null and is_instance_valid(zone):
+                _place_zone(zone, zc, 0.35, 0.7)          # 날아가는 중: 떨어질 범위를 옅게
             vis.rotation.x += delta * 8.0
             continue
         vis.rotation.x = lerpf(vis.rotation.x, 0.0, 1.0 - exp(-10.0 * delta))
@@ -1316,15 +1472,10 @@ func _process(delta: float) -> void:
             Sfx.play_at("kick", p, self, -6.0)
             _surprise_near(b)
         var left := float(b.t) - t
-        var zone = b.get("zone")
         if zone != null and is_instance_valid(zone):
-            var zn: Node3D = zone
-            zn.visible = true
-            zn.global_position = Vector3(p.x, p.y + 0.05, p.z)
             var k := 1.0 - clampf(left / LAND_FUSE, 0.0, 1.0)          # 0 → 1 (터질 때)
             var blink := 0.5 + 0.5 * sin(t * lerpf(6.0, 26.0, k))
-            var fill: MeshInstance3D = zn.get_node("Fill")
-            (fill.material_override as StandardMaterial3D).albedo_color.a = lerpf(0.3, 0.65, k) * (0.6 + 0.4 * blink)
+            _place_zone(zone, zc, 0.95, 1.0, lerpf(0.8, 1.25, blink * k + (1.0 - k) * 0.5))
         var rate := lerpf(16.0, 4.0, clampf(left / LAND_FUSE, 0.0, 1.0))
         vis.scale = Vector3.ONE * (1.0 + 0.1 * sin(Time.get_ticks_msec() * 0.001 * rate) + clampf(0.6 - left, 0.0, 0.6) * 0.35)
         var spark: Node3D = vis.get_node_or_null("Spark")
@@ -1333,7 +1484,9 @@ func _process(delta: float) -> void:
     for i in _item_nodes:
         var n: Node3D = _item_nodes[i]
         if is_instance_valid(n):
-            n.rotation.y += delta * 1.6
+            var sp: Node3D = n.get_node_or_null("Spin")
+            if sp:
+                sp.rotation.y += delta * 1.6
             var ty := top_y(board.cell(int(i))) + 0.7 + sin(Time.get_ticks_msec() * 0.003 + int(i)) * 0.12
             n.global_position.y = lerpf(n.global_position.y, ty, 1.0 - exp(-12.0 * delta))
     # 던질 자리 표시 (내가 누르고 있는 동안)
@@ -1346,9 +1499,19 @@ func _process(delta: float) -> void:
             var p := board.center(c)
             var y := top_y(c) + 0.08 if board.height(c) > 0 else floor_y + 0.08
             _aim.global_position = Vector3(p.x, y, p.z)
-            var area: Node3D = _aim.get_node("Area")
-            area.scale = Vector3.ONE * (2 * stat(human.slot, 1) + 1)
             _aim.scale = Vector3.ONE * (1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.012))
+        # 터질 범위 (칸 타일, 노란색): 불꽃·던지는 방향에 맞춰 다시 만듦
+        var key := Vector2i(stat(human.slot, 1), Board.skew_of(human.facing())) if human else Vector2i.ZERO
+        if show and (_aim_zone == null or key != _aim_key):
+            if _aim_zone:
+                _aim_zone.queue_free()
+            _aim_zone = _make_zone(key.x, key.y, ZONE_AIM)
+            _aim_key = key
+        if _aim_zone:
+            if show:
+                _place_zone(_aim_zone, aim_cell(human, human.get_charge_ratio()), 0.3, 0.85)
+            else:
+                _aim_zone.visible = false
 
 
 ## 폭탄이 바로 옆(터질 범위 안)에 떨어지면 그 캐릭터가 "헉!" (던진 사람 빼고)
@@ -1359,7 +1522,7 @@ func _surprise_near(b: Dictionary) -> void:
         if f.dead or f.slot == int(b.owner):
             continue
         var fc := board.cell_at(f.global_position)
-        if absi(fc.x - c.x) <= r and absi(fc.y - c.y) <= r:
+        if board.blast(c, r, int(b.get("skew", 3))).has(fc):
             f.voice("surprise", randf_range(0.0, 0.12))
 
 
@@ -1451,11 +1614,12 @@ func on_client_message(pid: int, msg: Array) -> void:
             if ok and not f.dead and msg.size() >= 4 and active_bombs_of(f.slot) < stat(f.slot, 0):
                 var i := int(msg[1])
                 var from: Vector3 = msg[2]
-                var arc := clampf(float(msg[3]), 0.2, 8.0)
+                var arc := clampf(float(msg[3]), 0.2, 3.0)
+                var skew := (int(msg[4]) & 3) if msg.size() >= 5 else 3
                 var c := board.cell(i)
                 if board.in_bounds(c) and not board.pillar(c) and from.distance_to(f.global_position + Vector3(0, 1.4, 0)) < 3.5 \
                         and Vector2(board.center(c).x - from.x, board.center(c).z - from.z).length() <= THROW_MAX + 2.0:
-                    _create_bomb(f.slot, i, stat(f.slot, 1), false, from, arc)
+                    _create_bomb(f.slot, i, stat(f.slot, 1), false, from, arc, skew)
         "gh":
             if f and f.dead and ghosts.has(f.slot) and msg.size() >= 2:
                 ghosts[f.slot].s = fposmod(float(msg[1]), board.ghost_len())
@@ -1571,7 +1735,8 @@ func on_server_message(msg: Array) -> void:
             if human and int(msg[2]) == human.slot and not bool(msg[8]):
                 _pending_throws = maxi(_pending_throws - 1, 0)
             if not bombs.has(int(msg[1])):
-                _add_bomb(int(msg[1]), int(msg[2]), int(msg[3]), msg[4], float(msg[5]), float(msg[6]), int(msg[7]), bool(msg[8]), float(msg[9]))
+                _add_bomb(int(msg[1]), int(msg[2]), int(msg[3]), msg[4], float(msg[5]), float(msg[6]), int(msg[7]), bool(msg[8]), float(msg[9]),
+                        int(msg[10]) if msg.size() > 10 else 3)
         "sink":
             _sink_bomb(int(msg[1]))
         "boom":

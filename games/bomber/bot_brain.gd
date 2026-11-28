@@ -67,7 +67,11 @@ func _do_aim(delta: float) -> void:
         _think = 0.0
         return
     if not f.charging:
-        f.intent_charge = f.facing().dot(_aim_dir) > 0.97
+        # 쿨타임 중 누른 것은 무시되므로, 쿨타임이 끝난 뒤 새로 누름 (눌렀는데 차징이 안 됐으면 한 번 뗐다가)
+        if f.intent_charge:
+            f.intent_charge = false
+        else:
+            f.intent_charge = f.cooldown_timer <= 0.0 and f.facing().dot(_aim_dir) > 0.97
         return
     f.intent_charge = f.charge_time < _aim_time
     if not f.intent_charge:
@@ -75,7 +79,7 @@ func _do_aim(delta: float) -> void:
         _think = randf_range(0.1, 0.3)
 
 
-## 칸별로 불길이 닿기까지 남은 시간 (0 = 지금 타는 중)
+## 칸별로 (남의) 불길이 닿기까지 남은 시간 (0 = 지금 타는 중). 내 폭탄은 나를 안 맞히니 빼고 (연쇄 시각 계산에는 씀)
 func _danger() -> Dictionary:
     var b := _board()
     var now: float = game.net_now()
@@ -83,20 +87,28 @@ func _danger() -> Dictionary:
     for fl in game.flames:
         if now < float(fl.t1):
             for i in fl.cells:
-                d[int(i)] = 0.0
+                if int(fl.cells[i]) != f.slot:
+                    d[int(i)] = 0.0
     var list: Array = []
     for id in game.bombs:
         var bm: Dictionary = game.bombs[id]
-        list.append([int(bm.cell), int(bm.power), maxf(float(bm.t) - now, 0.0)])
+        list.append([int(bm.cell), int(bm.power), maxf(float(bm.t) - now, 0.0), int(bm.get("skew", 3)), int(bm.owner) == f.slot])
+    var all := {}
     for _pass in 2:
         for e in list:
-            for c: Vector2i in b.blast(b.cell(int(e[0])), int(e[1])):
+            for c: Vector2i in b.blast(b.cell(int(e[0])), int(e[1]), int(e[3])):
                 var i := b.idx(c)
-                d[i] = minf(float(d.get(i, INF)), float(e[2]))
+                all[i] = minf(float(all.get(i, INF)), float(e[2]))
         for e in list:
             var i := int(e[0])
-            if d.has(i) and float(d[i]) < float(e[2]):
-                e[2] = d[i]              # 연쇄: 먼저 터지는 불길에 닿으면 같이 터짐
+            if all.has(i) and float(all[i]) < float(e[2]):
+                e[2] = all[i]            # 연쇄: 먼저 터지는 불길에 닿으면 같이 터짐
+    for e in list:
+        if bool(e[4]):
+            continue
+        for c: Vector2i in b.blast(b.cell(int(e[0])), int(e[1]), int(e[3])):
+            var i := b.idx(c)
+            d[i] = minf(float(d.get(i, INF)), float(e[2]))
     return d
 
 
@@ -163,7 +175,7 @@ func _decide() -> void:
             _path = _bfs(c, func(n: Vector2i) -> bool: return not danger.has(b.idx(n)), {})
         return
     # 던지기
-    if game.active_bombs_of(f.slot) < game.stat(f.slot, 0) and randf() < 0.35 + skill * 0.5:
+    if f.cooldown_timer <= 0.0 and game.active_bombs_of(f.slot) < game.stat(f.slot, 0) and randf() < 0.35 + skill * 0.5:
         var best: Fighter = null
         var bd := INF
         for o in _enemies():
@@ -174,9 +186,7 @@ func _decide() -> void:
                 bd = d
                 best = o
         if best:
-            var tc := b.cell_at(best.global_position)
-            var mine: Array[Vector2i] = b.blast(tc, game.stat(f.slot, 1))
-            if not mine.has(c):
+            if true:
                 var to := best.global_position - f.global_position
                 to.y = 0.0
                 # 조금 빗나가게 (실력이 낮을수록)
@@ -188,25 +198,20 @@ func _decide() -> void:
                 _path.clear()
                 return
     # 발밑에 놓기 (탭): 상대가 내 폭발 범위 안이고, 놓은 뒤 도망칠 곳이 있으면
-    if game.active_bombs_of(f.slot) < game.stat(f.slot, 0) and randf() < 0.3 + skill * 0.5:
+    if f.cooldown_timer <= 0.0 and game.active_bombs_of(f.slot) < game.stat(f.slot, 0) and randf() < 0.3 + skill * 0.5:
         var pw: int = game.stat(f.slot, 1)
         var near := false
         for o in _enemies():
             var oc := b.cell_at(o.global_position)
-            if absi(oc.x - c.x) <= pw and absi(oc.y - c.y) <= pw:
+            if b.blast(c, pw, Board.skew_of(f.facing())).has(oc):
                 near = true
                 break
         if near:
-            var d2 := _danger()
-            for n: Vector2i in b.blast(c, pw):
-                d2[b.idx(n)] = minf(float(d2.get(b.idx(n), INF)), game.LAND_FUSE)
-            var esc := _bfs(c, func(n: Vector2i) -> bool: return not d2.has(b.idx(n)), d2, 8)
-            if not esc.is_empty() and esc.size() * _step_time() < game.LAND_FUSE - 0.5:
-                _aim_dir = f.facing()
-                _aim_time = 0.04             # 탭 (tap_threshold 보다 짧게)
-                _aim_timeout = 1.0
-                _path = esc
-                return
+            # 내 폭탄은 나를 안 맞히니 그냥 놓는다
+            _aim_dir = f.facing()
+            _aim_time = 0.04             # 탭 (tap_threshold 보다 짧게)
+            _aim_timeout = 1.0
+            return
     # 아이템
     var p := _bfs(c, func(n: Vector2i) -> bool: return game.items.has(b.idx(n)), danger, 6)
     if not p.is_empty():

@@ -125,11 +125,25 @@ func top(c: Vector2i) -> float:
     return maxf(height(c), 0) * BLOCK
 
 
-## 폭발 범위: 폭탄 칸 c 를 가운데로 한 정사각형 (반경 r → (2r+1)×(2r+1) 칸, 기본 r=1 → 3×3). 높이도 위아래 r 층
-func blast(c: Vector2i, r: int) -> Array[Vector2i]:
+## 폭발 범위 (폭탄 칸 기준 칸 오프셋 사각형): 불꽃 1 = 3×3 (가운데), 2 = 4×4 (던진 쪽으로 한 칸 더)
+##   skew: 비트 0 = x 양(+) 쪽, 비트 1 = z 양(+) 쪽 으로 치우침 (던진 방향)
+static func blast_box(power: int, skew: int) -> Rect2i:
+    if power <= 1:
+        return Rect2i(-1, -1, 3, 3)
+    return Rect2i(-1 if skew & 1 else -2, -1 if skew & 2 else -2, 4, 4)
+
+
+## 던진 방향 → 치우침 비트
+static func skew_of(dir: Vector3) -> int:
+    return (1 if dir.x >= 0.0 else 0) | (2 if dir.z >= 0.0 else 0)
+
+
+## 폭발 범위 칸 목록. 높이는 폭탄 층 기준 위아래 1층
+func blast(c: Vector2i, power: int, skew: int = 3) -> Array[Vector2i]:
     var out: Array[Vector2i] = []
-    for dy in range(-r, r + 1):
-        for dx in range(-r, r + 1):
+    var bx := blast_box(power, skew)
+    for dy in range(bx.position.y, bx.end.y):
+        for dx in range(bx.position.x, bx.end.x):
             var n := c + Vector2i(dx, dy)
             if in_bounds(n):
                 out.append(n)

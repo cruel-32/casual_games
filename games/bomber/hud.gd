@@ -5,6 +5,7 @@ extends "res://games/rock_dodge/hud.gd"
 
 var _stats: Label
 var _ghost: Label
+var _cool: Label                   ## 던지기 막대 위 글자: 쿨타임 0.5초 / 차징 / 던지기 준비
 
 
 func _ready() -> void:
@@ -34,6 +35,9 @@ func _ready() -> void:
     _stats.add_theme_color_override("font_color", UI.CREAM)
     _stats.add_theme_stylebox_override("normal", UI.box(UI.INK, 18, 12, UI.INK, 0, 4))
     _ghost = _make_label(22, true)
+    _cool = _make_label(20, true)
+    _cool.add_theme_constant_override("outline_size", 0)
+    _cool.add_theme_stylebox_override("normal", UI.box(UI.INK, 12, 2, UI.INK, 0, 4))
     for i in 5:
         var l := _make_label(18)
         l.position = Vector2(16, 44 + i * 26)
@@ -99,11 +103,29 @@ func _process(delta: float) -> void:
     var bottom := scr.y - (250.0 if _touch else 70.0)
     if human and not human.dead and game.state != PartyGame.State.ENDED:
         var s := human.slot
-        _stats.text = "💣 폭탄 %d   🔥 범위 %d×%d   ⚡ 속도 %d   ⏱ 쿨타임 %.2f초" % [game.stat(s, 0), 2 * game.stat(s, 1) + 1, 2 * game.stat(s, 1) + 1, game.stat(s, 2), game.throw_cooldown(human)]
+        var sz := 4 if game.stat(s, 1) >= 2 else 3
+        _stats.text = "💣 폭탄 %d   🔥 범위 %d×%d   ⚡ 속도 %d   ⏱ 쿨타임 %.2f초" % [game.stat(s, 0), sz, sz, game.stat(s, 2), game.throw_cooldown(human)]
         _stats.visible = true
-        _place_centered(_stats, bottom)
+        _place_centered(_stats, bottom - 90.0)
+        # 던지기 막대 글자 (돌피하기처럼): 쿨타임 남은 시간 / 차징 / 준비
+        var col := UI.TEAL
+        if human.cooldown_timer > 0.0:
+            _cool.text = "쿨타임 %.1f초" % human.cooldown_timer
+            col = UI.BLUE
+        elif human.charging and human.charge_time >= human.tap_threshold:
+            _cool.text = "차징 %d%%" % int(round(human.get_charge_ratio() * 100.0))
+            col = UI.YELLOW
+        elif game.active_bombs_of(s) >= game.stat(s, 0):
+            _cool.text = "폭탄이 터지길 기다리는 중"
+            col = UI.CREAM
+        else:
+            _cool.text = "던지기 준비!"
+        _cool.add_theme_color_override("font_color", col.lightened(0.35))
+        _cool.visible = game.state == PartyGame.State.PLAYING
+        _place_centered(_cool, bottom - 32.0)
     else:
         _stats.visible = false
+        _cool.visible = false
     if human and human.dead and game.ghosts.has(human.slot) and game.state == PartyGame.State.PLAYING:
         var cd: float = game.ghost_cooldown_left(human.slot)
         var key := "던지기 버튼" if _touch else "좌클릭/E"
@@ -134,6 +156,40 @@ func _draw() -> void:
     if game == null or game.board == null or game.state == PartyGame.State.COUNTDOWN:
         return
     _draw_minimap()
+    if game.state == PartyGame.State.PLAYING:
+        _draw_cool_bar()
+
+
+## 던지기 막대 (돌피하기와 같은 모양): 차징 = 노랑→빨강, 쿨타임 = 파랑으로 차오름, 준비 = 꽉 찬 청록
+func _draw_cool_bar() -> void:
+    var h: Fighter = game.human
+    if h == null or h.dead:
+        return
+    var scr := _screen()
+    var pos := Vector2((scr.x - BAR_W) * 0.5, scr.y - (250.0 if _touch else 70.0) + 6.0)
+    var frame := StyleBoxFlat.new()
+    frame.bg_color = UI.CREAM
+    frame.border_color = UI.INK
+    frame.set_border_width_all(3)
+    frame.set_corner_radius_all(int(BAR_H * 0.5 + 4))
+    draw_style_box(frame, Rect2(pos - Vector2(5, 5), Vector2(BAR_W + 10, BAR_H + 10)))
+    var fill := 1.0
+    var col := UI.TEAL
+    if h.cooldown_timer > 0.0:
+        fill = 1.0 - h.cooldown_timer / maxf(h.cooldown_total, 0.01)
+        col = UI.BLUE
+    elif h.charging and h.charge_time >= h.tap_threshold:
+        fill = h.get_charge_ratio()
+        col = UI.YELLOW.lerp(UI.RED, fill)
+        if fill >= 0.999:
+            col = col.lerp(Color.WHITE, 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.025))
+    elif game.active_bombs_of(h.slot) >= game.stat(h.slot, 0):
+        col = Color(UI.INK, 0.3)
+    if fill > 0.02:
+        var bar := StyleBoxFlat.new()
+        bar.bg_color = col
+        bar.set_corner_radius_all(int(BAR_H * 0.5))
+        draw_style_box(bar, Rect2(pos, Vector2(maxf(BAR_W * fill, BAR_H), BAR_H)))
 
 
 ## 오른쪽 아래 작은 지도: 기둥·상자·폭탄·사람 (카메라를 가까이 당겨도 전체 상황이 보이게)
