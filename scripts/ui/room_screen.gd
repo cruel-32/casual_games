@@ -1,4 +1,5 @@
 extends Control
+const LoadingOverlay := preload("res://scripts/ui/loading_overlay.gd")
 ## 3단계: 대기룸 — 참가자 슬롯(캐릭터 초상화, 최대 12), 레디, 방장 설정/강퇴/위임, 채팅, 게임 시작
 ## 슬롯 색 = 게임 안 캐릭터 색 (Fighter.SLOT_COLORS, 초상화 ui/portraits/slot_N.png)
 
@@ -168,7 +169,9 @@ func _ready() -> void:
     _start_btn = UI.cta_button("게임 시작!")
     _start_btn.custom_minimum_size = Vector2(250, 62)
     _start_btn.add_theme_font_size_override("font_size", 28)
-    _start_btn.pressed.connect(func(): Net.start_game())
+    _start_btn.pressed.connect(func():
+        LoadingOverlay.open(get_tree(), "게임 시작 준비 중…")
+        Net.start_game())
     bottom.add_child(_start_btn)
 
     # 게임 중 대기 오버레이

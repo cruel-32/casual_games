@@ -124,34 +124,26 @@ func top(c: Vector2i) -> float:
     return maxf(height(c), 0) * BLOCK
 
 
-## 폭발: 폭탄 칸 c (그 칸 높이 = 폭발 층 L) 에서 십자로
-##   부서지지 않는 칸: 높이가 같으면 그 위까지 불길이 닿고 멈춤, 더 높으면 막힘
-##   L 보다 높은 블록은 벽처럼 맞고(깎임) 멈춤
-##   돌려줌: 불길 칸들 (깎을지는 lowered_by 로)
-func blast(c: Vector2i, power: int) -> Array[Vector2i]:
-    var level := maxi(height(c), 0)
-    var fire: Array[Vector2i] = [c]
-    for dir in DIRS:
-        for k in range(1, power + 1):
-            var n: Vector2i = c + dir * k
-            if not in_bounds(n):
-                break
-            if pillar(n):
-                if height(n) <= level:
-                    fire.append(n)
-                break
-            fire.append(n)
-            if height(n) > level:
-                break
-    return fire
+## 폭발 범위: 폭탄 칸 c 를 가운데로 한 정사각형 (반경 r → (2r+1)×(2r+1) 칸, 기본 r=1 → 3×3). 높이도 위아래 r 층
+func blast(c: Vector2i, r: int) -> Array[Vector2i]:
+    var out: Array[Vector2i] = []
+    for dy in range(-r, r + 1):
+        for dx in range(-r, r + 1):
+            var n := c + Vector2i(dx, dy)
+            if in_bounds(n):
+                out.append(n)
+    return out
 
 
-## 불길 칸이 깎이는 층 수: 가운데 2, 나머지 1. 폭발 층보다 2층 넘게 낮은 칸은 불길이 위로 지나감 (0)
-func lowered_by(center_cell: Vector2i, n: Vector2i, level: int) -> int:
+## 폭발 뒤 칸 높이: 폭발 층 L(폭탄이 놓인 칸 높이), 반경 r. 부서지는 블록이 범위(L-r ~ L+r 층) 안까지 쌓여 있으면
+##   범위 안 블록이 모두 사라져 높이 L-r 이 됨 (평평한 곳이면 r 층 깎임). 더 높이 쌓인 탑·더 낮은 칸·부서지지 않는 칸은 그대로
+func height_after(n: Vector2i, level: int, r: int) -> int:
     var hn := height(n)
-    if pillar(n) or hn <= 0 or hn < level - 1:
-        return 0
-    return 2 if n == center_cell else 1
+    if pillar(n) or hn <= 0:
+        return hn
+    if hn > level - r and hn <= level + r:
+        return maxi(level - r, 0)
+    return hn
 
 
 ## 던진 폭탄이 떨어질 칸: from 에서 dir 쪽으로 dist m. 경기장 밖이면 앞쪽으로 당김

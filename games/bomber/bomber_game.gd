@@ -2,12 +2,12 @@ extends PartyGame
 ## [게임 모듈] 연쇄폭탄마 (블록 탑 위에서 폭탄 던지기)
 ## - 정사각형 격자의 칸마다 2m 정육면체 블록이 4층 평평하게 쌓여 있고, 모두 꼭대기에서 시작한다. 아래는 용암
 ## - 부서지지 않는 블록(테두리와 짝수·짝수 칸)도 높이가 같아 위에 설 수 있다. 가장자리 밖으로 떨어져도 탈락
-## - 밀치기 키(좌클릭·E·터치 '던지기')를 누르고 있으면 떨어질 자리가 보이고, 누른 시간만큼 멀리 포물선으로 던진다
-##   폭탄은 떨어지고 LAND_FUSE 초 뒤 십자로 터진다 (범위 = 불꽃 수). 다른 폭탄에 닿으면 연쇄 폭발
-## - 터진 칸은 블록이 깎인다 (가운데 2층, 나머지 1층). 높이 0 이 되면 구멍 → 용암
+## - 밀치기 키(좌클릭·E·터치 "던지기"): 탭 = 발밑에 놓기, 차징 = 차징한 만큼 멀리·높이 포물선으로 던지기 (떨어질 자리·범위 표시)
+##   폭탄은 떨어지고 LAND_FUSE 초 뒤 정사각형으로 터진다 (반경 = 불꽃 수, 기본 1 = 3×3, 높이도 위아래 반경 층). 범위 안 폭탄은 연쇄 폭발
+## - 범위 안 블록이 깎인다 (평평하면 반경만큼). 높이 0 이 되면 구멍 → 용암
 ## - 폭탄 불길에 맞거나 용암에 떨어지면 바로 탈락 (내 폭탄·아군 폭탄 포함). 마지막까지 남은 사람(팀) 승리
 ## - 탈락하면 유령이 되어 경기장 바깥 테두리를 돌며 안쪽으로 폭탄을 던진다 (쿨타임)
-## - Space 는 점프 (블록 3층까지 한 번에). 날아가는 폭탄에 맞으면 살짝 밀려남
+## - Space 는 점프 (블록 2층까지 한 번에). 날아가는 폭탄에 맞으면 살짝 밀려남
 ##
 ## 온라인 (돌피하기·무궁화와 같은 구조)
 ## - 서버: 폭탄 생성(던진 자리·떨어질 칸·시각)·폭발·연쇄·블록 깎기·아이템·탈락·승패를 정해 알림. 봇·봇 유령도 서버가
@@ -29,26 +29,26 @@ const THROW_MIN := 2.0            ## 던지는 거리 (m): 살짝 누름 ~ 끝�
 const THROW_MAX := 18.0
 const FLIGHT_BASE := 0.18         ## 날아가는 시간 = 기본 + 거리 비례 (빠르게)
 const FLIGHT_PER_M := 0.014
-const HIT_BELOW := 1.6            ## 불길 판정 높이: 폭발 층 꼭대기 기준 아래 / 위 (m)
-const HIT_ABOVE := 3.2
+const HIT_BELOW := 0.3            ## 불길 판정 높이: 폭발 층 꼭대기 기준 위아래 (반경 × 블록) + 여유 아래 / 위 (m)
+const HIT_ABOVE := 1.0
 const LAVA_OUT := 0.4             ## 발이 용암(바닥) 위 이 높이보다 낮으면 탈락 — 경기장 밖으로 떨어져도
 const BODY_SCALE := 1.3           ## 캐릭터 크기 (블록 2m 에 맞춰 키움)
-const BASE_SPEED := 9.6           ## 이동 속도 (속도 아이템 1개마다 +SPEED_STEP)
-const SPEED_STEP := 1.2
+const BASE_SPEED := 7.2           ## 이동 속도 (속도 아이템 1개마다 +SPEED_STEP) — 처음(4.8)의 1.5배
+const SPEED_STEP := 0.9
 const CHARGE_TIME := 0.7          ## 끝까지 멀리 던지려면 누르는 시간
 const BOMB_HIT_R := 1.2           ## 날아가는 폭탄이 캐릭터에 맞는 거리 → 살짝 밀려남
 const BOMB_HIT_PUSH := 7.0
 const START_BOMBS := 1
-const START_POWER := 2
+const START_POWER := 1            ## 폭발 반경 1 = 3×3 (불꽃 아이템마다 +1: 5×5, 7×7 …)
 const MAX_BOMBS := 6
-const MAX_POWER := 7
+const MAX_POWER := 4
 const MAX_SPEED := 3
 const ITEM_CHANCE := 0.14         ## 블록이 깎인 칸에서 아이템이 나올 확률
 const GHOST_SPEED := 7.0
 const GHOST_COOLDOWN := 5.0
-const GHOST_POWER := 2
+const GHOST_POWER := 1
 const GHOST_DELAY := 1.0
-const JUMP_VELOCITY := 16.0      ## 점프 높이 약 6.5m: 블록 3층(6m)까지 한 번에 올라감
+const JUMP_VELOCITY := 13.0      ## 점프 높이 약 4.3m: 블록 2층(4m)까지 한 번에 올라감
 const FLOOR_LIFT := 0.45          ## 용암 판을 땅보다 이만큼 높게 (짧은 풀이 뚫고 보이지 않게)
 const CAM_CENTER_PULL := 0.55
 
@@ -257,6 +257,20 @@ func _build_board() -> void:
     am.no_depth_test = true
     ring.material_override = am
     _aim.add_child(ring)
+    # 터질 범위 (반경에 맞춰 크기를 바꿈)
+    var area := MeshInstance3D.new()
+    area.name = "Area"
+    var ap := PlaneMesh.new()
+    ap.size = Vector2(T, T)
+    area.mesh = ap
+    var arm := StandardMaterial3D.new()
+    arm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    arm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    arm.albedo_color = Color(1.0, 0.9, 0.2, 0.28)
+    arm.no_depth_test = true
+    area.material_override = arm
+    area.position.y = 0.02
+    _aim.add_child(area)
     _aim.visible = false
 
 
@@ -500,12 +514,19 @@ static func throw_dist(r: float) -> float:
     return lerpf(THROW_MIN, THROW_MAX, clampf(r, 0.0, 1.0))
 
 
-## 지금 손을 떼면 떨어질 칸 (조준 표시·봇용)
+## 지금 손을 떼면 떨어질 칸 (조준 표시·봇용). r < 0 = 탭 → 발밑
 func aim_cell(f: Fighter, r: float) -> Vector2i:
+    if r < 0.0:
+        return board.cell_at(f.global_position)
     return board.throw_target(f.global_position, f.facing(), throw_dist(r))
 
 
-## Fighter 가 밀치기 키를 뗐다 (던지기 모드)
+## 던지는 높이 (포물선 꼭대기가 시작·끝 중 높은 쪽보다 이만큼 위): 탭은 살짝, 차징할수록 높이
+static func throw_arc(r: float) -> float:
+    return 0.4 if r < 0.0 else lerpf(1.5, 7.0, clampf(r, 0.0, 1.0))
+
+
+## Fighter 가 밀치기 키를 뗐다 (던지기 모드): 탭 r = -1 → 발밑에 놓기, 차징 r = 0~1 → 멀리·높이 던지기
 func on_throw(f: Fighter, r: float) -> void:
     if f.dead or not is_playing() or f.remote:
         return
@@ -514,30 +535,36 @@ func on_throw(f: Fighter, r: float) -> void:
             popup_text(f.global_position + Vector3(0, 2.4, 0), "폭탄 없음", Color(0.9, 0.9, 0.9))
         return
     var c := aim_cell(f, r)
-    var from := f.global_position + Vector3(0, 1.4, 0)
+    var from := f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)
+    var arc := throw_arc(r)
     if is_client():
-        send_to_server(["throw", board.idx(c), from])
+        send_to_server(["throw", board.idx(c), from, arc])
         return
-    _create_bomb(f.slot, board.idx(c), stat(f.slot, 1), false, from)
+    _create_bomb(f.slot, board.idx(c), stat(f.slot, 1), false, from, arc)
 
 
 ## 서버·오프라인: 폭탄 만들기 (from 에서 포물선으로 날아가 칸 i 에 떨어짐)
-func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3) -> void:
+func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3, arc: float = 4.0) -> void:
     var id := _next_bomb_id
     _next_bomb_id += 1
     var now := net_now()
+    var t_land := now + flight_time(from, i, arc)
+    var t := t_land + LAND_FUSE
+    _add_bomb(id, owner, i, from, t_land, t, power, ghost, arc)
+    if is_server():
+        broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost, arc])
+
+
+## 날아가는 시간: 기본 + 거리 비례 + 높이 비례 (높이 던질수록 조금 더 걸림)
+func flight_time(from: Vector3, i: int, arc: float) -> float:
     var to := board.center(board.cell(i))
     var dist := Vector2(to.x - from.x, to.z - from.z).length()
-    var t_land := now + FLIGHT_BASE + dist * FLIGHT_PER_M
-    var t := t_land + LAND_FUSE
-    _add_bomb(id, owner, i, from, t_land, t, power, ghost)
-    if is_server():
-        broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost])
+    return FLIGHT_BASE + dist * FLIGHT_PER_M + arc * 0.03
 
 
-func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool) -> void:
+func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool, arc: float = 4.0) -> void:
     var b := {"id": id, "owner": owner, "cell": i, "from": from, "t_land": t_land, "t": t, "power": power,
-            "ghost": ghost, "node": null, "landed": false, "hit": {}}
+            "ghost": ghost, "node": null, "landed": false, "hit": {}, "arc": arc}
     bombs[id] = b
     if is_server():
         return
@@ -594,10 +621,9 @@ func bomb_pos(b: Dictionary, t: float) -> Vector3:
     if t >= float(b.t_land):
         return end
     var from: Vector3 = b.from
-    var dur := FLIGHT_BASE + Vector2(end.x - from.x, end.z - from.z).length() * FLIGHT_PER_M
+    var dur := flight_time(from, int(b.cell), float(b.arc))
     var k := clampf(1.0 - (float(b.t_land) - t) / maxf(dur, 0.05), 0.0, 1.0)
-    var apex := maxf(from.y, end.y) + 2.5 + Vector2(end.x - from.x, end.z - from.z).length() * 0.12
-    var y := lerpf(from.y, end.y, k) + (apex - maxf(from.y, end.y)) * 4.0 * k * (1.0 - k)
+    var y := lerpf(from.y, end.y, k) + float(b.arc) * 4.0 * k * (1.0 - k)
     return Vector3(lerpf(from.x, end.x, k), y, lerpf(from.z, end.z, k))
 
 
@@ -687,20 +713,22 @@ func _explode(ids: Array, now: float) -> void:
         var level := maxi(board.height(c), 0)
         var y := floor_y + level * Board.BLOCK
         var owner := int(b.owner)
+        var r := int(b.power)
         var fire := {}
-        for n: Vector2i in board.blast(c, int(b.power)):
+        for n: Vector2i in board.blast(c, r):
             var i := board.idx(n)
             fire[i] = owner
-            lower[i] = maxi(int(lower.get(i, 0)), board.lowered_by(c, n, level))
-            if items.has(i) and absf(top_y(n) - y) <= 1.5:
+            var cut := maxi(board.height(n), 0) - maxi(board.height_after(n, level, r), 0)
+            lower[i] = maxi(int(lower.get(i, 0)), cut)
+            if items.has(i) and absf(top_y(n) - y) <= r * Board.BLOCK + 0.1:
                 burned[i] = true
             for oid in bombs:
                 var ob: Dictionary = bombs[oid]
                 if done.has(int(oid)) or int(ob.cell) != i or now < float(ob.t_land):
                     continue
-                if absi(board.height(n) - level) <= 1:
+                if absi(board.height(n) - level) <= r:
                     queue.append(int(oid))
-        groups.append({"cells": fire, "y": y})
+        groups.append({"cells": fire, "y": y, "r": r})
     # 새 아이템 (깎인 칸에서, 깎인 뒤에도 서 있을 수 있으면)
     var new_items := PackedInt32Array()
     for i in lower:
@@ -727,7 +755,7 @@ func _explode(ids: Array, now: float) -> void:
             for i in gr.cells:
                 cells.append(int(i))
                 owners.append(int(gr.cells[i]))
-            gdata.append([cells, owners, float(gr.y)])
+            gdata.append([cells, owners, float(gr.y), int(gr.r)])
         broadcast(["boom", now, ids_arr, gdata, low, burned_arr, new_items])
 
 
@@ -744,7 +772,7 @@ func _apply_boom(ids: PackedInt32Array, groups: Array, low: PackedInt32Array, bu
     for i in burned:
         _remove_item(int(i), true)
     for gr in groups:
-        flames.append({"cells": gr.cells, "y": float(gr.y), "t0": t, "t1": t + FLAME_TIME})
+        flames.append({"cells": gr.cells, "y": float(gr.y), "r": int(gr.r), "t0": t, "t1": t + FLAME_TIME})
     for k in range(0, low.size() - 1, 2):
         _lower(low[k], low[k + 1])
         if board.height(board.cell(low[k])) <= 0 and items.has(low[k]):
@@ -803,7 +831,8 @@ func _in_flame(i: int, t: float, y: float) -> int:
     for fl in flames:
         if t >= float(fl.t0) and t < float(fl.t1) and fl.cells.has(i):
             var fy := float(fl.y)
-            if y >= fy - HIT_BELOW and y <= fy + HIT_ABOVE:
+            var reach := int(fl.r) * Board.BLOCK
+            if y >= fy - reach - HIT_BELOW and y <= fy + reach + HIT_ABOVE:
                 return int(fl.cells[i])
     return -2
 
@@ -1145,7 +1174,7 @@ func _ghost_throw(slot: int, s: float) -> void:
     g.cool = net_now() + GHOST_COOLDOWN
     if is_server():
         broadcast(["gcool", slot, float(g.cool)])
-    _create_bomb(slot, board.idx(c), GHOST_POWER, true, board.ghost_pos(s) + Vector3(0, floor_y + 1.6, 0))
+    _create_bomb(slot, board.idx(c), GHOST_POWER, true, board.ghost_pos(s) + Vector3(0, floor_y + Board.LAYERS * Board.BLOCK + 1.6, 0), 4.0)
 
 
 func _drive_bot_ghosts(delta: float) -> void:
@@ -1257,14 +1286,16 @@ func _process(delta: float) -> void:
             n.global_position.y = lerpf(n.global_position.y, ty, 1.0 - exp(-12.0 * delta))
     # 던질 자리 표시 (내가 누르고 있는 동안)
     if _aim:
-        var show := human != null and not human.dead and human.charging and is_playing()
+        var show := human != null and not human.dead and human.charging and is_playing() and human.charge_time >= human.tap_threshold
         _aim.visible = show
         if show:
-            var r := clampf(human.charge_time / human.charge_full_time(), 0.0, 1.0)
+            var r := human.get_charge_ratio()
             var c := aim_cell(human, r)
             var p := board.center(c)
             var y := top_y(c) + 0.08 if board.height(c) > 0 else floor_y + 0.08
             _aim.global_position = Vector3(p.x, y, p.z)
+            var area: Node3D = _aim.get_node("Area")
+            area.scale = Vector3.ONE * (2 * stat(human.slot, 1) + 1)
             _aim.scale = Vector3.ONE * (1.0 + 0.08 * sin(Time.get_ticks_msec() * 0.012))
 
 
@@ -1353,13 +1384,14 @@ func on_client_message(pid: int, msg: Array) -> void:
             if f and not f.dead and msg.size() >= 3 and _loaded.has(pid) and play_start_t > 0.0 and float(msg[1]) >= play_start_t:
                 _server_receive_state(f, float(msg[1]), msg[2])
         "throw":
-            if ok and not f.dead and msg.size() >= 3 and active_bombs_of(f.slot) < stat(f.slot, 0):
+            if ok and not f.dead and msg.size() >= 4 and active_bombs_of(f.slot) < stat(f.slot, 0):
                 var i := int(msg[1])
                 var from: Vector3 = msg[2]
+                var arc := clampf(float(msg[3]), 0.2, 8.0)
                 var c := board.cell(i)
                 if board.in_bounds(c) and not board.pillar(c) and from.distance_to(f.global_position + Vector3(0, 1.4, 0)) < 3.5 \
                         and Vector2(board.center(c).x - from.x, board.center(c).z - from.z).length() <= THROW_MAX + 2.0:
-                    _create_bomb(f.slot, i, stat(f.slot, 1), false, from)
+                    _create_bomb(f.slot, i, stat(f.slot, 1), false, from, arc)
         "gh":
             if f and f.dead and ghosts.has(f.slot) and msg.size() >= 2:
                 ghosts[f.slot].s = fposmod(float(msg[1]), board.ghost_len())
@@ -1473,7 +1505,7 @@ func on_server_message(msg: Array) -> void:
                 Sync.push_entry(f, e)
         "bomb":
             if not bombs.has(int(msg[1])):
-                _add_bomb(int(msg[1]), int(msg[2]), int(msg[3]), msg[4], float(msg[5]), float(msg[6]), int(msg[7]), bool(msg[8]))
+                _add_bomb(int(msg[1]), int(msg[2]), int(msg[3]), msg[4], float(msg[5]), float(msg[6]), int(msg[7]), bool(msg[8]), float(msg[9]))
         "sink":
             _sink_bomb(int(msg[1]))
         "boom":
@@ -1484,7 +1516,7 @@ func on_server_message(msg: Array) -> void:
                 var owners: PackedInt32Array = gd[1]
                 for k in cells.size():
                     fire[cells[k]] = owners[k]
-                groups.append({"cells": fire, "y": float(gd[2])})
+                groups.append({"cells": fire, "y": float(gd[2]), "r": int(gd[3])})
             _apply_boom(msg[2], groups, msg[4], msg[5], msg[6], float(msg[1]))
         "item":
             var f := _fighter_at(int(msg[2]))

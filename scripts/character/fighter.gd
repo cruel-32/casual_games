@@ -190,7 +190,7 @@ var cam_max_len := 9.0               ## 〃 축소 한계
 var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 연쇄폭탄마 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
 var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 연쇄폭탄마 1.3)
-var throw_mode := false              ## true 면 밀치기 키 = 누른 시간만큼 던지기 (game.on_throw(self, 0~1))
+var throw_mode := false              ## true 면 밀치기 키 = 탭: game.on_throw(self, -1) / 차징: game.on_throw(self, 0~1)
 
 
 func _ready() -> void:
@@ -964,8 +964,8 @@ func _cancel_charge(penalty: bool = true) -> void:
 
 func _release_push() -> void:
     if throw_mode:
-        # 던지기 모드 (예: 연쇄폭탄마): 밀치기 대신 누른 시간만큼 멀리 던짐
-        var r := clampf(charge_time / charge_full_time(), 0.0, 1.0)
+        # 던지기 모드 (예: 연쇄폭탄마): 밀치기 대신 — 탭 = r -1 (발밑에 놓기), 차징 = 차징한 만큼 0~1 (멀리·높이 던지기)
+        var r := -1.0 if charge_time < tap_threshold else get_charge_ratio()
         charging = false
         if is_human:
             Sfx.charge_stop()

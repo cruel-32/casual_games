@@ -22,6 +22,7 @@ extends Node3D
 
 const TOUCH_SCRIPT := preload("res://scripts/ui/touch_controls.gd")
 const ROTATE_HINT := preload("res://scripts/ui/rotate_hint.gd")
+const LOADING_WATCH := preload("res://scripts/ui/loading_watch.gd")
 const MENU_SCENE := "res://scenes/app.tscn"
 
 enum State { COUNTDOWN, PLAYING, ENDED }
@@ -123,6 +124,9 @@ func popup_text(pos: Vector3, text: String, color: Color, relay: bool = false) -
 
 ## 터치 기기용 컨트롤 + 세로 화면 안내를 HUD 레이어에 붙인다
 func add_common_ui(layer: CanvasLayer) -> void:
+    var watch: Node = LOADING_WATCH.new()
+    watch.game = self
+    add_child(watch)
     if TOUCH_SCRIPT.should_enable() and human:
         var touch: Control = TOUCH_SCRIPT.new()
         touch.game = self
@@ -142,6 +146,9 @@ const SETTLE_MAX_MS := 25000
 ##   _ready 직후 첫 몇 프레임은 셰이더 컴파일·텍스처 올리기로 몇 초씩 멈출 수 있다. 그 전에 알리면
 ##   서버가 카운트다운을 시작해 버려서, 느린 기기는 멈춰 있다 들어가 보니 다들 한참 달리고 있었다
 ##   → 프레임이 SETTLE_FRAMES 번 연속 SETTLE_FRAME_MS 안에 그려질 때(최대 25초)까지 기다린다
+var loaded_sent := false             ## 클라이언트: 화면이 준비돼 서버에 loaded 를 보냈나 (불러오는 중 표시 글자용)
+
+
 func send_loaded_when_settled() -> void:
     _settle_and_send.call_deferred()
 
@@ -159,6 +166,7 @@ func _settle_and_send() -> void:
         last = now
     if is_inside_tree():
         send_to_server(["loaded"])
+        loaded_sent = true
 
 
 ## 출발 자리 순서: 팀전이면 팀이 번갈아 서도록 (같은 팀끼리 뭉치지 않게). slot 번호는 그대로 두고 자리만 섞는다

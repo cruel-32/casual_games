@@ -434,6 +434,7 @@ func _start_game() -> void:
 
 
 func _on_next_round(_room: Dictionary) -> void:
+	await load("res://scripts/ui/loading_overlay.gd").open_and_wait(get_tree(), "다음 라운드 불러오는 중…")
 	get_tree().change_scene_to_file("res://scenes/match.tscn")
 
 

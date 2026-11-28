@@ -7,6 +7,7 @@ const TITLE := preload("res://scripts/ui/title_screen.gd")
 const LOBBY := preload("res://scripts/ui/lobby_screen.gd")
 const ROOM := preload("res://scripts/ui/room_screen.gd")
 const GAME_SCENE := "res://scenes/match.tscn"
+const LoadingOverlay := preload("res://scripts/ui/loading_overlay.gd")
 const GameRegistry := preload("res://scripts/core/game_registry.gd")
 const SETTINGS_PATH := "user://settings.cfg"
 const RETRO_BG := preload("res://shaders/retro_bg.gdshader")
@@ -156,6 +157,7 @@ func start_local_server(port: int) -> bool:
 func start_offline_practice(game_id: String = "") -> void:
     Net.match_config = {}
     load("res://scripts/world/world.gd").offline_game_id = game_id if game_id != "" else GameRegistry.default_id()
+    await LoadingOverlay.open_and_wait(get_tree(), "게임 불러오는 중…")
     get_tree().change_scene_to_file(GAME_SCENE)
 
 
@@ -167,11 +169,13 @@ func _notification(what: int) -> void:
 
 
 func _on_disconnected() -> void:
+    LoadingOverlay.close(get_tree())
     show_screen("title")
     toast("서버와 연결이 끊어졌습니다", UI.DANGER)
 
 
 func _on_error(text: String) -> void:
+    LoadingOverlay.close(get_tree())          # 게임 시작이 거절되면 기다림 표시를 닫음
     toast(text, UI.DANGER)
 
 
@@ -187,4 +191,5 @@ func _on_room_updated(_room: Dictionary) -> void:
 
 
 func _on_game_started(_room: Dictionary) -> void:
+    await LoadingOverlay.open_and_wait(get_tree(), "게임 불러오는 중…")
     get_tree().change_scene_to_file(GAME_SCENE)

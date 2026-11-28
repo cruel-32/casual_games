@@ -13,9 +13,9 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     _help = _make_label(16)
     if _touch:
-        _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 던지기 버튼을 누르고 있다가 떼서 폭탄 던지기 · 점프 버튼"
+        _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 던지기 버튼 탭 = 발밑에 놓기, 누르다 떼기 = 던지기 · 점프 버튼"
     else:
-        _help.text = "WASD 이동 · 마우스 시점 · 휠 확대/축소 · 좌클릭/E 누르고 떼서 폭탄 던지기 · Space 점프%s" \
+        _help.text = "WASD 이동 · 마우스 시점 · 휠 확대/축소 · 좌클릭/E 탭 = 발밑에 놓기, 누르다 떼기 = 멀리 던지기 · Space 점프%s" \
                 % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
     _build_menu_bar()

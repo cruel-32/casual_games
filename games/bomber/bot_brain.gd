@@ -1,6 +1,6 @@
 extends Node
 ## 봇 (연쇄폭탄마): 블록 탑 격자 위에서 생각한다
-##   1. 지금 칸이 곧 터질 자리면 → 안전한 칸으로 도망 (구멍은 피하고, 3층까지는 점프로 오름)
+##   1. 지금 칸이 곧 터질 자리면 → 안전한 칸으로 도망 (구멍은 피하고, 2층까지는 점프로 오름)
 ##   2. 던질 폭탄이 있고 상대가 3~18m 안이면 → 상대 쪽으로 몸을 돌리고, 거리만큼 눌렀다가 던짐 (내가 맞을 자리는 안 던짐)
 ##   3. 가까운 아이템 줍기
 ##   4. 상대에게서 3~5칸 떨어진 자리로 이동
@@ -100,12 +100,12 @@ func _danger() -> Dictionary:
     return d
 
 
-## 옆 칸으로 갈 수 있나: 서 있을 수 있고, 3층 넘게 높지 않음 (점프 약 6.5m)
+## 옆 칸으로 갈 수 있나: 서 있을 수 있고, 2층 넘게 높지 않음 (점프 약 4.3m)
 func _can_step(from: Vector2i, to: Vector2i) -> bool:
     var b := _board()
     if not b.standable(to):
         return false
-    return b.height(to) - b.height(from) <= 3
+    return b.height(to) - b.height(from) <= 2
 
 
 func _bfs(start: Vector2i, goal: Callable, danger: Dictionary, max_depth: int = 30) -> Array[Vector2i]:
@@ -170,7 +170,7 @@ func _decide() -> void:
             var to := o.global_position - f.global_position
             to.y = 0.0
             var d := to.length()
-            if d >= 3.0 and d <= game.THROW_MAX and d < bd:
+            if d >= 4.5 and d <= game.THROW_MAX and d < bd:
                 bd = d
                 best = o
         if best:
@@ -183,9 +183,29 @@ func _decide() -> void:
                 var dist := to.length() + randf_range(-1.2, 1.2) * (1.0 - skill)
                 _aim_dir = to.normalized().rotated(Vector3.UP, randf_range(-0.12, 0.12) * (1.0 - skill))
                 var r := clampf((dist - game.THROW_MIN) / (game.THROW_MAX - game.THROW_MIN), 0.0, 1.0)
-                _aim_time = r * f.charge_full_time()
+                _aim_time = f.tap_threshold + 0.02 + r * (f.charge_full_time() - f.tap_threshold)
                 _aim_timeout = 2.5
                 _path.clear()
+                return
+    # 발밑에 놓기 (탭): 상대가 내 폭발 범위 안이고, 놓은 뒤 도망칠 곳이 있으면
+    if game.active_bombs_of(f.slot) < game.stat(f.slot, 0) and randf() < 0.3 + skill * 0.5:
+        var pw: int = game.stat(f.slot, 1)
+        var near := false
+        for o in _enemies():
+            var oc := b.cell_at(o.global_position)
+            if absi(oc.x - c.x) <= pw and absi(oc.y - c.y) <= pw:
+                near = true
+                break
+        if near:
+            var d2 := _danger()
+            for n: Vector2i in b.blast(c, pw):
+                d2[b.idx(n)] = minf(float(d2.get(b.idx(n), INF)), game.LAND_FUSE)
+            var esc := _bfs(c, func(n: Vector2i) -> bool: return not d2.has(b.idx(n)), d2, 8)
+            if not esc.is_empty() and esc.size() * _step_time() < game.LAND_FUSE - 0.5:
+                _aim_dir = f.facing()
+                _aim_time = 0.04             # 탭 (tap_threshold 보다 짧게)
+                _aim_timeout = 1.0
+                _path = esc
                 return
     # 아이템
     var p := _bfs(c, func(n: Vector2i) -> bool: return game.items.has(b.idx(n)), danger, 6)
