@@ -79,7 +79,7 @@ func _do_aim(delta: float) -> void:
         _think = randf_range(0.1, 0.3)
 
 
-## 칸별로 (남의) 불길이 닿기까지 남은 시간 (0 = 지금 타는 중). 내 폭탄은 나를 안 맞히니 빼고 (연쇄 시각 계산에는 씀)
+## 칸별로 불길이 닿기까지 남은 시간 (0 = 지금 타는 중). 내 폭탄에도 맞으므로 모두 셈
 func _danger() -> Dictionary:
     var b := _board()
     var now: float = game.net_now()
@@ -87,8 +87,7 @@ func _danger() -> Dictionary:
     for fl in game.flames:
         if now < float(fl.t1):
             for i in fl.cells:
-                if int(fl.cells[i]) != f.slot:
-                    d[int(i)] = 0.0
+                d[int(i)] = 0.0
     var list: Array = []
     for id in game.bombs:
         var bm: Dictionary = game.bombs[id]
@@ -104,8 +103,6 @@ func _danger() -> Dictionary:
             if all.has(i) and float(all[i]) < float(e[2]):
                 e[2] = all[i]            # 연쇄: 먼저 터지는 불길에 닿으면 같이 터짐
     for e in list:
-        if bool(e[4]):
-            continue
         for c: Vector2i in b.blast(b.cell(int(e[0])), int(e[1]), int(e[3])):
             var i := b.idx(c)
             d[i] = minf(float(d.get(i, INF)), float(e[2]))
@@ -186,7 +183,8 @@ func _decide() -> void:
                 bd = d
                 best = o
         if best:
-            if true:
+            var mine: Array[Vector2i] = b.blast(b.cell_at(best.global_position), game.stat(f.slot, 1), Board.skew_of(best.global_position - f.global_position))
+            if not mine.has(c):          # 내가 맞을 자리면 안 던짐
                 var to := best.global_position - f.global_position
                 to.y = 0.0
                 # 조금 빗나가게 (실력이 낮을수록)
@@ -218,11 +216,17 @@ func _decide() -> void:
                 near = true
                 break
         if near:
-            # 내 폭탄은 나를 안 맞히니 그냥 놓는다
-            _aim_dir = f.facing()
-            _aim_time = 0.04             # 탭 (tap_threshold 보다 짧게)
-            _aim_timeout = 1.0
-            return
+            # 놓은 뒤 도망칠 곳이 있을 때만 (내 폭탄에도 맞으니까)
+            var d2 := _danger()
+            for n: Vector2i in b.blast(c, pw, Board.skew_of(f.facing())):
+                d2[b.idx(n)] = minf(float(d2.get(b.idx(n), INF)), game.LAND_FUSE)
+            var esc := _bfs(c, func(n: Vector2i) -> bool: return not d2.has(b.idx(n)), d2, 8)
+            if not esc.is_empty() and esc.size() * _step_time() < game.LAND_FUSE - 0.5:
+                _aim_dir = f.facing()
+                _aim_time = 0.04             # 탭 (tap_threshold 보다 짧게)
+                _aim_timeout = 1.0
+                _path = esc
+                return
     # 아이템
     var p := _bfs(c, func(n: Vector2i) -> bool: return game.items.has(b.idx(n)), danger, 6)
     if not p.is_empty():

@@ -127,9 +127,15 @@ func _ready() -> void:
     _game_name.clip_text = true
     _game_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     gt.add_child(_game_name)
+    # 게임 설명: 높이 고정 + 넘치면 스크롤 (게임이 바뀌어도 화면 배치가 흔들리지 않게)
+    var desc_scroll := ScrollContainer.new()
+    desc_scroll.custom_minimum_size = Vector2(0, 58)
+    desc_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    gt.add_child(desc_scroll)
     _game_desc = UI.label("", 13, UI.MUTED)
     _game_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    gt.add_child(_game_desc)
+    _game_desc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    desc_scroll.add_child(_game_desc)
     _settings_box = UI.vbox(8)
     gv.add_child(_settings_box)
 

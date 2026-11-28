@@ -80,7 +80,7 @@ func _process(delta: float) -> void:
     match game.state:
         PartyGame.State.COUNTDOWN:
             center = str(int(ceil(game.countdown_time - game.state_time)))
-            sub = "폭탄을 던져 블록을 부수고 상대를 맞혀요! 불길에 맞거나 용암에 떨어지면 탈락"
+            sub = "폭탄을 던져 블록을 부수고 상대를 맞혀요! 불길에 맞거나 가시 바닥에 떨어지면 탈락"
             if game.is_client() and game.play_start_t < 0.0:
                 center = "…"
                 sub = "다른 플레이어를 기다리는 중"

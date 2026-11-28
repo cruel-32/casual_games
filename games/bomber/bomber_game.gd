@@ -6,7 +6,7 @@ extends PartyGame
 ##   폭탄은 떨어지고 LAND_FUSE 초 뒤 정사각형으로 터진다 (기본 3×3, 불꽃 아이템 1번 = 4×4 — 던진 쪽으로 한 칸 더). 높이는 폭탄 층 위아래 1층.
 ##   범위 안 폭탄은 연쇄 폭발. 점프로 불길 위로 높이 떠 있으면 안 맞음
 ## - 범위 안 블록이 깎인다 (평평하면 반경만큼). 높이 0 이 되면 구멍 → 용암
-## - 폭탄 불길에 맞거나 용암에 떨어지면 바로 탈락 (아군 폭탄 포함, 내 폭탄은 나를 안 맞힘). 마지막까지 남은 사람(팀) 승리
+## - 폭탄 불길에 맞거나 용암에 떨어지면 바로 탈락 (내 폭탄·아군 폭탄 포함. 날아가는 내 폭탄에는 안 밀림). 마지막까지 남은 사람(팀) 승리
 ## - 탈락하면 유령이 되어 경기장 바깥 테두리를 돌며 안쪽으로 폭탄을 던진다 (쿨타임)
 ## - Space 는 점프 (블록 2층까지 한 번에). 날아가는 폭탄에 맞으면 살짝 밀려남
 ##
@@ -189,18 +189,18 @@ func _build_board() -> void:
     if is_server():
         return
     _make_materials()
-    # 용암
+    # 바닥 = 가시 구덩이 (떨어지면 죽는다는 게 한눈에 보이게): 어두운 바닥 + 촘촘한 쇠 가시. 블록이 있는 칸은 블록에 가려 안 보이고
+    #   구멍이 뚫리면 드러남. 경기장 바깥 둘레에도 가시 띠 (가장자리 밖으로 떨어져도 탈락)
     var lava := MeshInstance3D.new()
     var lp := PlaneMesh.new()
     lp.size = Vector2(W * T, H * T)
     lava.mesh = lp
-    var lm := StandardMaterial3D.new()
-    lm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-    lm.albedo_color = Color(1.0, 0.36, 0.08)
-    lava.material_override = lm
+    lava.material_override = Toon.make(Color(0.16, 0.08, 0.08), {"rim_strength": 0.0})
     lava.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     add_child(lava)
     lava.global_position = Vector3(0, floor_y + 0.01, 0)
+    _build_spikes(W * T * 0.5, H * T * 0.5, floor_y, 0.0)
+    _build_spikes(W * T * 0.5 + SPIKE_RING, H * T * 0.5 + SPIKE_RING, floor_y - FLOOR_LIFT, W * T * 0.5 + 0.2)
     var side := MeshInstance3D.new()
     var sb := BoxMesh.new()
     sb.size = Vector3(W * T + 0.2, FLOOR_LIFT + 0.3, H * T + 0.2)
@@ -269,6 +269,51 @@ func _build_board() -> void:
     ring.material_override = am
     _aim.add_child(ring)
     _aim.visible = false
+
+
+## 쇠 가시 밭: 반폭 hx·hz 사각형 안 (inner > 0 이면 그 안쪽은 비움 = 둘레 띠), 바닥 높이 y
+const SPIKE_STEP := 0.8
+const SPIKE_H := 1.6
+const SPIKE_RING := 3.0
+
+
+func _build_spikes(hx: float, hz: float, y: float, inner: float) -> void:
+    var cone := CylinderMesh.new()
+    cone.top_radius = 0.0
+    cone.bottom_radius = 0.32
+    cone.height = SPIKE_H
+    cone.radial_segments = 6
+    cone.rings = 1
+    var pts: Array[Vector3] = []
+    var rng := RandomNumberGenerator.new()
+    rng.seed = 7
+    var nx := int(hx * 2.0 / SPIKE_STEP)
+    var nz := int(hz * 2.0 / SPIKE_STEP)
+    for iz in nz:
+        for ix in nx:
+            var x := -hx + (ix + 0.5) * SPIKE_STEP + rng.randf_range(-0.12, 0.12)
+            var z := -hz + (iz + 0.5) * SPIKE_STEP + rng.randf_range(-0.12, 0.12)
+            if inner > 0.0 and absf(x) < inner and absf(z) < inner * hz / hx:
+                continue
+            pts.append(Vector3(x, y + SPIKE_H * 0.5 * rng.randf_range(0.8, 1.0), z))
+    var mm := MultiMesh.new()
+    mm.transform_format = MultiMesh.TRANSFORM_3D
+    mm.mesh = cone
+    mm.instance_count = pts.size()
+    for i in pts.size():
+        var s := rng.randf_range(0.8, 1.15)
+        mm.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3(1, s, 1)), pts[i]))
+    var mi := MultiMeshInstance3D.new()
+    mi.multimesh = mm
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = Color(0.86, 0.88, 0.94)
+    mat.metallic = 0.5
+    mat.roughness = 0.3
+    mat.emission_enabled = true            # 깊은 구멍 그늘에서도 잘 보이게 살짝 빛남
+    mat.emission = Color(0.35, 0.37, 0.42)
+    mi.material_override = mat
+    mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    add_child(mi)
 
 
 ## 층마다 색 (아래는 진한 흙, 위로 갈수록 밝은 주황). k = 체크무늬 (이웃 칸끼리 색이 살짝 다름)
@@ -694,6 +739,11 @@ func _make_zone(power: int, skew: int, col: Color) -> Node3D:
     z.set_meta("mat", mat)
     var pm := PlaneMesh.new()
     pm.size = Vector2(Board.TILE - 0.06, Board.TILE - 0.06)
+    # 곧 깎일 블록: 여섯 면 모두 색이 바뀐 상자를 블록 위에 살짝 크게 덮어씀 (칸마다 최대 2층)
+    var cube := BoxMesh.new()
+    cube.size = Vector3(Board.TILE + 0.06, Board.BLOCK + 0.06, Board.TILE + 0.06)
+    var cmat := _block_mat(col.darkened(0.05), col.darkened(0.7))
+    z.set_meta("cmat", cmat)
     var bx := Board.blast_box(power, skew)
     for dy in range(bx.position.y, bx.end.y):
         for dx in range(bx.position.x, bx.end.x):
@@ -703,21 +753,50 @@ func _make_zone(power: int, skew: int, col: Color) -> Node3D:
             t.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
             t.position = Vector3(dx * Board.TILE, 0.0, dy * Board.TILE)
             t.set_meta("off", Vector2i(dx, dy))
+            var boxes: Array = []
+            for k in 2:
+                var cb := MeshInstance3D.new()
+                cb.mesh = cube
+                cb.material_override = cmat
+                cb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+                cb.visible = false
+                z.add_child(cb)
+                boxes.append(cb)
+            t.set_meta("boxes", boxes)
             z.add_child(t)
     return z
 
 
 ## 범위 타일을 폭탄 칸 c 기준으로 각 칸 꼭대기에 붙임 (경기장 밖·구멍 칸은 숨김)
-func _place_zone(z: Node3D, c: Vector2i, fill_a: float, edge_a: float, glow: float = 1.0) -> void:
+func _place_zone(z: Node3D, c: Vector2i, fill_a: float, edge_a: float, glow: float = 1.0, blocks: bool = false) -> void:
     var p := board.center(c)
     z.global_position = Vector3(p.x, 0.0, p.z)
     z.visible = true
+    var level := maxi(board.height(c), 0)
     for t in z.get_children():
+        if not t.has_meta("off"):
+            continue
         var n: Vector2i = c + (t.get_meta("off") as Vector2i)
         var ok := board.in_bounds(n) and board.height(n) > 0
         (t as Node3D).visible = ok
         if ok:
             (t as Node3D).position.y = top_y(n) + 0.07
+        # 깎일 블록 (부서지는 블록만, 폭발 층 위아래 1층 안)
+        var boxes: Array = t.get_meta("boxes")
+        var lo := 0
+        var hi := 0
+        if blocks and ok and not board.pillar(n):
+            hi = board.height(n)
+            lo = maxi(board.height_after(n, level, 1), 0)
+        for k in boxes.size():
+            var cb: MeshInstance3D = boxes[k]
+            var layer := hi - 1 - k
+            cb.visible = layer >= lo and layer >= 0 and hi > lo
+            if cb.visible:
+                cb.position = Vector3(t.position.x, floor_y + (layer + 0.5) * Board.BLOCK, t.position.z)
+    var cmat: ShaderMaterial = z.get_meta("cmat")
+    var base: Color = (z.get_meta("mat") as ShaderMaterial).get_shader_parameter("col")
+    cmat.set_shader_parameter("albedo", base * glow)
     var mat: ShaderMaterial = z.get_meta("mat")
     mat.set_shader_parameter("fill_a", fill_a)
     mat.set_shader_parameter("edge_a", edge_a)
@@ -784,8 +863,8 @@ func _flight_hits(b: Dictionary, now: float) -> void:
     for f in fighters:
         if f.dead or hit.has(f.slot):
             continue
-        if f.slot == int(b.owner) and now < float(b.t_land) - 0.1 and from.distance_to(p) < 2.0:
-            continue          # 막 던진 내 폭탄은 나를 안 맞힘
+        if f.slot == int(b.owner):
+            continue          # 내가 던진 폭탄은 날아가는 동안 나를 안 맞힘 (터지면 맞음)
         var body := f.global_position + Vector3(0, Fighter.HEIGHT * BODY_SCALE * 0.5, 0)
         if body.distance_to(p) > BOMB_HIT_R:
             continue
@@ -1173,7 +1252,7 @@ func _judge_sample(f: Fighter, t: float, pos: Vector3) -> void:
         return
     var c := board.cell_at(pos)
     var i := board.idx(c)
-    var who := _in_flame(i, t, pos.y, f.slot)
+    var who := _in_flame(i, t, pos.y)            # 내 폭탄 불길에도 맞는다 (안 맞는 건 던질 때 날아가는 폭탄뿐)
     if who > -2:
         _knock_out(f, who, pos)
         return
@@ -1524,7 +1603,7 @@ func _process(delta: float) -> void:
         if zone != null and is_instance_valid(zone):
             var k := 1.0 - clampf(left / LAND_FUSE, 0.0, 1.0)          # 0 → 1 (터질 때)
             var blink := 0.5 + 0.5 * sin(t * lerpf(6.0, 26.0, k))
-            _place_zone(zone, zc, 0.95, 1.0, lerpf(0.8, 1.25, blink * k + (1.0 - k) * 0.5))
+            _place_zone(zone, zc, 0.95, 1.0, lerpf(0.8, 1.25, blink * k + (1.0 - k) * 0.5), true)
         var rate := lerpf(16.0, 4.0, clampf(left / LAND_FUSE, 0.0, 1.0))
         vis.scale = Vector3.ONE * (1.0 + 0.1 * sin(Time.get_ticks_msec() * 0.001 * rate) + clampf(0.6 - left, 0.0, 0.6) * 0.35)
         var spark: Node3D = vis.get_node_or_null("Spark")

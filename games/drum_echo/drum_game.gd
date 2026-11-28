@@ -26,7 +26,8 @@ const Toon := preload("res://scripts/world/toon.gd")
 const START_DELAY := 3.0            ## 모두 준비되고 곡이 시작하기까지
 const BOT_SKILL := 0.55
 const ANNOUNCE_AHEAD := 3.5          ## 차례 노트를 시작 몇 초 전에 알리나 (노트 길 LOOK_AHEAD 2.2초보다 넉넉히)
-const MY_DRUM_DB := -6.0            ## 내 북소리 (반주에 북 파트가 이미 있으므로 살짝 작게)
+const MY_DRUM_DB := 0.0             ## 내 북소리 (반주에는 북이 없다 — 내가 쳐야 곡이 완성됨)
+const OTHER_DRUM_DB := -17.0        ## 다른 캐릭터(봇·다른 사람)가 치는 소리: 작게 (내 소리가 잘 들리게). 진행자는 소리 없이 모습만
 const BOT_COLORS := Fighter.SLOT_COLORS
 const SND := {"don": preload("res://audio/drum/don.wav"), "ka": preload("res://audio/drum/ka.wav"),
         "cue": preload("res://audio/drum/cue.wav"), "miss": preload("res://audio/drum/miss.wav")}
@@ -133,6 +134,10 @@ func _ready() -> void:
         Net.game_message.connect(on_server_message)
         Net.disconnected.connect(_on_net_disconnected)
         send_loaded_when_settled()      # 화면이 부드럽게 그려지기 시작한 뒤에 (PartyGame)
+    # "게임 시작 준비 중…" 표시를 시작 신호(t0)가 오면 닫는다 (다른 게임은 add_common_ui 가 붙임)
+    var watch: Node = LOADING_WATCH.new()
+    watch.game = self
+    add_child(watch)
     var layer := CanvasLayer.new()
     add_child(layer)
     var hud: Control = HUD_SCRIPT.new()
@@ -477,7 +482,7 @@ func _snd(name: String, db: float = 0.0, pitch: float = 1.0) -> void:
         return
     var p: AudioStreamPlayer = _sfx_pool.pop_front()
     _sfx_pool.append(p)
-    p.stream = SND[name]
+    p.stream = Chart.song_drum(song_id, 0) if name == "don" else (Chart.song_drum(song_id, 1) if name == "ka" else SND[name])
     p.volume_db = db
     p.pitch_scale = pitch
     p.play()
@@ -566,7 +571,7 @@ func press(lane: int) -> void:
         send_to_server(["key", lane, 1])        # 다른 사람 화면에서 내 캐릭터가 치도록 (판정과 별개)
     _strike(my_slot, lane)
     _snd("don" if lane == 0 else "ka", MY_DRUM_DB)
-    _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": -99.0, "mine": true})   # 피버 '드르륵'은 반주에 들어 있음 → 움직임만
+    _rolls.append({"who": my_slot, "lane": lane, "until": -1.0, "next": t + Chart.FEVER_HOLD_MIN, "db": MY_DRUM_DB + ROLL_DB, "mine": true})   # 피버 '드르륵' (누르고 있는 동안)
     # 판정은 이 기기에서 한다 (박자에 민감하므로). 서버에는 결과만 보내고, 서버는 그대로 점수에 반영해 다른 사람에게 알린다
     var rt := _response_turn_at(t, lane)
     if rt >= 0 and is_responder(my_slot, rt) and view_final.has(rt):
@@ -970,7 +975,7 @@ func on_server_message(msg: Array) -> void:
                 var j := String(msg[2])
                 if j != "extra":
                     _judge_pop(s, j)
-                # 남의 북소리는 내지 않음 — 들리는 북은 진행자(반주 안)와 내 북뿐 (여럿이 치면 헷갈림)
+                # 다른 사람의 북소리는 "k"(누름)에서 작게 낸다
         "k":
             # 다른 사람이 북을 누름·뗌 → 그 캐릭터가 바로 친다 (판정과 상관없이 누르면 움직임)
             var s := int(msg[1])
@@ -979,6 +984,7 @@ func on_server_message(msg: Array) -> void:
                 var down := int(msg[3]) == 1
                 if down:
                     _strike(s, lane)
+                    _snd("don" if lane == 0 else "ka", OTHER_DRUM_DB)
                 _set_hold(s, lane, down)
         "tres":
             pass
@@ -1015,7 +1021,7 @@ func _set_notes(i: int, notes: Array, who: int, attack: bool) -> void:
             var at := Chart.note_time(turns[i], n)
             if at > now - 0.05:
                 var until := Chart.note_end_time(turns[i], n) if Chart.is_fever(n) else -1.0
-                _bot_hits.append([at, who, int(n[1]), -99.0, false, until])     # 소리는 반주에 들어 있음 → 움직임만
+                _bot_hits.append([at, who, int(n[1]), -99.0, false, until])     # 진행자: 소리 없이 움직임만 (북 소리는 캐릭터가 칠 때만)
     _schedule_responders(i, list)
 
 
@@ -1038,7 +1044,7 @@ func _schedule_responders(i: int, notes: Array) -> void:
             k += 1
             _popups.append([at, f.slot, j])
             if j != "miss":                     # 놓친 노트는 치지 않음
-                _bot_hits.append([at, f.slot, int(n[1]), -99.0, false, until])
+                _bot_hits.append([at, f.slot, int(n[1]), OTHER_DRUM_DB, false, until])
             if fever:
                 _popups.append([until, f.slot, js[k] if k < js.size() else "good"])
                 k += 1
