@@ -15,7 +15,7 @@ var app: Node
 var _title: Label
 var _s_name: LineEdit
 var _state_badge_holder: HBoxContainer
-var _rounds_box: VBoxContainer        ## 경기: 라운드 1~5 고정 다섯 줄 (라운드별 게임)
+var _rounds_box: GridContainer        ## 경기: 라운드 1~5 칸 고정, 2열 × 3줄 (라운드별 게임)
 var _mode_row: HBoxContainer          ## 참가자 제목 옆: 팀 수 · 최대 인원 · 봇 채우기
 var _preview_img: Control             ## 고른 라운드 게임 썸네일
 var _preview_name: Label
@@ -103,7 +103,11 @@ func _ready() -> void:
     pts.clip_text = true
     pts.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     cap.add_child(pts)
-    _rounds_box = UI.vbox(3)
+    _rounds_box = GridContainer.new()
+    _rounds_box.columns = 2
+    _rounds_box.add_theme_constant_override("h_separation", 8)
+    _rounds_box.add_theme_constant_override("v_separation", 5)
+    _rounds_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     lv2.add_child(_rounds_box)
     var rv := UI.vbox(4)
     rv.custom_minimum_size.x = 220
@@ -306,7 +310,7 @@ func _my_entry(r: Dictionary) -> Dictionary:
 
 
 # ---------------------------------------------------------------- 경기 설정
-## 경기: 라운드 1~5 다섯 줄 고정. 쓰는 라운드는 [R1][게임 ▼], 안 쓰는 줄은 '+ 라운드 추가'(방장, 바로 다음 줄만)·흐린 칸
+## 경기: 라운드 1~5 칸 고정 (2열 × 3줄, R1 R2 / R3 R4 / R5). 쓰는 라운드는 [R1][게임 ▼], 안 쓰는 줄은 '+ 라운드 추가'(방장, 바로 다음 줄만)·흐린 칸
 ##   줄을 누르면 그 라운드 게임의 썸네일·소개를 오른쪽에. 마지막 라운드 줄 끝 × = 빼기
 ## 참가자 제목 옆: [팀 수 ▼] [최대 n명] [봇 채우기]  (방장이 아니면 작은 배지)
 func _build_settings(r: Dictionary, editable: bool) -> void:
@@ -374,7 +378,8 @@ func _round_line(i: int, rg: Array, editable: bool) -> Control:
     var used := i < rg.size()
     var focus := used and i == _focus_round
     var line := PanelContainer.new()
-    line.custom_minimum_size.y = 29
+    line.custom_minimum_size.y = 31
+    line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     var bg := Color(1.0, 0.93, 0.7) if focus else (Color.WHITE if used else Color(1, 1, 1, 0.35))
     var sb := UI.box(bg, 10, 8, UI.YELLOW.darkened(0.2) if focus else Color(UI.INK, 0.15 if used else 0.08), 2, 0)
     sb.content_margin_top = 1
