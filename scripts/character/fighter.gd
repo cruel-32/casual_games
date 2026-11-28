@@ -128,6 +128,8 @@ var lock_timer := 0.0               # >0 이면 이동 불가(제자리). 돌진
 var push_window := 0.0
 var push_power := 0.0
 var push_tap := true
+var net_prev_flags := 0               ## 온라인: 지난번 받은 상태 표시 (새로 켜진 것만 소리 내려고)
+var _voice_last := {}                ## 목소리 종류 -> 마지막으로 낸 시각
 var push_anim := 0.0
 var bump_cooldown := 0.0
 var shake := 0.0
@@ -187,9 +189,9 @@ var spring_arm: SpringArm3D
 var camera: Camera3D
 var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 바꿀 수 있음)
 var cam_max_len := 9.0               ## 〃 축소 한계
-var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 연쇄폭탄마 유령)
+var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 크레이지 봄버맨 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
-var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 연쇄폭탄마 1.3)
+var body_scale := 1.0               ## 몸 크기 배수 (add_child 전에 정함. 예: 크레이지 봄버맨 1.3)
 var throw_mode := false              ## true 면 밀치기 키 = 탭: game.on_throw(self, -1) / 차징: game.on_throw(self, 0~1)
 
 
@@ -964,12 +966,14 @@ func _cancel_charge(penalty: bool = true) -> void:
 
 func _release_push() -> void:
     if throw_mode:
-        # 던지기 모드 (예: 연쇄폭탄마): 밀치기 대신 — 탭 = r -1 (발밑에 놓기), 차징 = 차징한 만큼 0~1 (멀리·높이 던지기)
+        # 던지기 모드 (예: 크레이지 봄버맨): 밀치기 대신 — 탭 = r -1 (발밑에 놓기), 차징 = 차징한 만큼 0~1 (멀리·높이 던지기)
         var r := -1.0 if charge_time < tap_threshold else get_charge_ratio()
         charging = false
         if is_human:
             Sfx.charge_stop()
-        push_anim = 0.35
+        if r >= 0.0:
+            push_anim = 0.35
+            _voice("push", 3)          # 차징해서 던질 때 기합 (탭으로 발밑에 놓을 때는 조용히)
         cooldown_total = 0.3
         cooldown_timer = cooldown_total
         if game and game.has_method(&"on_throw"):
@@ -1239,8 +1243,18 @@ func voice_pitch() -> float:
 
 
 ## kind: "push" / "hit" / "die", n: 변형 개수 (audio/sfx/voice_<kind>_<1..n>.wav)
+##   같은 종류는 0.4초 안에 두 번 내지 않음 (내 PC 의 판정과 온라인 상태(경직·밀치기 표시)로 같은 일이 두 번 들어와도 한 번만)
 func _voice(kind: String, n: int) -> void:
+    var now := Time.get_ticks_msec() * 0.001
+    if now - float(_voice_last.get(kind, -10.0)) < 0.4:
+        return
+    _voice_last[kind] = now
     _sfx("voice_%s_%d" % [kind, randi() % n + 1], 0.0, voice_pitch())
+
+
+## 다른 스크립트(온라인 동기화·게임 모듈)가 목소리를 낼 때
+func voice(kind: String) -> void:
+    _voice(kind, 2 if kind == "die" else 3)
 
 
 ## 소리: 내 캐릭터는 화면 전체로, 다른 캐릭터는 그 위치에서 (멀면 작게)
