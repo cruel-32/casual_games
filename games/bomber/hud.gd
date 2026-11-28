@@ -18,7 +18,7 @@ func _ready() -> void:
     else:
         _help.text = "WASD 이동 · 마우스 시점 · 휠 확대/축소 · 좌클릭/E 탭 = 발밑에 놓기, 누르다 떼기 = 멀리 던지기 · Space 점프%s" \
                 % ("" if game.is_online_match() else " · R 재시작")
-    _help.position = Vector2(16, 10)
+    _help.position = Vector2(18, 14)
     _build_menu_bar()
     _build_result_box()
     _build_spectate_bar()
@@ -40,7 +40,7 @@ func _ready() -> void:
     _cool.add_theme_stylebox_override("normal", UI.box(UI.INK, 12, 2, UI.INK, 0, 4))
     for i in 5:
         var l := _make_label(18)
-        l.position = Vector2(16, 44 + i * 26)
+        l.position = Vector2(18, 52 + i * 30)
         _feed_labels.append(l)
 
 
@@ -106,7 +106,7 @@ func _process(delta: float) -> void:
         var sz := 4 if game.stat(s, 1) >= 2 else 3
         _stats.text = "💣 폭탄 %d   🔥 범위 %d×%d   ⚡ 속도 %d   ⏱ 쿨타임 %.2f초" % [game.stat(s, 0), sz, sz, game.stat(s, 2), game.throw_cooldown(human)]
         _stats.visible = true
-        _place_centered(_stats, bottom - 90.0)
+        _place_centered(_stats, bottom - 104.0)
         # 던지기 막대 글자 (돌피하기처럼): 쿨타임 남은 시간 / 차징 / 준비
         var col := UI.TEAL
         if human.cooldown_timer > 0.0:
@@ -122,7 +122,7 @@ func _process(delta: float) -> void:
             _cool.text = "던지기 준비!"
         _cool.add_theme_color_override("font_color", col.lightened(0.35))
         _cool.visible = game.state == PartyGame.State.PLAYING
-        _place_centered(_cool, bottom - 32.0)
+        _place_centered(_cool, bottom - 38.0)
     else:
         _stats.visible = false
         _cool.visible = false

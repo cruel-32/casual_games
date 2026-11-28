@@ -142,7 +142,7 @@ func _fill(s: Dictionary) -> void:
 
 
 func _row(a: String, b: String, c: String, mine: bool) -> Control:
-    var h := UI.hbox(8)
+    var h := UI.hbox(12)
     var l1 := UI.label(a, 15, UI.MUTED)
     l1.custom_minimum_size.x = 40
     h.add_child(l1)

@@ -32,7 +32,7 @@ func _ready() -> void:
     else:
         _help.text = "WASD 이동 · 마우스 시점 · Space 점프 · 좌클릭/E 밀치기 (길게 누르면 차징 돌진)%s · Esc 마우스 해제 (오른쪽 위 버튼 사용)" \
                 % ("" if game.is_online_match() else " · R 재시작")
-    _help.position = Vector2(16, 10)
+    _help.position = Vector2(18, 14)
     _build_menu_bar()
     _build_result_box()
     _build_spectate_bar()
@@ -54,7 +54,7 @@ func _ready() -> void:
     _status_label = _make_label(18)
     for i in 5:
         var l := _make_label(18)
-        l.position = Vector2(16, 44 + i * 26)
+        l.position = Vector2(18, 52 + i * 30)
         _feed_labels.append(l)
 
 
@@ -335,7 +335,7 @@ var _leave_armed := 0.0
 
 
 func _build_menu_bar() -> void:
-    var bar := UI.hbox(8)
+    var bar := UI.hbox(12)
     bar.add_to_group("touch_block")      # 터치 조작(스틱·시점)이 이 영역은 무시
     add_child(bar)
     _bar = bar

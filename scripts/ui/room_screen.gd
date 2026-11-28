@@ -45,7 +45,7 @@ func _ready() -> void:
     for side in ["left", "right"]:
         margin.add_theme_constant_override("margin_" + side, 28)
     margin.add_theme_constant_override("margin_top", 16)
-    margin.add_theme_constant_override("margin_bottom", 22)
+    margin.add_theme_constant_override("margin_bottom", 20)
     add_child(margin)
     var root := UI.vbox(14)
     margin.add_child(root)
@@ -74,19 +74,19 @@ func _ready() -> void:
     var mode_panel := PanelContainer.new()
     mode_panel.add_theme_stylebox_override("panel", UI.box(Color(1, 0.99, 0.95), 18, 10, UI.INK, 3, 4))
     root.add_child(mode_panel)
-    _mode_bar = UI.hbox(18)
+    _mode_bar = UI.hbox(22)
     _mode_bar.alignment = BoxContainer.ALIGNMENT_CENTER
     mode_panel.add_child(_mode_bar)
 
     # 본문: 왼쪽 슬롯 / 오른쪽 게임 카드 + 채팅
-    var body := UI.hbox(16)
+    var body := UI.hbox(20)
     body.size_flags_vertical = Control.SIZE_EXPAND_FILL
     root.add_child(body)
 
     var left := PanelContainer.new()
     left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     body.add_child(left)
-    var lv := UI.vbox(10)
+    var lv := UI.vbox(14)
     left.add_child(lv)
     _slots_label = UI.heading("참가자", 26)
     lv.add_child(_slots_label)
@@ -101,8 +101,8 @@ func _ready() -> void:
     scroll.add_child(pad)
     _grid = GridContainer.new()
     _grid.columns = 4
-    _grid.add_theme_constant_override("h_separation", 12)
-    _grid.add_theme_constant_override("v_separation", 12)
+    _grid.add_theme_constant_override("h_separation", 18)
+    _grid.add_theme_constant_override("v_separation", 18)
     _grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     pad.add_child(_grid)
 
@@ -115,11 +115,11 @@ func _ready() -> void:
     right.add_child(game_panel)
     var gv := UI.vbox(10)
     game_panel.add_child(gv)
-    var gh := UI.hbox(12)
+    var gh := UI.hbox(16)
     gv.add_child(gh)
     _game_img_holder = UI.vbox(0)
     gh.add_child(_game_img_holder)
-    var gt := UI.vbox(2)
+    var gt := UI.vbox(6)
     gt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     gt.alignment = BoxContainer.ALIGNMENT_CENTER
     gh.add_child(gt)
@@ -129,7 +129,7 @@ func _ready() -> void:
     gt.add_child(_game_name)
     # 게임 설명: 높이 고정 + 넘치면 스크롤 (게임이 바뀌어도 화면 배치가 흔들리지 않게)
     var desc_scroll := ScrollContainer.new()
-    desc_scroll.custom_minimum_size = Vector2(0, 58)
+    desc_scroll.custom_minimum_size = Vector2(0, 52)
     desc_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
     gt.add_child(desc_scroll)
     _game_desc = UI.label("", 13, UI.MUTED)
@@ -142,14 +142,14 @@ func _ready() -> void:
     var chat_panel := PanelContainer.new()
     chat_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
     right.add_child(chat_panel)
-    var cv := UI.vbox(8)
+    var cv := UI.vbox(12)
     chat_panel.add_child(cv)
     cv.add_child(UI.heading("채팅", 20))
     _chat_log = RichTextLabel.new()
     _chat_log.bbcode_enabled = true
     _chat_log.scroll_following = true
     _chat_log.size_flags_vertical = Control.SIZE_EXPAND_FILL
-    _chat_log.custom_minimum_size.y = 50
+    _chat_log.custom_minimum_size.y = 36
     _chat_log.add_theme_font_size_override("normal_font_size", 16)
     _chat_log.add_theme_font_size_override("bold_font_size", 16)
     cv.add_child(_chat_log)
@@ -160,7 +160,7 @@ func _ready() -> void:
     cv.add_child(_chat_input)
 
     # 하단 바: 상태 문구 + 큰 버튼
-    var bottom := UI.hbox(14)
+    var bottom := UI.hbox(18)
     root.add_child(bottom)
     _status = UI.heading("", 19, UI.CREAM)
     _status.add_theme_stylebox_override("normal", UI.box(UI.INK, 22, 18))
@@ -311,9 +311,9 @@ func _my_entry(r: Dictionary) -> Dictionary:
 
 func _slot_card(index: int, border: Color, border_w: int, bg: Color) -> PanelContainer:
     var card := PanelContainer.new()
-    var sb := UI.box(bg, 16, 8, border, border_w, 4 if border_w > 0 else 0)
-    sb.content_margin_top = 6
-    sb.content_margin_bottom = 8
+    var sb := UI.box(bg, 16, 14, border, border_w, 4 if border_w > 0 else 0)
+    sb.content_margin_top = 12
+    sb.content_margin_bottom = 14
     card.add_theme_stylebox_override("panel", sb)
     card.custom_minimum_size = Vector2(0, 160)
     card.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -339,7 +339,7 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
         color = Teams.color(team)            # 팀전: 카드 색 = 팀 색
     var card := _slot_card(index, UI.CTA if is_me else (Teams.color(team).darkened(0.2) if team >= 0 else UI.INK), 5 if is_me or team >= 0 else 3,
             color.lerp(Color.WHITE, 0.72))
-    var v := UI.vbox(2)
+    var v := UI.vbox(8)
     card.add_child(v)
 
     # 초상화 + 왼쪽 위 상태 배지
@@ -356,13 +356,13 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
         b = UI.badge("READY", UI.GOOD)
     else:
         b = UI.badge("대기", UI.MUTED)
-    b.position = Vector2(2, 2)
+    b.position = Vector2(4, 2)
     face.add_child(b)
     if team >= 0:
         var tb := UI.badge(Teams.SHORT[team], Teams.color(team), UI.INK if team == 3 else Color.WHITE)
-        tb.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 2)
+        tb.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
+        tb.position.y = 2
         tb.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-        tb.grow_vertical = Control.GROW_DIRECTION_BEGIN
         face.add_child(tb)
 
     var name_l := UI.heading(String(m.nick), 20)
@@ -386,7 +386,7 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
         trow.add_child(tbtn)
         v.add_child(trow)
     if viewer_is_host and not is_me:
-        var acts := UI.hbox(6)
+        var acts := UI.hbox(10)
         acts.alignment = BoxContainer.ALIGNMENT_CENTER
         v.add_child(acts)
         var pid := int(m.id)
@@ -398,7 +398,7 @@ func _member_card(m: Dictionary, index: int, viewer_is_host: bool, teams: int = 
         acts.add_child(give)
     # 신고·차단: 다른 사람 누구에게나
     if not is_me:
-        var safety := UI.hbox(6)
+        var safety := UI.hbox(10)
         safety.alignment = BoxContainer.ALIGNMENT_CENTER
         v.add_child(safety)
         var pid_s := int(m.id)
@@ -520,7 +520,7 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
         c.queue_free()
     if host:
         # 1줄: 방 이름
-        var nrow := UI.hbox(8)
+        var nrow := UI.hbox(14)
         _settings_box.add_child(nrow)
         nrow.add_child(_field_label("방 이름"))
         _s_name = UI.line_edit("방 이름", String(r.name), Net.ROOM_NAME_MAX)
@@ -532,7 +532,7 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
         nrow.add_child(_s_name)
 
         # 2줄: 최대 인원 · 봇 채우기 (팀·라운드는 위쪽 '경기 방식' 바에서)
-        var mrow := UI.hbox(8)
+        var mrow := UI.hbox(14)
         _settings_box.add_child(mrow)
         mrow.add_child(_field_label("인원"))
         _s_max = SpinBox.new()
@@ -554,8 +554,8 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
         # 라운드별 게임 (같은 게임 여러 번 / 랜덤) — 두 칸씩
         var grid := GridContainer.new()
         grid.columns = 2
-        grid.add_theme_constant_override("h_separation", 8)
-        grid.add_theme_constant_override("v_separation", 6)
+        grid.add_theme_constant_override("h_separation", 14)
+        grid.add_theme_constant_override("v_separation", 8)
         _settings_box.add_child(grid)
         _s_round_box = grid
         _s_round_opts.clear()
@@ -566,7 +566,7 @@ func _build_settings(r: Dictionary, host: bool, module) -> void:
             list.append("%d. %s" % [i + 1, Series.choice_name(String(rg[i]))])
         var rl := UI.label("\n".join(list), 15, UI.INK)
         _settings_box.add_child(rl)
-        var chips := UI.hbox(6)
+        var chips := UI.hbox(10)
         _settings_box.add_child(chips)
         chips.add_child(UI.badge("최대 %d명" % int(r.max), UI.SECONDARY))
         chips.add_child(UI.badge("봇 채우기 %s" % ("ON" if r.bot_fill else "OFF"), UI.GOOD if r.bot_fill else UI.MUTED))
@@ -590,7 +590,7 @@ func _update_mode_bar(teams: int, rounds: int, editable: bool) -> void:
         c.queue_free()
 
     _mode_bar.add_child(_mode_title("팀"))
-    var tg := UI.hbox(6)
+    var tg := UI.hbox(10)
     _mode_bar.add_child(tg)
     for t in Teams.MODES:
         var label := "개인전" if t == 0 else "%d팀" % t
@@ -617,7 +617,7 @@ func _update_mode_bar(teams: int, rounds: int, editable: bool) -> void:
     _mode_bar.add_child(sep)
 
     _mode_bar.add_child(_mode_title("라운드"))
-    var rgp := UI.hbox(6)
+    var rgp := UI.hbox(10)
     _mode_bar.add_child(rgp)
     for n in range(Series.MIN_ROUNDS, Series.MAX_ROUNDS + 1):
         var b := _seg_button(str(n), n == rounds, UI.YELLOW, editable, 54)
@@ -665,7 +665,7 @@ func _sync_round_widgets(rg: Array) -> void:
         o.get_parent().queue_free()
     while _s_round_opts.size() < rg.size():
         var i := _s_round_opts.size()
-        var row := UI.hbox(6)
+        var row := UI.hbox(10)
         row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
         _s_round_box.add_child(row)
         var l := UI.label("%dR" % (i + 1), 15, UI.MUTED)

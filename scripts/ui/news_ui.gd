@@ -120,7 +120,7 @@ func _item(n: Dictionary, unread: bool) -> Control:
     box.add_theme_stylebox_override("panel", UI.box(UI.SOFT, 14, 14))
     var v := UI.vbox(6)
     box.add_child(v)
-    var head := UI.hbox(8)
+    var head := UI.hbox(12)
     v.add_child(head)
     var kinds := {"notice": ["공지", UI.BLUE], "patch": ["패치 노트", UI.TEAL], "popup": ["알림", UI.RED]}
     var k: Array = kinds.get(n.kind, ["공지", UI.BLUE])

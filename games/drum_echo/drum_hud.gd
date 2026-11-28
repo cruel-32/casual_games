@@ -63,7 +63,7 @@ func _screen() -> Vector2:
 
 # ---------------------------------------------------------------- 버튼
 func _build_menu_bar() -> void:
-    var bar := UI.hbox(8)
+    var bar := UI.hbox(12)
     bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 14)
     bar.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     add_child(bar)

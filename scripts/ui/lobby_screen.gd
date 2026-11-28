@@ -160,7 +160,7 @@ func _make_card(r: Dictionary) -> Control:
     var rounds := int(r.get("rounds", 1))
     var gname := GameRegistry.display_name(String(r.get("game", "")))
     info.add_child(UI.label("%s%s  ·  방장 %s" % [gname, ("" if rounds <= 1 else " 외 · %d라운드" % rounds), r.host_nick], 15, UI.MUTED))
-    var chips := UI.hbox(6)
+    var chips := UI.hbox(10)
     info.add_child(chips)
     chips.add_child(UI.badge("게임 중" if playing else ("가득 참" if full else "대기 중"),
             UI.DANGER if playing else (UI.MUTED if full else UI.GOOD)))
@@ -272,7 +272,7 @@ func _build_dialog() -> void:
     _d_name.text_submitted.connect(func(_t): _on_create())
     v.add_child(_d_name)
 
-    var row := UI.hbox(14)
+    var row := UI.hbox(26)
     v.add_child(row)
     var mv := UI.vbox(6)
     row.add_child(mv)

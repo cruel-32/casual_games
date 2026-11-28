@@ -17,7 +17,7 @@ func _ready() -> void:
     else:
         _help.text = "WASD 이동 · 마우스 시점 · 초록불에만 달리고, 술래가 돌아보면 멈춰요 · 좌클릭/E 밀치기%s" \
                 % ("" if game.is_online_match() else " · R 재시작")
-    _help.position = Vector2(16, 10)
+    _help.position = Vector2(18, 14)
     _build_menu_bar()
     _build_result_box()
     _build_spectate_bar()
@@ -32,7 +32,7 @@ func _ready() -> void:
     _status_label = _make_label(20, true)
     for i in 5:
         var l := _make_label(18)
-        l.position = Vector2(16, 44 + i * 26)
+        l.position = Vector2(18, 52 + i * 30)
         _feed_labels.append(l)
 
 

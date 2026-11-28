@@ -183,7 +183,7 @@ func _build_web_promo() -> void:
     add_child(_promo)
     var v := UI.vbox(8)
     _promo.add_child(v)
-    var head := UI.hbox(8)
+    var head := UI.hbox(12)
     v.add_child(head)
     head.add_child(UI.badge("웹 체험판", UI.RED))
     _promo_text = UI.label("", 15, UI.MUTED)

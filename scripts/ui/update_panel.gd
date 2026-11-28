@@ -22,7 +22,7 @@ func _ready() -> void:
     var v := UI.vbox(4)
     v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     row.add_child(v)
-    var head := UI.hbox(8)
+    var head := UI.hbox(12)
     v.add_child(head)
     _badge = UI.badge("새 버전", UI.TEAL)
     head.add_child(_badge)

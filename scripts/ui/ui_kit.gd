@@ -132,7 +132,7 @@ static func make_theme() -> Theme:
     t.set_font_size("font_size", "LineEdit", 20)
 
     # 패널 = 크림색 카드 + 남색 테두리 + 비스듬한 스티커 그림자
-    t.set_stylebox("panel", "PanelContainer", box(PANEL, 20, 24, INK, OUTLINE, 8))
+    t.set_stylebox("panel", "PanelContainer", box(PANEL, 20, 26, INK, OUTLINE, 8))
 
     t.set_color("font_color", "CheckBox", TEXT)
     t.set_color("font_hover_color", "CheckBox", TEXT)
@@ -286,8 +286,8 @@ static func logo(size: int = 88) -> Control:
 static func badge(text: String, color: Color, font_color: Color = Color.WHITE) -> PanelContainer:
     var p := PanelContainer.new()
     var sb := box(color, 20, 12)
-    sb.content_margin_top = 3
-    sb.content_margin_bottom = 4
+    sb.content_margin_top = 4
+    sb.content_margin_bottom = 5
     p.add_theme_stylebox_override("panel", sb)
     var l := heading(text, 15, font_color)
     p.add_child(l)
@@ -354,6 +354,6 @@ static func centered_panel(parent: Control, width: float) -> VBoxContainer:
     var panel := PanelContainer.new()
     panel.custom_minimum_size.x = width
     center.add_child(panel)
-    var v := vbox(14)
+    var v := vbox(18)
     panel.add_child(v)
     return v

@@ -28,12 +28,13 @@ const LAND_FUSE := 1.6            ## 떨어진 뒤 터지기까지 (초)
 const FLAME_TIME := 0.4           ## 불길이 남아 있는 시간
 const THROW_MIN := 2.0            ## 서서 평평한 곳에 던질 때 거리 (m): 살짝 누름 ~ 끝까지 누름 (봇 판단용, 실제는 물리 계산)
 const THROW_MAX := 11.0
-const BOMB_GRAVITY := 30.0        ## 폭탄 중력 (빠르고 낮게 날아가게 캐릭터 중력보다 셈)
-const THROW_VH_MIN := 4.3         ## 발사 속도: 수평 (m/s) 살짝 ~ 끝까지
-const THROW_VH_MAX := 19.0
-const THROW_VY_MIN := 3.0         ##   위쪽 (m/s) — 꼭대기가 던진 높이보다 0.15~0.5m 위 (낮게)
-const THROW_VY_MAX := 5.5
-const INHERIT_H := 0.6            ## 던질 때 내 몸 속도를 이만큼 더함 (달리며 던지면 더 멀리)
+const BOMB_GRAVITY := 20.0        ## 폭탄 중력
+const THROW_VH_MIN := 4.5         ## 발사 속도: 수평 (m/s) 살짝 ~ 끝까지 — 빠르고 낮게 (거의 직선)
+const THROW_VH_MAX := 20.5
+const THROW_VY_MIN := 1.5         ##   위쪽 (m/s) — 꼭대기가 던진 높이(가슴)보다 겨우 0.06~0.23m 위 → 앞에 있는 사람 몸에 맞음
+const THROW_VY_MAX := 3.0
+const THROW_HAND := 1.0           ## 던지는 높이 (캐릭터 발에서 m, × 몸 크기) — 가슴 높이
+const INHERIT_H := 0.6            ## 던질 때 내 몸 속도 중 '앞으로 가는 만큼'만 더함 (옆으로 휘지 않고 똑바로, 달리며 던지면 더 멀리)
 const INHERIT_V := 0.6            ##   위아래 (점프해 올라가는 중이면 더 높이·멀리)
 const TAP_TIME := 0.28            ## 탭(발밑에 놓기) 떨어지는 시간
 const HIT_BELOW := 2.3            ## 불길 판정 높이 (발 기준): 폭발 층 꼭대기보다 이만큼 아래 ~ (한 층 아래 칸까지)
@@ -46,7 +47,7 @@ const CHARGE_TIME := 0.7          ## 끝까지 멀리 던지려면 누르는 시
 const THROW_COOLDOWN := 0.8       ## 던지거나 놓은 뒤 이 시간 동안은 아무것도 못 함 (쿨타임 아이템마다 -COOL_STEP)
 const COOL_STEP := 0.15
 const MAX_COOL := 3
-const BOMB_HIT_R := 1.2           ## 날아가는 폭탄이 캐릭터에 맞는 거리 → 살짝 밀려남
+const BOMB_HIT_R := 1.1           ## 날아가는 폭탄이 캐릭터 몸(세로 막대)에 이만큼 가까이 지나가면 맞음 → 살짝 밀려남
 const BOMB_HIT_PUSH := 7.0
 const START_BOMBS := 1
 const START_POWER := 1            ## 불꽃 1 = 3×3
@@ -553,11 +554,11 @@ static func throw_velocity(dir: Vector3, r: float, body_vel: Vector3) -> Vector3
     var k := clampf(r, 0.0, 1.0)
     var d := Vector3(dir.x, 0.0, dir.z)
     d = d.normalized() if d.length() > 0.01 else Vector3(0, 0, -1)
-    var v := d * lerpf(THROW_VH_MIN, THROW_VH_MAX, k) + Vector3(0, lerpf(THROW_VY_MIN, THROW_VY_MAX, k), 0)
-    return v + Vector3(body_vel.x, 0.0, body_vel.z) * INHERIT_H + Vector3(0, body_vel.y * INHERIT_V, 0)
+    var fwd := maxf(Vector3(body_vel.x, 0.0, body_vel.z).dot(d), 0.0) * INHERIT_H     # 앞 방향 성분만 → 바라보는 쪽으로 똑바로
+    return d * (lerpf(THROW_VH_MIN, THROW_VH_MAX, k) + fwd) + Vector3(0, lerpf(THROW_VY_MIN, THROW_VY_MAX, k) + body_vel.y * INHERIT_V, 0)
 
 
-## from 에서 v 로 던졌을 때 떨어질 칸과 걸리는 시간 [칸, 시간]
+## from 에서 v 로 던졌을 때 [떨어질 칸, 걸리는 시간, 닿는 점(궤적 위)]
 func simulate_throw(from: Vector3, v: Vector3) -> Array:
     var p := from
     var t := 0.0
@@ -575,14 +576,14 @@ func simulate_throw(from: Vector3, v: Vector3) -> Array:
             if np.y <= surf:
                 # 옆으로 더 높은 칸 벽에 부딪혔으면 그 앞 칸에 떨어짐, 위에서 내려왔으면 그 칸
                 if c != prev and p.y < surf - 0.05 and board.in_bounds(prev):
-                    return [prev, t]
-                return [c, t]
+                    return [prev, t, p]
+                return [c, t, Vector3(np.x, surf, np.z)]
             last_in = c
         elif np.y < top_level:
-            return [last_in, t]            # 경기장 밖으로 넘어가 떨어지면 마지막으로 지난 안쪽 칸 (보정)
+            return [last_in, t, p]         # 경기장 밖으로 넘어가 떨어지면 마지막으로 지난 안쪽 칸 (보정)
         prev = c
         p = np
-    return [last_in, t]
+    return [last_in, t, p]
 
 
 ## 시간 → 보여 줄 포물선 높이 (같은 중력으로 그 시간에 맞춤)
@@ -592,10 +593,11 @@ static func arc_for_time(tm: float) -> float:
 
 ## 지금 손을 떼면 [떨어질 칸, 비행 시간] (조준 표시·봇용). r < 0 = 탭 → 발밑
 func throw_plan(f: Fighter, r: float, dir: Vector3 = Vector3.ZERO) -> Array:
-    var from := f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)
+    var from := f.global_position + Vector3(0, THROW_HAND * BODY_SCALE, 0)
     if r < 0.0:
         var fc := board.cell_at(f.global_position)
-        return [Vector2i(clampi(fc.x, 0, board.w - 1), clampi(fc.y, 0, board.h - 1)), TAP_TIME]     # 가장자리 밖(떨어지는 중)이어도 경기장 안 칸
+        var tc := Vector2i(clampi(fc.x, 0, board.w - 1), clampi(fc.y, 0, board.h - 1))
+        return [tc, TAP_TIME, board.center(tc) + Vector3(0, top_y(tc), 0)]     # 가장자리 밖(떨어지는 중)이어도 경기장 안 칸
     if dir == Vector3.ZERO:
         dir = f.facing()
     var vel := f.velocity if not f.remote else Vector3.ZERO
@@ -616,28 +618,30 @@ func on_throw(f: Fighter, r: float) -> bool:
         return false
     var plan := throw_plan(f, r)
     var c: Vector2i = plan[0]
-    var from := f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)
+    var end: Vector3 = plan[2]
+    var from := f.global_position + Vector3(0, THROW_HAND * BODY_SCALE, 0)
     var arc := arc_for_time(maxf(float(plan[1]), 0.12))
     var skew := Board.skew_of(f.facing())
     if is_client():
         _pending_throws += 1           # 서버가 폭탄을 알려 줄 때까지 내 폭탄 수에 미리 셈 (연타로 두 번 보내지 않게)
         get_tree().create_timer(0.6).timeout.connect(func(): _pending_throws = maxi(_pending_throws - 1, 0))
-        send_to_server(["throw", board.idx(c), from, arc, skew])
+        send_to_server(["throw", board.idx(c), from, arc, skew, end])
         return true
-    _create_bomb(f.slot, board.idx(c), stat(f.slot, 1), false, from, arc, skew)
+    _create_bomb(f.slot, board.idx(c), stat(f.slot, 1), false, from, arc, skew, end)
     return true
 
 
 ## 서버·오프라인: 폭탄 만들기 (from 에서 포물선으로 날아가 칸 i 에 떨어짐)
-func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3, arc: float = 1.0, skew: int = 3) -> void:
+func _create_bomb(owner: int, i: int, power: int, ghost: bool, from: Vector3, arc: float = 1.0, skew: int = 3, end: Variant = null) -> void:
     var id := _next_bomb_id
     _next_bomb_id += 1
     var now := net_now()
     var t_land := now + flight_time(from, i, arc)
     var t := t_land + LAND_FUSE
-    _add_bomb(id, owner, i, from, t_land, t, power, ghost, arc, skew)
+    var e: Vector3 = end if end is Vector3 else board.center(board.cell(i)) + Vector3(0, top_y(board.cell(i)), 0)
+    _add_bomb(id, owner, i, from, t_land, t, power, ghost, arc, skew, e)
     if is_server():
-        broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost, arc, skew])
+        broadcast(["bomb", id, owner, i, from, t_land, t, power, ghost, arc, skew, e])
 
 
 ## 날아가는 시간: 포물선 높이(arc = 중력 × 시간² / 8)에서 거꾸로
@@ -645,9 +649,10 @@ func flight_time(_from: Vector3, _i: int, arc: float) -> float:
     return sqrt(8.0 * maxf(arc, 0.01) / BOMB_GRAVITY)
 
 
-func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool, arc: float = 1.0, skew: int = 3) -> void:
+func _add_bomb(id: int, owner: int, i: int, from: Vector3, t_land: float, t: float, power: int, ghost: bool, arc: float = 1.0, skew: int = 3, end: Variant = null) -> void:
+    ## end = 궤적이 닿는 점 (던진 방향 직선 위). 날아가는 모습은 from → end 로 똑바로, 닿은 뒤 칸 가운데로 살짝 미끄러짐
     var b := {"id": id, "owner": owner, "cell": i, "from": from, "t_land": t_land, "t": t, "power": power,
-            "ghost": ghost, "node": null, "landed": false, "hit": {}, "arc": arc, "skew": skew}
+            "ghost": ghost, "node": null, "landed": false, "hit": {}, "arc": arc, "skew": skew, "end": end}
     bombs[id] = b
     if is_server():
         return
@@ -818,6 +823,9 @@ func bomb_pos(b: Dictionary, t: float) -> Vector3:
         end.y = floor_y - 0.6
     if t >= float(b.t_land):
         return end
+    var hit = b.get("end")
+    if hit is Vector3:
+        end = hit                     # 날아가는 동안은 던진 방향 직선 위의 닿는 점까지 (칸 가운데로는 닿은 뒤 미끄러짐)
     var from: Vector3 = b.from
     var dur := flight_time(from, int(b.cell), float(b.arc))
     var k := clampf(1.0 - (float(b.t_land) - t) / maxf(dur, 0.05), 0.0, 1.0)
@@ -855,6 +863,8 @@ func _update_bombs(now: float) -> void:
 ## 날아가는 폭탄이 캐릭터에 맞으면 날아가던 쪽으로 살짝 밀림 (폭탄은 그대로 날아감, 한 사람에 한 번)
 func _flight_hits(b: Dictionary, now: float) -> void:
     var p := bomb_pos(b, now)
+    var prev: Vector3 = b.get("prev_p", p)
+    b.prev_p = p
     var from: Vector3 = b.from
     var to := board.center(board.cell(int(b.cell)))
     var dir := Vector3(to.x - from.x, 0, to.z - from.z)
@@ -865,8 +875,14 @@ func _flight_hits(b: Dictionary, now: float) -> void:
             continue
         if f.slot == int(b.owner):
             continue          # 내가 던진 폭탄은 날아가는 동안 나를 안 맞힘 (터지면 맞음)
-        var body := f.global_position + Vector3(0, Fighter.HEIGHT * BODY_SCALE * 0.5, 0)
-        if body.distance_to(p) > BOMB_HIT_R:
+        # 몸 = 발 위 0.2m ~ 머리까지 세로 막대. 이번 틱에 지나온 구간(prev → p)을 몇 점으로 나눠 가장 가까운 거리 (빨라도 뚫고 지나가지 않게)
+        var feet := f.global_position
+        var near := INF
+        for q in 5:
+            var bp := prev.lerp(p, q / 4.0)
+            var yy := clampf(bp.y, feet.y + 0.2, feet.y + Fighter.HEIGHT * BODY_SCALE)
+            near = minf(near, bp.distance_to(Vector3(feet.x, yy, feet.z)))
+        if near > BOMB_HIT_R:
             continue
         hit[f.slot] = true
         var impulse := dir * BOMB_HIT_PUSH + Vector3(0, 3.5, 0)
@@ -879,7 +895,33 @@ func _flight_hits(b: Dictionary, now: float) -> void:
             broadcast(["pop", "퍽!", f.global_position + Vector3(0, 2.6, 0), Color(1.0, 0.85, 0.4)])
         else:
             popup_text(f.global_position + Vector3(0, 2.6, 0), "퍽!", Color(1.0, 0.85, 0.4))
+        # 몸에 맞은 폭탄은 더 날아가지 않고 그 사람 발밑 칸으로 툭 떨어진다 (뚫고 지나가지 않게)
+        if not b.get("stopped", false):
+            b.stopped = true
+            var fc := board.cell_at(feet)
+            fc = Vector2i(clampi(fc.x, 0, board.w - 1), clampi(fc.y, 0, board.h - 1))
+            _redirect_bomb(b, board.idx(fc), p, now)
     b.hit = hit
+
+
+## 날아가는 폭탄을 지금 자리(from)에서 칸 i 로 짧게 떨어뜨림 (서버·오프라인 → 알림)
+func _redirect_bomb(b: Dictionary, i: int, from: Vector3, now: float) -> void:
+    var c := board.cell(i)
+    var end := board.center(c) + Vector3(0, top_y(c), 0)
+    var tm := clampf(sqrt(2.0 * maxf(from.y - end.y, 0.05) / BOMB_GRAVITY), 0.08, 0.5)
+    _apply_redirect(b, i, from, now + tm, arc_for_time(tm), end)
+    if is_server():
+        broadcast(["redir", int(b.id), i, from, float(b.t_land), float(b.t), float(b.arc), end])
+
+
+func _apply_redirect(b: Dictionary, i: int, from: Vector3, t_land: float, arc: float, end: Vector3) -> void:
+    b.cell = i
+    b.from = from
+    b.t_land = t_land
+    b.t = t_land + LAND_FUSE
+    b.arc = arc
+    b.end = end
+    b.prev_p = from
 
 
 func _sink_bomb(id: int) -> void:
@@ -1746,9 +1788,12 @@ func on_client_message(pid: int, msg: Array) -> void:
                 var skew := (int(msg[4]) & 3) if msg.size() >= 5 else 3
                 var c := board.cell(i)
                 # 부서지지 않는 블록 위로 던져도 OK (예전엔 여기서 버려져 대각선으로 던지면 아무것도 안 나가던 버그)
-                if board.in_bounds(c) and from.distance_to(f.global_position + Vector3(0, 1.4 * BODY_SCALE, 0)) < 6.0 \
+                if board.in_bounds(c) and from.distance_to(f.global_position + Vector3(0, THROW_HAND * BODY_SCALE, 0)) < 6.0 \
                         and Vector2(board.center(c).x - from.x, board.center(c).z - from.z).length() <= 45.0:
-                    _create_bomb(f.slot, i, stat(f.slot, 1), false, from, arc, skew)
+                    var end: Variant = msg[5] if msg.size() >= 6 and msg[5] is Vector3 else null
+                    if end != null and Vector2((end as Vector3).x - board.center(c).x, (end as Vector3).z - board.center(c).z).length() > 3.0:
+                        end = null         # 칸과 너무 먼 점은 무시 (칸 가운데로)
+                    _create_bomb(f.slot, i, stat(f.slot, 1), false, from, arc, skew, end)
         "gh":
             if f and f.dead and ghosts.has(f.slot) and msg.size() >= 2:
                 ghosts[f.slot].s = fposmod(float(msg[1]), board.ghost_len())
@@ -1865,9 +1910,13 @@ func on_server_message(msg: Array) -> void:
                 _pending_throws = maxi(_pending_throws - 1, 0)
             if not bombs.has(int(msg[1])):
                 _add_bomb(int(msg[1]), int(msg[2]), int(msg[3]), msg[4], float(msg[5]), float(msg[6]), int(msg[7]), bool(msg[8]), float(msg[9]),
-                        int(msg[10]) if msg.size() > 10 else 3)
+                        int(msg[10]) if msg.size() > 10 else 3, msg[11] if msg.size() > 11 else null)
         "sink":
             _sink_bomb(int(msg[1]))
+        "redir":
+            var rb: Dictionary = bombs.get(int(msg[1]), {})
+            if not rb.is_empty() and msg.size() >= 8:
+                _apply_redirect(rb, int(msg[2]), msg[3], float(msg[4]), float(msg[6]), msg[7])
         "boom":
             var groups: Array = []
             for gd in msg[3]:
