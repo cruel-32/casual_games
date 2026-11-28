@@ -1,26 +1,27 @@
 extends RefCounted
 ## 연쇄폭탄마 격자 (판정·봇이 쓰는 순수 데이터. 화면은 bomber_game.gd 가 그린다)
-##   칸 2m. 바깥 테두리와 (짝수, 짝수) 칸은 부서지지 않는 기둥, 나머지 빈칸에 상자를 무작위로 깐다
-##   같은 씨앗값이면 모든 기기에서 같은 배치 (상자 속 아이템까지)
+##   칸 2m. 칸마다 블록(높이 1m)이 LAYERS 층 쌓여 있고, 모두 그 꼭대기에서 시작한다
+##   바깥 테두리와 (짝수, 짝수) 칸은 부서지지 않는 기둥 (블록 꼭대기보다 PILLAR_EXTRA 층 높아서 올라갈 수 없음 — 이 게임 점프는 약 1.3m)
+##   폭발로 블록이 깎여 높이가 0 이 된 칸은 구멍 → 아래 용암으로 떨어진다
 
 const TILE := 2.0
+const BLOCK := 1.0
+const LAYERS := 5
+const PILLAR_EXTRA := 2
 const EMPTY := 0
 const PILLAR := 1
-const CRATE := 2
 const DIRS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
-const CRATE_DENSITY := 0.72
-const ITEM_CHANCE := 0.36
-## 아이템: 0 불꽃(폭발 범위 +1), 1 폭탄(동시에 놓는 개수 +1), 2 신발(속도)
+## 아이템: 0 불꽃(폭발 범위 +1), 1 폭탄(동시에 던지는 개수 +1), 2 속도
 const ITEM_FIRE := 0
 const ITEM_BOMB := 1
 const ITEM_SPEED := 2
 
 var w := 13
 var h := 11
-var cells := PackedByteArray()
-var crate_item := {}          ## 칸 번호 -> 아이템 (상자를 부수면 나옴)
+var cells := PackedByteArray()     ## EMPTY / PILLAR
+var hgt := PackedByteArray()       ## 칸마다 남은 블록 수 (기둥은 쓰지 않음)
 var spawns: Array[Vector2i] = []
-var x0 := 0.0                 ## 칸 (0,0) 의 왼쪽 위 모서리 (월드 x, z)
+var x0 := 0.0                      ## 칸 (0,0) 의 왼쪽 위 모서리 (월드 x, z)
 var z0 := 0.0
 
 
@@ -37,7 +38,7 @@ static func size_for(n: int) -> Vector2i:
     return Vector2i(21, 15)
 
 
-func generate(n_players: int, seed_value: int) -> void:
+func generate(n_players: int) -> void:
     var sz := size_for(n_players)
     w = sz.x
     h = sz.y
@@ -45,13 +46,15 @@ func generate(n_players: int, seed_value: int) -> void:
     z0 = -h * TILE * 0.5
     cells.resize(w * h)
     cells.fill(EMPTY)
+    hgt.resize(w * h)
+    hgt.fill(LAYERS)
     for y in h:
         for x in w:
             if x == 0 or y == 0 or x == w - 1 or y == h - 1 or (x % 2 == 0 and y % 2 == 0):
                 cells[idx(Vector2i(x, y))] = PILLAR
+                hgt[idx(Vector2i(x, y))] = 0
     # 출발 자리: 안쪽 테두리 한 바퀴(1번째 줄)에 고르게, (홀수, 홀수) 칸에
     var ring := _ring()
-    var keep := {}
     spawns.clear()
     for i in n_players:
         var want := int(floor((float(i) + 0.5) * ring.size() / n_players))
@@ -65,34 +68,7 @@ func generate(n_players: int, seed_value: int) -> void:
                     break
             if best >= 0:
                 break
-        var sc: Vector2i = ring[best]
-        spawns.append(sc)
-        # 주변을 비워 처음 폭탄을 놓고 숨을 곳을 만든다 (테두리 ±2칸 + 그 안쪽 칸)
-        for d in range(-2, 3):
-            var rc: Vector2i = ring[posmod(best + d, ring.size())]
-            keep[idx(rc)] = true
-            for dir in DIRS:
-                var nc: Vector2i = rc + dir
-                if in_bounds(nc) and cells[idx(nc)] == EMPTY and absi(d) <= 2 and _inward(nc):
-                    keep[idx(nc)] = true
-    var rng := RandomNumberGenerator.new()
-    rng.seed = seed_value
-    crate_item.clear()
-    for y in h:
-        for x in w:
-            var i := idx(Vector2i(x, y))
-            if cells[i] != EMPTY or keep.has(i):
-                continue
-            if rng.randf() < CRATE_DENSITY:
-                cells[i] = CRATE
-                if rng.randf() < ITEM_CHANCE:
-                    var r := rng.randf()
-                    crate_item[i] = ITEM_FIRE if r < 0.38 else (ITEM_BOMB if r < 0.76 else ITEM_SPEED)
-
-
-## 바깥에서 두 번째 칸이 아닌 안쪽 칸인지 (출발 자리 비울 때 테두리 줄 바로 안쪽만)
-func _inward(c: Vector2i) -> bool:
-    return c.x >= 1 and c.y >= 1 and c.x <= w - 2 and c.y <= h - 2
+        spawns.append(ring[best])
 
 
 ## 안쪽 테두리 칸들 (시계 방향, (1,1) 부터)
@@ -121,12 +97,20 @@ func in_bounds(c: Vector2i) -> bool:
     return c.x >= 0 and c.y >= 0 and c.x < w and c.y < h
 
 
-func kind(c: Vector2i) -> int:
-    return cells[idx(c)] if in_bounds(c) else PILLAR
+func pillar(c: Vector2i) -> bool:
+    return not in_bounds(c) or cells[idx(c)] == PILLAR
 
 
-func solid(c: Vector2i) -> bool:
-    return kind(c) != EMPTY
+## 블록 수 (기둥·밖은 -1)
+func height(c: Vector2i) -> int:
+    if pillar(c):
+        return -1
+    return hgt[idx(c)]
+
+
+## 서 있을 수 있는 칸 (기둥 아님, 구멍 아님)
+func standable(c: Vector2i) -> bool:
+    return height(c) > 0
 
 
 func cell_at(p: Vector3) -> Vector2i:
@@ -138,24 +122,49 @@ func center(c: Vector2i) -> Vector3:
     return Vector3(x0 + (c.x + 0.5) * TILE, 0.0, z0 + (c.y + 0.5) * TILE)
 
 
-## 폭발이 번지는 칸 (연쇄는 제외 — 게임이 따로 처리). blocked(c) 가 true 면 그 칸까지 번지고 멈춤 (폭탄·아이템)
-##   돌려줌: [불길 칸들, 맞은 상자 칸들]
-func blast(c: Vector2i, power: int, blocked: Callable = Callable()) -> Array:
+## 칸 꼭대기 높이 (바닥 기준 m)
+func top(c: Vector2i) -> float:
+    return maxf(height(c), 0) * BLOCK
+
+
+## 폭발: 폭탄 칸 c (그 칸 높이 = 폭발 층 L) 에서 십자로. 기둥에서 멈추고, L 보다 높은 칸은 벽처럼 맞고 멈춤
+##   돌려줌: 불길 칸들 (깎을지는 lowered_by 로)
+func blast(c: Vector2i, power: int) -> Array[Vector2i]:
+    var level := maxi(height(c), 0)
     var fire: Array[Vector2i] = [c]
-    var crates: Array[Vector2i] = []
     for dir in DIRS:
         for k in range(1, power + 1):
             var n: Vector2i = c + dir * k
-            var kd := kind(n)
-            if kd == PILLAR:
+            if pillar(n):
                 break
             fire.append(n)
-            if kd == CRATE:
-                crates.append(n)
+            if height(n) > level:
                 break
-            if blocked.is_valid() and blocked.call(n):
-                break
-    return [fire, crates]
+    return fire
+
+
+## 불길 칸이 깎이는 층 수: 가운데 2, 나머지 1. 폭발 층보다 2층 넘게 낮은 칸은 불길이 위로 지나감 (0)
+func lowered_by(center_cell: Vector2i, n: Vector2i, level: int) -> int:
+    var hn := height(n)
+    if hn <= 0 or hn < level - 1:
+        return 0
+    return 2 if n == center_cell else 1
+
+
+## 던진 폭탄이 떨어질 칸: from 에서 dir 쪽으로 dist m. 기둥·밖이면 앞쪽으로 한 칸씩 당김
+func throw_target(from: Vector3, dir: Vector3, dist: float) -> Vector2i:
+    var d := Vector3(dir.x, 0, dir.z)
+    if d.length() < 0.01:
+        d = Vector3(0, 0, -1)
+    d = d.normalized()
+    var step := 0.5
+    var t := dist
+    while t > 0.0:
+        var c := cell_at(from + d * t)
+        if not pillar(c):
+            return c
+        t -= step
+    return cell_at(from)
 
 
 ## 유령 길 (경기장 바깥 사각형) 반폭
@@ -216,9 +225,8 @@ func ghost_project(p: Vector3) -> float:
     return g.x * 4.0 + g.y * 2.0 + (g.y - z)
 
 
-## 유령이 던진 폭탄이 떨어질 칸: 유령이 선 변에서 안쪽으로 줄을 따라 빈칸을 찾음 (없으면 (-1,-1))
-##   free(c) = 폭탄을 놓을 수 있는 칸인가
-func ghost_target(s: float, free: Callable) -> Vector2i:
+## 유령이 던진 폭탄이 떨어질 칸: 유령이 선 변에서 안쪽으로 줄을 따라 서 있을 수 있는 칸을 찾음 (없으면 (-1,-1))
+func ghost_target(s: float) -> Vector2i:
     var p := ghost_pos(s)
     var t := ghost_tangent(s)
     var c := cell_at(p)
@@ -235,6 +243,6 @@ func ghost_target(s: float, free: Callable) -> Vector2i:
         start = Vector2i(w - 1, line.y)
     for depth in [3, 2, 4, 1, 5]:
         var tc: Vector2i = start + inward * depth
-        if in_bounds(tc) and not solid(tc) and free.call(tc):
+        if standable(tc):
             return tc
     return Vector2i(-1, -1)

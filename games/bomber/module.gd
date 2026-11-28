@@ -5,7 +5,7 @@ extends "res://scripts/core/game_module.gd"
 func _init() -> void:
     id = "bomber"
     display_name = "연쇄폭탄마"
-    description = "격자 미로에 폭탄을 놓아 상자를 부수고 상대를 날려요! 폭탄끼리 연쇄 폭발, 탈락하면 유령이 되어 밖에서 폭탄 던지기"
+    description = "블록 탑 위에서 폭탄을 던져요! 터질수록 바닥이 깎여 구멍이 뚫리고 아래는 용암. 맞거나 떨어지면 탈락, 탈락하면 유령이 되어 밖에서 던지기"
     min_players = 2
     max_players = 12
     supports_bots = true

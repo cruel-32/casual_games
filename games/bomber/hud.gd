@@ -13,9 +13,9 @@ func _ready() -> void:
     mouse_filter = Control.MOUSE_FILTER_IGNORE
     _help = _make_label(16)
     if _touch:
-        _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 폭탄 버튼으로 놓기 · 차기 버튼으로 폭탄 차기·밀치기"
+        _help.text = "왼쪽 스틱 이동 · 오른쪽 드래그 시점 · 던지기 버튼을 누르고 있다가 떼서 폭탄 던지기 · 점프 버튼"
     else:
-        _help.text = "WASD 이동 · 마우스 시점 · 휠 확대/축소 · Space 폭탄 · 좌클릭/E 폭탄 차기·밀치기%s" \
+        _help.text = "WASD 이동 · 마우스 시점 · 휠 확대/축소 · 좌클릭/E 누르고 떼서 폭탄 던지기 · Space 점프%s" \
                 % ("" if game.is_online_match() else " · R 재시작")
     _help.position = Vector2(16, 10)
     _build_menu_bar()
@@ -76,7 +76,7 @@ func _process(delta: float) -> void:
     match game.state:
         PartyGame.State.COUNTDOWN:
             center = str(int(ceil(game.countdown_time - game.state_time)))
-            sub = "폭탄으로 상자를 부수고 상대를 날려요! 불길에 닿으면 탈락"
+            sub = "폭탄을 던져 블록을 부수고 상대를 맞혀요! 불길에 맞거나 용암에 떨어지면 탈락"
             if game.is_client() and game.play_start_t < 0.0:
                 center = "…"
                 sub = "다른 플레이어를 기다리는 중"
@@ -106,7 +106,7 @@ func _process(delta: float) -> void:
         _stats.visible = false
     if human and human.dead and game.ghosts.has(human.slot) and game.state == PartyGame.State.PLAYING:
         var cd: float = game.ghost_cooldown_left(human.slot)
-        var key := "폭탄 버튼" if _touch else "Space"
+        var key := "던지기 버튼" if _touch else "좌클릭/E"
         _ghost.text = "👻 유령: 이동으로 테두리를 돌고 %s로 폭탄 던지기 — %s" % [key, ("%.1f초 뒤 다시 던질 수 있어요" % cd) if cd > 0.0 else "지금 던질 수 있어요!"]
         _ghost.add_theme_color_override("font_color", UI.CREAM if cd > 0.0 else UI.YELLOW)
         _ghost.visible = true
@@ -148,21 +148,22 @@ func _draw_minimap() -> void:
     draw_rect(Rect2(origin - Vector2(4, 4), size + Vector2(8, 8)), Color(UI.INK, 0.8))
     for y in b.h:
         for x in b.w:
-            var k: int = b.cells[y * b.w + x]
-            var col := Color(0.82, 0.76, 0.58, 0.85)
-            if k == 1:
-                col = Color(0.42, 0.44, 0.52)
-            elif k == 2:
-                col = Color(0.75, 0.52, 0.28)
+            var c0 := Vector2i(x, y)
+            var hh: int = b.height(c0)
+            var col := Color(0.42, 0.44, 0.52)
+            if hh == 0:
+                col = Color(1.0, 0.36, 0.08)
+            elif hh > 0:
+                col = Color(0.45, 0.3, 0.2).lerp(Color(0.92, 0.8, 0.52), float(hh) / 5.0)
             draw_rect(Rect2(origin + Vector2(x, y) * cell, Vector2(cell - 1, cell - 1)), col)
     var now: float = game.net_now()
     for fl in game.flames:
         if now < float(fl.t1):
             for i in fl.cells:
                 var c: Vector2i = b.cell(int(i))
-                draw_rect(Rect2(origin + Vector2(c) * cell, Vector2(cell - 1, cell - 1)), Color(1.0, 0.5, 0.1))
+                draw_rect(Rect2(origin + Vector2(c) * cell, Vector2(cell - 1, cell - 1)), Color(1.0, 0.92, 0.25))
     for id in game.bombs:
-        var c: Vector2i = b.cell(game.bomb_cell(game.bombs[id], now))
+        var c: Vector2i = b.cell(int(game.bombs[id].cell))
         draw_circle(origin + (Vector2(c) + Vector2(0.5, 0.5)) * cell, cell * 0.4, Color(0.1, 0.1, 0.12))
     for f: Fighter in game.fighters:
         if f.dead:

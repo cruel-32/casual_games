@@ -189,6 +189,7 @@ var cam_min_len := 1.5               ## 마우스 휠 확대 한계 (게임이 �
 var cam_max_len := 9.0               ## 〃 축소 한계
 var cam_follow: Node3D = null        ## 있으면 카메라 받침대가 이 노드를 따라감 (예: 연쇄폭탄마 유령)
 var can_jump := true                 ## false 면 점프 키가 게임의 on_action(self) 로 간다 (예: 폭탄 놓기)
+var throw_mode := false              ## true 면 밀치기 키 = 누른 시간만큼 던지기 (game.on_throw(self, 0~1))
 
 
 func _ready() -> void:
@@ -957,6 +958,18 @@ func _cancel_charge(penalty: bool = true) -> void:
 
 
 func _release_push() -> void:
+    if throw_mode:
+        # 던지기 모드 (예: 연쇄폭탄마): 밀치기 대신 누른 시간만큼 멀리 던짐
+        var r := clampf(charge_time / charge_full_time(), 0.0, 1.0)
+        charging = false
+        if is_human:
+            Sfx.charge_stop()
+        push_anim = 0.35
+        cooldown_total = 0.3
+        cooldown_timer = cooldown_total
+        if game and game.has_method(&"on_throw"):
+            game.on_throw(self, r)
+        return
     var tap := charge_time < tap_threshold
     var c := 0.0 if tap else get_charge_ratio()
     charging = false
@@ -987,8 +1000,6 @@ func _release_push() -> void:
     lock_timer = dash_time + lock_after
     push_window = dash_time + 0.12
     cooldown_timer = cooldown_total
-    if game and game.has_method(&"on_push_released"):
-        game.on_push_released(self)            # 예: 연쇄폭탄마 폭탄 차기
 
 
 func _check_push_hits() -> void:
