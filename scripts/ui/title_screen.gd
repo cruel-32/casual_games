@@ -54,23 +54,27 @@ func _ready() -> void:
         quit_btn.pressed.connect(func(): get_tree().quit())
         top.add_child(quit_btn)
 
+    # 가운데 내용: 위 메뉴 줄 아래 ~ 아래 체크 띠 위 사이. 창이 낮아 안 들어가면 통째로 줄여서 맞춤 (_fit_center)
     var center := CenterContainer.new()
     center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-    center.offset_bottom = -110          # 아래 체크 띠 위에 놓이게
+    center.offset_top = TOP_SPACE
+    center.offset_bottom = -BOTTOM_SPACE
     center.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(center)
-    var col := UI.vbox(18)
+    _center = center
+    var col := UI.vbox(16)
+    _col = col
     col.alignment = BoxContainer.ALIGNMENT_CENTER
     center.add_child(col)
 
     # 로고 양옆으로 아이들 (통통 튀는 초상화)
-    var hero := UI.hbox(26)
+    var hero := UI.hbox(30)
     hero.alignment = BoxContainer.ALIGNMENT_CENTER
     col.add_child(hero)
-    var left := UI.hbox(-34)
+    var left := UI.hbox(-18)
     hero.add_child(left)
-    hero.add_child(UI.logo(84))
-    var right := UI.hbox(-34)
+    hero.add_child(UI.logo(80))
+    var right := UI.hbox(-18)
     hero.add_child(right)
     var kids := [0, 1, 4, 2, 3, 6]
     for i in kids.size():
@@ -78,7 +82,7 @@ func _ready() -> void:
         t.texture = UI.portrait(kids[i])
         t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
         t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-        t.custom_minimum_size = Vector2(118, 150)
+        t.custom_minimum_size = Vector2(108, 138)
         t.flip_h = i >= 3
         (left if i < 3 else right).add_child(t)
         _kids.append(t)
@@ -618,8 +622,30 @@ func _set_status(text: String, color: Color) -> void:
 
 
 ## 아이들이 차례로 통통 뛴다
+const TOP_SPACE := 78.0             ## 위 메뉴 버튼 줄 자리
+const BOTTOM_SPACE := 124.0         ## 아래 체크 띠 자리
+var _center: CenterContainer
+var _col: VBoxContainer
+
+
+## 창이 낮으면 가운데 내용을 통째로 줄여 메뉴 버튼·체크 띠와 겹치지 않게
+func _fit_center() -> void:
+    if _center == null or _col == null:
+        return
+    # 위 메뉴 줄과 아래 체크 띠 사이 (조금 더 띄움). 내용 높이가 더 크면 줄인다
+    var avail := size.y - TOP_SPACE - BOTTOM_SPACE
+    var need := _col.get_combined_minimum_size().y
+    var k := clampf((avail - 24.0) / maxf(need, 1.0), 0.6, 1.0)
+    var h := need * k
+    _center.pivot_offset = Vector2(size.x * 0.5, 0.0)
+    _center.scale = Vector2(k, k)
+    _center.offset_top = TOP_SPACE + maxf((avail - h) * 0.5, 0.0)
+    _center.offset_bottom = _center.offset_top + need - size.y          # 내용 높이만큼 (줄이기 전)
+
+
 func _process(delta: float) -> void:
     _t += delta
+    _fit_center()
     for i in _kids.size():
         var ph := _t * 3.2 - i * 0.55
         var hop := maxf(sin(ph), 0.0)
@@ -643,6 +669,6 @@ func _build_update_ui() -> void:
     ver.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT, Control.PRESET_MODE_MINSIZE, 14)
     ver.grow_horizontal = Control.GROW_DIRECTION_BEGIN
     ver.grow_vertical = Control.GROW_DIRECTION_BEGIN
-    ver.position.y -= 108                 # 아래 체크 띠 위
+    ver.position.y -= 122                 # 아래 체크 띠 위
     ver.mouse_filter = Control.MOUSE_FILTER_IGNORE
     add_child(ver)

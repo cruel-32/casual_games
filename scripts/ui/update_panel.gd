@@ -1,6 +1,6 @@
 extends PanelContainer
 ## 새 버전 안내 카드 (첫 화면 접속 카드 아래). Updater 상태에 따라 스스로 보였다 숨었다 한다.
-##   [새 버전] 0.2.0 → 0.3.0  바뀐 점 한두 줄      [업데이트]
+##   [새 버전] 0.2.0 → 0.3.0                [업데이트]   (바뀐 점은 싣지 않음 — 짧게 한 줄)
 ## min_supported 보다 낮으면 "업데이트해야 온라인으로 할 수 있어요" 를 빨갛게 띄운다.
 
 const UI := preload("res://scripts/ui/ui_kit.gd")
@@ -15,11 +15,15 @@ var _bar: ProgressBar
 
 func _ready() -> void:
     visible = false
-    add_theme_stylebox_override("panel", UI.box(UI.CREAM, 18, 16, UI.INK, UI.OUTLINE, 6))
+    var sb := UI.box(UI.CREAM, 18, 18, UI.INK, UI.OUTLINE, 6)
+    sb.content_margin_top = 12
+    sb.content_margin_bottom = 12
+    add_theme_stylebox_override("panel", sb)
     add_to_group("touch_block")
     var row := UI.hbox(14)
     add_child(row)
-    var v := UI.vbox(4)
+    var v := UI.vbox(6)
+    v.alignment = BoxContainer.ALIGNMENT_CENTER
     v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     row.add_child(v)
     var head := UI.hbox(12)
@@ -42,7 +46,7 @@ func _ready() -> void:
     _bar.visible = false
     v.add_child(_bar)
     _btn = UI.cta_button("업데이트")
-    _btn.custom_minimum_size = Vector2(150, 56)
+    _btn.custom_minimum_size = Vector2(150, 50)
     _btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     _btn.add_theme_font_size_override("font_size", 21)
     _btn.pressed.connect(func(): Updater.start())
@@ -57,14 +61,7 @@ func _refresh() -> void:
     if not visible:
         return
     _title.text = "%s → %s" % [Updater.current_version(), Updater.latest]
-    var lines := Updater.notes()
-    var shown := PackedStringArray()
-    for i in mini(lines.size(), 2):
-        shown.append(lines[i])
-    if lines.size() > 2:
-        shown.append("그 밖에 %d가지" % (lines.size() - 2))
-    _notes.text = " · ".join(shown)
-    _notes.visible = not shown.is_empty()
+    _notes.visible = false              # 바뀐 점은 싣지 않음 (소식 창·사이트에서)
     var st: int = Updater.state
     if st == Updater.State.FAILED:
         _warn.text = Updater.message
